@@ -131,54 +131,65 @@ class ArchitectDeliveryMixin:
         finally:
             self.save_convo()
 
-    def repair_lint(self) -> int:
-        """Hand the static findings to the model, once."""
+    def repair_lint(self, max_rounds: int = 2) -> int:
+        """Run bounded repair turns until the static findings clear."""
         if self.stack != "next":
             return 0
 
-        problems = [p for p in self.lint_generated()
-                    if "imported but not installed" not in p]
-        problems.extend(self.lint_plan_contracts())
-        problems = list(dict.fromkeys(problems))
-        if not problems:
-            return 0
+        total = 0
+        max_rounds = max(1, int(max_rounds or 1))
+        for round_no in range(1, max_rounds + 1):
+            problems = [p for p in self.lint_generated()
+                        if "imported but not installed" not in p]
+            problems.extend(self.lint_plan_contracts())
+            problems = list(dict.fromkeys(problems))
+            if not problems:
+                break
 
-        self._log("WARN", f"🔍 {len(problems)} first-write/contract problem(s) "
-                          f"found — asking for one pre-handoff repair pass")
-        self._fire("on_phase", {"phase": -6, "title": "Lint repair",
-                                "status": "active"})
-        n = self._run_write_loop(textwrap.dedent(f"""\
-            Deterministic first-write checks found these problems in the files
-            you wrote. They are accepted-plan contracts or code facts, not new
-            feature suggestions:
-            {chr(10).join('  • ' + p for p in problems[:18])}
+            title = f"Lint repair {round_no}/{max_rounds}"
+            self._log(
+                "WARN",
+                f"🔍 {len(problems)} first-write/contract problem(s) "
+                f"found — pre-handoff repair {round_no}/{max_rounds}")
+            self._fire("on_phase", {"phase": -6, "title": title,
+                                    "status": "active"})
+            written = self._run_write_loop(textwrap.dedent(f"""\
+                Deterministic first-write checks found these problems in the
+                files you wrote. They are accepted-plan contracts or code
+                facts, not new feature suggestions:
+                {chr(10).join('  • ' + p for p in problems[:18])}
 
-            Fix every one in this turn. Rewrite the COMPLETE file for each file
-            named above, and touch no unrelated file. Preserve already-correct
-            behavior and design. For MISSING_PLANNED_DATA/BROKEN_CONTRACT, wire
-            the real collection/API edge end-to-end. For MISSING_ACTION_ID, put
-            the exact literal id on the real interactive control. For
-            LAYOUT_CHROME, remove app chrome from root layout and keep auth pages
-            full-screen. If a file has a 'use client' part-way down,
-            split it: the server half stays, the interactive half moves to its
-            own file under components/ with 'use client' on line 1.
+                Fix every one in this turn. Rewrite the COMPLETE file for each
+                file named above, and touch no unrelated file. Preserve
+                already-correct behavior and design. For
+                MISSING_PLANNED_DATA/BROKEN_CONTRACT, wire the real
+                collection/API edge end-to-end. For MISSING_ACTION_ID, put the
+                exact literal id on the real interactive control. For
+                LAYOUT_CHROME, remove app chrome from root layout and keep auth
+                pages full-screen. If a file has a 'use client' part-way down,
+                split it: the server half stays, the interactive half moves to
+                its own file under components/ with 'use client' on line 1.
 
-            WHEN YOU SPLIT, THE HANDLER GOES WITH THE STATE. The server half
-            may pass strings, numbers, arrays and plain objects to the client
-            half — never a function. If the server page currently passes an
-            onSelect or onChange prop, that state belongs inside the new client
-            component, which owns it and needs no prop at all. A server
-            component that passes a handler compiles cleanly and then throws
-            "Event handlers cannot be passed to Client Component props" on the
-            first request, which is exactly the failure this split is supposed
-            to prevent.
-            """))
-        self._fire("on_phase", {"phase": -6, "title": "Lint repair",
-                                "status": "done", "written": n})
+                WHEN YOU SPLIT, THE HANDLER GOES WITH THE STATE. The server half
+                may pass strings, numbers, arrays and plain objects to the
+                client half — never a function. If the server page currently
+                passes an onSelect or onChange prop, that state belongs inside
+                the new client component, which owns it and needs no prop at
+                all. A server component that passes a handler compiles cleanly
+                and then throws "Event handlers cannot be passed to Client
+                Component props" on the first request, which is exactly the
+                failure this split is supposed to prevent.
+                """))
+            total += written
+            self._fire("on_phase", {"phase": -6, "title": title,
+                                    "status": "done", "written": written})
 
-        if n:
-            self._fix_boundary_props()
-        return n
+            if written:
+                total += self._fix_boundary_props()
+            else:
+                self._log("WARN", "   ⚠ repair pass wrote no files")
+                break
+        return total
 
     def _fix_boundary_props(self) -> int:
         """Rewrite server components caught passing a function to a client one."""

@@ -57,6 +57,18 @@ class ArchitectPersistenceMixin:
                 self._log("ERROR", f"   ❌ Only {len(generated)} file(s) beyond "
                                    f"the scaffold — the model produced nothing")
                 return False
+            try:
+                from agents.exports import check_syntax, syntax_messages
+                broken, _why = check_syntax(self.project_dir, self.files)
+            except Exception as e:                         # noqa: BLE001
+                log.debug(f"final syntax gate: {e}")
+                broken = []
+            if broken:
+                self._log("ERROR", f"   ❌ {len(broken)} generated source "
+                          f"file(s) still have invalid JavaScript")
+                for problem in syntax_messages(broken)[:6]:
+                    self._log("ERROR", f"      {problem}")
+                return False
             for problem in self.lint_generated()[:6]:
                 self._log("WARN", f"   ⚠ {problem}")
             self._check_auth_intact()

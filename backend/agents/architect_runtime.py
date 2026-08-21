@@ -31,6 +31,9 @@ class ArchitectRuntimeMixin:
         self.theme_html = theme_html or ""
         self.theme_page = theme_page or ""
 
+        self.tokens_in = 0
+        self.tokens_out = 0
+
         self.convo = []
 
         self._last_truncated = None
@@ -265,6 +268,10 @@ class ArchitectRuntimeMixin:
                 on_delta(delta)
             for tc in (msg.get("tool_calls") or []):
                 tool_calls.append(tc)
+            if chunk.get("done"):
+                self.tokens_in += chunk.get("prompt_eval_count", 0) or 0
+                self.tokens_out += chunk.get("eval_count", 0) or 0
+
             # Both checks run AFTER the delta is delivered.
             if looping >= self.LOOP_REPEATS:
                 self._log("WARN",
