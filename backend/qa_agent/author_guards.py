@@ -1,4 +1,4 @@
-"""Deterministic unit-test quality guards for timers, forms, bodies and selectors."""
+"""Unit-test guards for timers, forms, bodies, and selectors."""
 from .author_common import *
 
 
@@ -51,7 +51,7 @@ class UnitAuthorGuardMixin:
 
     @classmethod
     def _strip_not_code(cls, src: str) -> str:
-        """Blank out what is not code, keeping every newline where it was so the line."""
+        """Blank non-code text while preserving line numbers."""
         def blank(m):
             pre = m.group("pre") or ""
             return pre + "\n" * m.group(0)[len(pre):].count("\n")

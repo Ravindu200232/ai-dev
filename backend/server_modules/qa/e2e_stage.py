@@ -3,53 +3,9 @@ from qa_agent.e2e_normalize import normalize_scenario_selectors
 from qa_agent.e2e_contract import scenario_contract_issue, runtime_contract_issue
 from qa_agent.e2e_invariants import validate_repair_invariants, repair_guard_feedback
 
-def _repair_after_stages(proj_dir: Path, qa, arch, runner, failures):
-    """Bring the tests back in line with the code that shipped."""
-    for f in failures:
-        try:
-            f.stale = True
-        except Exception:
-            pass
-    fixer = BugFixerAgent(arch, proj_dir, callbacks=_qa_callbacks(), session=qa,
-                          model=QASession.model_for(qa, arch))
-    for rnd in range(1, MAX_AFTER_FIX + 1):
-        groups = _by_test_file(failures)
-        ephase({"phase": -16, "title": "Re-aligning tests with the shipped code",
-                "status": "active"})
-        elog("INFO", f"   🔧 re-aligning {len(groups)} test file(s) with the "
-                     f"code the later stages left behind (round {rnd}/"
-                     f"{MAX_AFTER_FIX})")
-
-        def repair(group):
-            try:
-                fixer.fix(group, build_ok=True, round_no=rnd, tier=0)
-            except Exception as e:
-                elog("WARN", f"   ⚠ re-alignment failed on "
-                             f"{group[0].test_file}: {e}")
-                log.exception("post-stage fix")
-
-        with ThreadPoolExecutor(max_workers=QA_FIX_WORKERS) as pool:
-            list(pool.map(repair, groups))
-        ephase({"phase": -16, "title": "Re-aligning tests with the shipped code",
-                "status": "done"})
-
-        passed, failures, ok = runner.run()
-        if not ok:
-            elog("WARN", "   ⚠ the re-run produced no report — keeping the "
-                         "last numbers that were measured")
-            return passed, failures
-        if not failures:
-            elog("INFO", f"   ✅ {passed}/{passed} — the suite is green on the "
-                         f"code that is shipping")
-            return passed, failures
-        elog("WARN", f"   ❌ {len(failures)} still failing after round {rnd}")
-    _leave_unresolved(runner, failures,
-                      "the code changed after these tests were written and "
-                      "they could not be brought back into line")
-    return passed, failures
 
 def _e2e_detail(failures) -> list:
-    """What actually failed, in the shape the report already uses for unit cases."""
+    """Shape the E2E failure like a unit-test case."""
     out = []
     for f in failures or ():
         out.append({
@@ -315,7 +271,7 @@ def _e2e_rounds(agent, arch, proj_dir, qa, analyzer, out):
 
 def _repair_contract_backed_selector_failure(agent, arch, proj_dir, analyzer,
                                              failures) -> tuple:
-    """Repair a soft E2E miss only when independent architecture evidence says app."""
+    """Repair a soft E2E miss only with architecture evidence."""
     targets = {str(getattr(f, "target", "") or "").strip()
                for f in (failures or [])}
     targets.discard("")
@@ -669,13 +625,7 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
                     failures = agent.run_resume(sc, journey=journey,
                                                 failure=old_failure)
                 else:
-                    # The mechanical fallback scores locators and throws away
-                    # anything it is not sure of. The model reads the same
-                    # evidence and sometimes finds a handle the scoring
-                    # discarded — a label, say, where the input has no `name`.
-                    # If the DOM really offered what it named, that is
-                    # evidence, not a guess, and refusing it loses a fix
-                    # nobody else was going to make.
+                    # Keep only confident fallback locators.
                     own = str(diag.get("test_patch") or "").strip()
                     trusted = False
                     try:
@@ -790,7 +740,7 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
 
             if fixed:
                 violations = validate_repair_invariants(
-                    before_sources, arch.files, fixed, verdict, diag,
+                    before_sources, arch.files, fixed, verdict,
                     failure=old_failure, journey=journey)
                 if violations:
                     elog("WARN", "   ↩ repair invariant guard rejected the candidate patch")
@@ -802,7 +752,7 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
                     except Exception:
                         pass
                     guarded_report = report + repair_guard_feedback(
-                        violations, diag, failure=old_failure)
+                        violations, failure=old_failure)
                     fixed = _repair_runtime(
                         arch, proj_dir, qa, analyzer, guarded_report, trace, rnd,
                         model=QASession.model_for(qa, arch), focus_paths=targets,
@@ -811,7 +761,7 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
                         exact_scope=exact_runtime_scope)
                     if fixed:
                         violations = validate_repair_invariants(
-                            before_sources, arch.files, fixed, verdict, diag,
+                            before_sources, arch.files, fixed, verdict,
                             failure=old_failure, journey=journey)
                         if violations:
                             elog("WARN", "   ↩ corrected repair still crossed the evidence boundary — reverted")
@@ -885,8 +835,6 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
                              f"— budget {old_budget}→{round_budget}, hard cap {E2E_HARD_FIX}")
         else:
             # A round the debugger never decided is not a round that failed.
-            # It costs a call, tells us nothing, and must not spend the budget
-            # that exists for actually trying things.
             undecided = (str(diag.get("verdict") or "UNKNOWN").upper() == "UNKNOWN"
                          and not str(diag.get("root") or "").strip())
             if undecided and rnd < E2E_HARD_FIX:

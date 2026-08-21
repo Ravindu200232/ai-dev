@@ -73,7 +73,7 @@ def _async_helpers(files: dict[str, str]) -> set[str]:
 
 
 def _promise_used_as_value(body: str, helpers: set[str]) -> list[str]:
-    """`getCollection('x').find(...)` — the call returns a promise, not the value."""
+    """Find members read directly from async helper calls."""
     out = []
     for name in sorted(helpers):
         start = 0
@@ -108,7 +108,7 @@ def _promise_used_as_value(body: str, helpers: set[str]) -> list[str]:
 
 
 def validate_repair_invariants(before_files: dict[str, str], after_files: dict[str, str],
-                               changed: list[str], verdict: str, diagnosis: dict,
+                               changed: list[str], verdict: str,
                                failure=None, journey=None) -> list[str]:
     """Return concrete reasons a patch escaped its evidence boundary."""
     verdict = str(verdict or "").upper()
@@ -155,7 +155,7 @@ def validate_repair_invariants(before_files: dict[str, str], after_files: dict[s
     return list(dict.fromkeys(problems))
 
 
-def repair_guard_feedback(violations: list[str], diagnosis: dict, failure=None) -> str:
+def repair_guard_feedback(violations: list[str], failure=None) -> str:
     exact = str(getattr(failure, "name", "") or "")
     return (
         "\n\nREPAIR INVARIANT GUARD\n"

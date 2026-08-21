@@ -1,29 +1,18 @@
-"""The customer's real details, read out of one box they paste into.
-
-Asking for a name, a website, an email, a phone number, an address and four
-social links is eight questions, and the interview has room for one. People
-already keep these together — an email signature, an "about us" block, a
-LinkedIn header — so the question is one box and the reading is done here.
-
-Nothing is invented. A field that is not in the text does not appear, and
-the whole thing is optional: an internal tool has no public identity and is
-not asked to make one up.
-"""
+"""Parse customer details from free-form text."""
 from __future__ import annotations
 
 import re
 
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}\b")
 
-# Long enough to be a real number, loose enough for any country's spacing.
+# Accept common international phone spacing.
 PHONE_RE = re.compile(
     r"(?<![\w.])(\+?\d[\d\s().-]{7,20}\d)(?![\w.])")
 
 URL_RE = re.compile(
     r"\b((?:https?://|www\.)[^\s,;<>\"')\]]+|[A-Za-z0-9][\w-]*(?:\.[\w-]+)+"
     r"/[^\s,;<>\"')\]]*)", re.I)
-# `kamalperera.dev` is a website; `e.g` and `Node.js` are not. A real TLD is
-# what tells them apart without a DNS lookup.
+# `kamalperera.dev` is a website; `e.g` and `Node.js` are not.
 TLDS = (r"com|net|org|io|dev|app|co|ai|me|xyz|site|online|store|shop|tech|"
         r"design|studio|agency|digital|cloud|info|biz|edu|gov|blog|page|link|"
         r"[a-z]{2}")
@@ -31,7 +20,7 @@ BARE_DOMAIN_RE = re.compile(
     r"\b([A-Za-z0-9][\w-]{1,62}(?:\.[A-Za-z0-9-]{1,63})*\.(?:" + TLDS + r"))\b",
     re.I)
 
-# Which link is which, by the host it lives on.
+# Classify links by host.
 LINK_HOSTS = (
     ("linkedin", ("linkedin.com", "lnkd.in")),
     ("github", ("github.com", "gitlab.com", "bitbucket.org")),
@@ -79,8 +68,6 @@ def _tidy_url(url: str) -> str:
     return url
 
 
-# `Next.js` and `page.jsx` are not websites, and a two-letter ccTLD cannot
-# tell itself apart from a file extension without help.
 NOT_A_TLD = {"js", "ts", "jsx", "tsx", "py", "rb", "php", "json", "yml",
              "yaml", "md", "txt", "png", "jpg", "jpeg", "svg", "css", "html",
              "sh", "env", "lock", "log", "sql", "csv", "pdf"}
@@ -111,8 +98,7 @@ def looks_like_address(line: str) -> bool:
         return False
     words = set(re.findall(r"[a-z.]+", low))
     for hint in ADDRESS_HINTS:
-        # A short hint has to be its own word: "st" is a street, but it is
-        # also the middle of "full-stack".
+        # Match short hints as whole words.
         if hint in words or (len(hint) > 4 and hint in low):
             return True
     # "12/3, Colombo 04" — a number and a comma is usually a street line.
@@ -120,7 +106,7 @@ def looks_like_address(line: str) -> bool:
 
 
 def parse_details(text: str) -> dict:
-    """Everything worth keeping, from one pasted block. Absent fields are absent."""
+    """Extract useful details from one pasted block."""
     raw = str(text or "")
     if not raw.strip():
         return {}
@@ -195,18 +181,3 @@ def parse_details(text: str) -> dict:
                 seen.append(url)
         out.setdefault("links", {})[kind] = seen[0] if len(seen) == 1 else seen
     return out
-
-
-def details_summary(details: dict) -> str:
-    """One readable line, for a log or a review screen."""
-    parts = []
-    if details.get("name"):
-        parts.append(details["name"])
-    if details.get("email"):
-        parts.append(details["email"])
-    if details.get("phone"):
-        parts.append(details["phone"])
-    links = details.get("links") or {}
-    if links:
-        parts.append(", ".join(sorted(links)))
-    return " · ".join(parts)

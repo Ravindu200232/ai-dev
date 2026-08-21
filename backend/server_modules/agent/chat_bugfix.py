@@ -210,7 +210,7 @@ def _route_for_page_source(rel: str) -> str:
 
 def _infer_issue_route(route: str, complaint: str, console: str, trace: str,
                        arch, analyzer=None) -> str:
-    """Best concrete page route from the user's live evidence, not a guess at '/."""
+    """Find the best page route in the live evidence."""
     explicit = str(route or "").split("?", 1)[0].strip()
     if explicit and not explicit.startswith("/"):
         explicit = ""
@@ -598,9 +598,6 @@ def verify_after_edit(arch, proj_dir: Path, proj_name: str, *,
         ephase({"phase": -6, "title": "Fixing broken syntax", "status": "done"})
 
     # A link to a route nobody built is a 404 the person finds by clicking.
-    # It is cheap to see from the source, it needs no dev server, and an edit
-    # that adds a nav item is exactly where it appears — an "Admin" button
-    # was added to a navbar and /admin did not exist for two more turns.
     try:
         dead = [u for u in (analyzer.scan().dead_links or [])]
     except Exception as e:                                      # noqa: BLE001
@@ -702,7 +699,7 @@ _AGENT_MTIMES = {rel: p.stat().st_mtime for rel, p in _own_sources()}
 
 
 def warn_if_agents_stale():
-    """Say so when AgentForge's own code has changed since this process started."""
+    """Report when AgentForge changed after process start."""
     stale = []
     for rel, p in _own_sources():
         try:

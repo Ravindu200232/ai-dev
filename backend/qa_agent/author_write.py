@@ -1,4 +1,4 @@
-"""Unit-test planning, authoring, execution verification and one-case repair."""
+"""Unit-test planning, authoring, verification, and repair."""
 from .author_common import *
 
 

@@ -36,9 +36,8 @@ if (process.env.NODE_ENV === 'development' && global._mongoClientPromise) {
   clientPromise = global._mongoClientPromise
 }
 
-// Connected on FIRST USE, never at import. `next build` imports every page and
-// route while collecting page data, so connecting here made a running database
-// a requirement to COMPILE — and CI has none.
+// Connect on first use, never during import.
+// Next.js imports routes while building, when no database may exist.
 function connection() {
   if (!clientPromise) {
     if (!uri) throw new Error('MONGODB_URI is not set')

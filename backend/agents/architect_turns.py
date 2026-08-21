@@ -29,7 +29,7 @@ class ArchitectTurnMixin:
         if here:
             parts.append(here)
 
-        # A task boundary just went past.
+        # A task boundary passed.
         note = getattr(self, "_finished_note", "")
         if note:
             parts.append(note)
@@ -141,14 +141,12 @@ class ArchitectTurnMixin:
     FORM_RE = re.compile(r"\b(forms?|inputs?|fields?|textareas?|validation|"
                          r"search|filters?|sign ?ups?|sign ?in|log ?in|"
                          r"register|uploads?)\b")
-    # Any plural noun in a file's purpose means it renders many rows, so the
-    # shape is read off the grammar rather than off a list of business nouns.
     LIST_RE = re.compile(r"\b(lists?|tables?|grids?|rows?|feeds?|catalogues?|"
                          r"catalogs?|history|results|inventory|"
                          r"[a-z]{4,}(?<!ss)(?<!us)(?<!is)s)\b")
 
     def _turn_reminder(self, files: list) -> str:
-        """One rule from the system prompt, re-sent with the turn that is about to break."""
+        """Repeat the rule most relevant to the next turn."""
         if not files:
             return ""
         kinds = {f.get("kind", "server") for f in files}

@@ -144,7 +144,7 @@ def _renumbered(item: dict, existing: list) -> dict:
 
 
 def _clean_patch(patch: dict | None, doc: dict | None = None, prompt: str = "") -> dict:
-    """Drop the sections the model must not own or left empty, and never shrink."""
+    """Drop empty or protected model sections without shrinking."""
     doc = doc or {}
     removing = bool(_REMOVAL.search(prompt or ""))
     clean: dict = {}

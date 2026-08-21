@@ -1,4 +1,4 @@
-"""Project inventory, plan comparison, route enumeration and contract topology."""
+"""Project inventory, route mapping, and contract topology."""
 from .analyzer_common import *
 
 

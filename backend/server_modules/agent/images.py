@@ -137,7 +137,7 @@ UPLOAD_IMAGE_SIDE = 2048
 
 
 def _safe_stem(raw: str, fallback: str = "upload") -> str:
-    """A name from the browser, reduced to something that cannot leave the folder."""
+    """Make a browser filename safe for its folder."""
     stem = Path(str(raw or "").replace("\\", "/")).name
     stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-.")
     return (Path(stem).stem or fallback)[:60]
@@ -248,7 +248,7 @@ PREVIEW_SIDE = 900
 
 
 def preview_uri(out: Path) -> str:
-    """A data: URI for `out`, shrinking it rather than giving up when it is big."""
+    """Build a data URI, shrinking large output when needed."""
     try:
         raw = out.read_bytes()
     except OSError as e:
@@ -318,7 +318,7 @@ def _image_brief_line(proj_dir: Path) -> str:
 
 
 def run_image_stage(arch, proj_dir: Path) -> int:
-    """Generate the pictures the plan asked for, into the project's public folder."""
+    """Generate planned pictures in the public folder."""
     plan_images = (arch.plan or {}).get("images") or []
     if not plan_images:
         return 0
@@ -363,7 +363,8 @@ _GEN_IMG_TPL_RE = re.compile(
 _GEN_IMG_KEY_RE = re.compile(r"[A-Za-z0-9._-]{1,60}")
 
 _SEED_LABEL_RE = re.compile(
-    r"\b(?:name|title|label|room_type|product_name|type)\s*:\s*"
+    r"\b(?:name|title|label|type|[A-Za-z_$][\w$]*_(?:name|type)|"
+    r"[A-Za-z_$][\w$]*(?:Name|Type))\s*:\s*"
     r"['\"]([^'\"]{1,80})['\"]")
 
 # `photos: await seedImage('item-deluxe')` -- the seed's own
@@ -375,24 +376,6 @@ _SEED_IMAGE_TPL_RE = re.compile(
     r"([A-Za-z0-9._-]{0,40})`")
 
 
-def _seeded_values(arch, field: str) -> dict:
-    """`{value: label}` for every literal `field: '…'` in the project's seed."""
-    field_re = re.compile(r"\b" + re.escape(field) + r"\s*:\s*['\"]([^'\"]{1,80})['\"]")
-    out = {}
-    for rel, body in arch.files.items():
-        if "seed" not in rel.lower() or not rel.endswith(".js"):
-            continue
-        for m in field_re.finditer(body):
-            value = m.group(1).strip()
-            if not value or "/" in value:
-                continue
-            open_at = body.rfind("{", 0, m.start())
-            close_at = body.find("}", m.end())
-            span = body[(open_at + 1 if open_at != -1 else 0):
-                        (close_at if close_at != -1 else len(body))]
-            label = _SEED_LABEL_RE.search(span)
-            out.setdefault(value, label.group(1).strip() if label else "")
-    return out
 
 
 _ACCOUNT_FIELD_RE = re.compile(
@@ -422,13 +405,7 @@ def _account_values(arch, field: str) -> set:
 
 def _template_wants(arch, body: str, at: int, prefix: str, expr: str,
                     suffix: str, rel: str, *, strict: bool = True) -> dict:
-    """Every key one `${…}` image template really stands for.
-
-    The rows are read from the seed the build wrote, so a key derived at
-    runtime (`slug: slugify(d.name)`) resolves the same way it will there.
-    When even that finds nothing, one shared picture is drawn under the
-    template's own stem so the page shows something instead of a broken img.
-    """
+    """Resolve image keys requested by a template."""
     shown = f"{prefix}${{{expr.strip()}}}{suffix}"
     try:
         found = template_keys(arch, body, at, prefix, expr, suffix,
@@ -623,12 +600,7 @@ _UPLOAD_KEY_RE = re.compile(r"[A-Za-z0-9._-]{1,60}")
 
 
 def adopt_uploaded_images(uploads, proj_dir: Path) -> int:
-    """Put the person's own pictures where a generated one would go.
-
-    `uploads` is `{key: path}`. Every key that lands here is a key the
-    drawing pass will find already present and leave alone, so choosing to
-    upload really does replace generating rather than racing it.
-    """
+    """Use uploaded images in place of generated ones."""
     rows = dict(uploads or {})
     if not rows:
         return 0

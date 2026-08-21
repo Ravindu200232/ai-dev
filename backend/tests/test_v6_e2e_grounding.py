@@ -93,9 +93,7 @@ class V6DebuggerClassificationTests(unittest.TestCase):
                 def _page_for(self, route): return "app/inventory-manager/page.jsx"
             class Debugger(AgenticE2EDebugger):
                 def _ask(self, prompt):
-                    # Reproduce the bad cloud diagnosis from the real run:
-                    # earlier POST 201 causes APP_FIX even though current failure
-                    # is only a selector miss.
+                    # Reproduce the bad cloud diagnosis from the real run.
                     return ("VERDICT :: APP_FIX\nROOT :: the required mutation succeeded, but downstream UI/state proof did not materialize\n"
                             "FILES :: app/inventory-manager/page.jsx\nTEST_STEP :: NONE\nTEST_PATCH :: NONE\n"
                             "HYPOTHESIS :: persistence succeeded; refresh path failed\n"

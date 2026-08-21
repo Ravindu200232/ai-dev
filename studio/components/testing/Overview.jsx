@@ -12,9 +12,7 @@ export default function Overview({ qa, live }) {
   if (!last && !r && !v) return <Empty>Nothing has been recorded for this project yet.</Empty>
 
   const counts = deriveVitestCounts(v)
-  // Where the suite ended up, not where it started. `last` is the first-pass
-  // record kept in history; it is worth a footnote, not the headline — a run
-  // that repaired its way to 51/51 was reading as 82%.
+  // Where the suite ended up, not where it started.
   const fullRate = counts.total ? Math.round((counts.passed / counts.total) * 100) : 0
   const repaired = last && counts.total ? Math.max(0, counts.passed - (last.passed || 0)) : 0
   const perf = qa?.performance?.scores || {}
@@ -141,15 +139,7 @@ const Card = ({ title, hint, children }) => (
 )
 const shortFile = (p) => String(p || '').split('/').pop()
 
-/**
- * Why the Lighthouse panel is empty.
- *
- * The stage no longer waits for a clean run — it measures the page the server
- * returns, and a journey failing three steps in says nothing about how that
- * page loads. The build is the only precondition left, because without it
- * there is no app to open. A bare "Lighthouse has not run" made an empty
- * panel look broken; name what is actually missing instead.
- */
+/** Why the Lighthouse panel is empty. */
 function perfSkipReason(r) {
   if (!r) return 'Lighthouse has not run.'
   if (r?.build && r.build.passed === false) {

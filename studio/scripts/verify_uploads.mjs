@@ -1,8 +1,4 @@
-/**
- * Uploading your own pictures must be opt-in and must not collide.
- * The build treats a key that is already on disk as done, so a wrong key
- * here silently means "drawn anyway" — the naming has to be exact.
- */
+/** Verify opt-in upload keys stay exact and collision-free. */
 import { keyFromName, uniqueKey, uploadMap } from '../lib/picture-keys.js'
 
 let fail = 0

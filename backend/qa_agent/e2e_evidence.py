@@ -1,4 +1,4 @@
-"""Runtime incident evidence, auth checks, role separation and integrity helpers."""
+"""Runtime evidence, auth checks, roles, and integrity helpers."""
 from .e2e_common import *
 
 

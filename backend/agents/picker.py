@@ -180,7 +180,6 @@ def render_index(files: dict) -> dict:
                 out.setdefault(target, set()).add(rel)
     return out
 
-
 def _route_of_page(rel: str) -> str:
     """`app/(auth)/login/page.jsx` -> `/login`."""
     parts = rel.split("/")[1:-1]
@@ -270,31 +269,6 @@ def guard_scope(old: str, new: str, *, anchor: str = "", removing: bool = False,
 
 REMOVAL_WORDS = ("remove", "delete", "hide", "get rid", "take out", "drop",
                  "ain karanna", "ayin karanna", "නැති කරන්න", "ඉවත් කරන්න")
-
-
-GLOBAL_WORDS = ("everywhere", "all pages", "every page", "site-wide",
-                "sitewide", "whole site", "across the site", "globally",
-                "all routes", "hama thanama", "hama page ekakama",
-                "siyaluma", "හැම තැනම", "හැම පිටුවකම", "සියලුම")
-
-
-def looks_like_global(instruction: str) -> bool:
-    """Whether the user said, in so many words, that they mean every page."""
-    low = (instruction or "").lower()
-    return any(w in low for w in GLOBAL_WORDS)
-
-
-PAGE_ONLY_WORDS = ("only", "just this", "just on", "this page", "here only",
-                   "on this route", "witharai", "vitharai", "විතරයි",
-                   "මේ පිටුවේ", "me page eke")
-
-
-def looks_like_page_only(instruction: str) -> bool:
-    """Whether the user has said they mean this one route."""
-    low = (instruction or "").lower()
-    if looks_like_global(low):
-        return False
-    return any(w in low for w in PAGE_ONLY_WORDS)
 
 
 ADDITION_WORDS = ("add", "insert", "append", "put a", "put an", "create",
@@ -414,40 +388,3 @@ def describe(el: dict) -> str:
     if chain:
         out += f"\nInside: {chain}"
     return out
-
-
-JSX_TEXT_RE = re.compile(r">\s*([^<>{}\n][^<>{}]{2,80}?)\s*<")
-
-
-ARRAY_STR_RE = re.compile(r"\[[^\]]*?\]")
-QUOTED_RE = re.compile(r"""['"]([^'"\n]{3,60})['"]""")
-
-
-def visible_strings(src: str) -> set:
-    """The words a page shows, normalised."""
-    out = set()
-    for m in JSX_TEXT_RE.finditer(src or ""):
-        t = " ".join(m.group(1).split())
-        if t and not t.startswith(("/", "*")) and any(c.isalpha() for c in t):
-            out.add(t)
-    for arr in ARRAY_STR_RE.findall(src or ""):
-        for t in QUOTED_RE.findall(arr):
-            t = " ".join(t.split())
-
-            if t and not re.search(r"\b(?:bg|text|border|flex|grid|p|m)-", t):
-                out.add(t)
-    return out
-
-
-def lost_content(old: str, new: str, tolerance: float = 0.2) -> str | None:
-    """What the rewrite dropped from the page, or None."""
-    before = visible_strings(old)
-    if len(before) < 4:
-        return None
-    gone = sorted(t for t in before if t not in (new or ""))
-    if len(gone) <= max(1, int(len(before) * tolerance)):
-        return None
-    sample = ", ".join(repr(t) for t in gone[:5])
-    return (f"the rewrite dropped {len(gone)} of {len(before)} things the page "
-            f"showed — {sample}. Put them back: this edit was meant to change "
-            f"the layout, not remove content")

@@ -1,20 +1,6 @@
 'use client'
 
-/**
- * Files attached to one of the editing chats — selection, section, or the
- * feature box.
- *
- * All three of those send a single instruction string to a model, so an
- * attachment becomes part of that string rather than a new message shape.
- * Nothing in `run_element_edit`, `run_pencil_edit` or `run_feature` changes,
- * and the three cannot drift apart as they would if each grew its own path.
- *
- * A picture is served both ways at once, because "put this on the page" and
- * "make it look like this" are equally likely and the difference is in the
- * words the user typed, not in the file. The server saves it where an `<img>`
- * can reach it AND reads it, so the block below carries the path and the
- * description together and the model picks the one the sentence asks for.
- */
+/** Files attached to an editing chat. */
 import { useCallback, useRef, useState } from 'react'
 
 import { api } from './api'
@@ -77,15 +63,8 @@ export function useEditAttachments() {
            busy: items.some(i => i.state === 'reading') }
 }
 
-/**
- * The text appended to the instruction.
- *
- * Written as headed sections rather than pasted in raw, because the model has
- * to be able to tell the user's sentence from the contents of their file — and
- * for a picture it has to be told that the path is real and already on disk, or
- * it invents a different one or leaves a placeholder.
- */
-export function blockFor(items) {
+/** The text appended to the instruction. */
+function blockFor(items) {
   const usable = (items || []).filter(i => i.read || i.url)
   if (!usable.length) return ''
 

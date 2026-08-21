@@ -217,7 +217,7 @@ def _apply_clarification(session: dict, st: dict) -> None:
 
 
 async def _sources_by_id(project_id: str, ids: list[str] | None) -> list[dict]:
-    """Resolve uploaded source ids, keeping the order the customer attached in."""
+    """Resolve sources while preserving attachment order."""
     wanted = [str(i) for i in (ids or []) if str(i).strip()]
     if not wanted:
         return []

@@ -1,4 +1,4 @@
-"""The shell that lets tests be written while the app is still being generated."""
+"""Shared state for tests authored during generation."""
 import json
 import logging
 import queue
@@ -94,7 +94,7 @@ def ensure_mocks(body: str, target_src: str) -> str:
 
 
 def drop_redundant_mocks(body: str) -> str:
-    """Remove a `vi.mock` for a module that already works — next/link, lucide-react."""
+    """Remove mocks for modules that already work in tests."""
     while True:
         m = _VI_MOCK_RE.search(body)
         if not m:
@@ -120,7 +120,7 @@ def drop_redundant_mocks(body: str) -> str:
 
 
 def add_helper_imports(body: str) -> str:
-    """Add the import for any AgentForge helper the test calls but did not import."""
+    """Import any called AgentForge helper that is missing."""
     if not body:
         return body
 
@@ -200,7 +200,6 @@ class QASessionBase:
         self.concurrent = False
         # Author tests while generation is happening.
         self.defer_execution = True
-        self.jobs_done = 0
         self.tokens = 0
 
     def _fire(self, name, *a):

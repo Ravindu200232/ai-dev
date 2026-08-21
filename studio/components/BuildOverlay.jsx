@@ -12,14 +12,7 @@ import { cn } from '@/lib/utils'
 import { displayPct, stillFor } from '@/lib/progress-model'
 import { stageIndex, stagesFor } from '@/lib/work-stages'
 
-/**
- * Stop the run, and say what stopping costs before it happens.
- *
- * Cancelling deletes the half-built project and the specification it was
- * built from, which is what was asked for and is also not something to do on
- * one stray click at the top of a screen someone is watching. So the button
- * asks once. The second press is the irreversible one and looks like it.
- */
+/** Stop the run, and say what stopping costs before it happens. */
 function CancelBuild() {
   const [asking, setAsking] = useState(false)
   const [sending, setSending] = useState(false)
@@ -29,8 +22,7 @@ function CancelBuild() {
     setSending(true)
     try {
       await api.cancelBuild()
-      // The run reports its own end over the socket — `cancelled` clears busy
-      // and empties the pane. Nothing to do here but wait for it.
+  // A cancelled run clears the busy state and output pane.
     } catch (e) {
       addLog('WARN', `could not cancel — ${e.message}`)
       setSending(false)
@@ -68,23 +60,9 @@ function CancelBuild() {
   )
 }
 
-// Five rows of the activity feed, and the same for the task list beside it so
-// the two panels stay level. A row is a title line, a detail line and the gap
-// under it.
 const PANEL_ROWS = 'h-[292px]'
 
-/**
- * What each kind of work is, and how much of the overlay it deserves.
- *
- * A first build has four stages and a plan of tasks; a pencil edit has one
- * file and a few seconds. Showing the four-stage rail for both said the same
- * thing about two jobs that share nothing, and the stage lamps for a pencil
- * edit were always going to read as stalled — there is no plan stage in an
- * edit to a single element.
- *
- * `rail` is what separates them: with it the build shape, without it a single
- * focused panel that says what is being changed and shows the log.
- */
+/** Labels and layout for each work type. */
 const WORK = {
   build:   { rail: true,  Icon: FileCode2, eyebrow: 'Building',
              title: 'Building the app' },
@@ -109,8 +87,6 @@ const STAGES = [
   { id: 'ready', label: 'Ready', Icon: Sparkles },
 ]
 
-// The lamps a smaller job lights, drawn by the same rail as a build so the
-// two read as the same product doing different amounts of work.
 const STAGE_ICONS = {
   brain: BrainCircuit, file: FileCode2, flask: FlaskConical,
   sparkles: Sparkles, bug: Bug, wrench: Wrench, pencil: Pencil,
@@ -132,11 +108,7 @@ function railFor(workKind, work, progress) {
 const PATIENT_AFTER = 45
 const SLOW_AFTER = 120
 
-/**
- * One line telling a non-technical person that the run is alive.
- * It never says "stuck": a long step here is normal, and saying otherwise
- * teaches people to cancel healthy builds.
- */
+/** One line telling a non-technical person that the run is alive. */
 function reassure(step, still, events) {
   const doing = String(step || '').replace(/[.…]+$/, '').trim()
   const latest = events && events.length ? events[events.length - 1] : null
@@ -185,8 +157,6 @@ export default function BuildOverlay() {
       seen.add(key)
       rows.push({ ...event, at: row.at })
     }
-    // The panel scrolls now, so the feed keeps its history instead of being
-    // trimmed to whatever fitted without one.
     return rows.slice(-60)
   }, [logs])
 
@@ -196,9 +166,7 @@ export default function BuildOverlay() {
 
   if (!busy || (tests.running && e2eLive)) return null
 
-  // Opening a stored project is not a build. It used to raise the whole
-  // Plan → Build → Check → Ready rail, so clicking a finished project in the
-  // sidebar read as though it had started generating one from scratch.
+  // Opening a stored project is not a build.
   if (opening) {
     return (
       <div className="absolute inset-0 z-[20] grid place-items-center bg-[linear-gradient(180deg,#f8faff_0%,#eef3fb_100%)] dark:bg-[linear-gradient(180deg,#161c28_0%,#0f141d_100%)]">
@@ -217,8 +185,6 @@ export default function BuildOverlay() {
 
   const work = WORK[workKind] || WORK.build
   const state = workKind && !work.rail
-    // A one-job run has no stages to resolve, and inferring them from log text
-    // produced headings about testing and repair that belonged to a build.
     ? { stage: '', eyebrow: work.eyebrow, title: work.title, detail: work.detail }
     : resolveState({ liveFile, tests, e2eLive, phases, logs, progress })
   const rail = railFor(workKind, work, progress)
@@ -233,10 +199,7 @@ export default function BuildOverlay() {
   const Icon = work.Icon
 
   return (
-    // The overlay scrolls. It used to be `overflow-hidden` over a `h-full`
-    // column, so on a short window — or once the stage rail and the header had
-    // taken their share — the Progress feed and the task list were cut off at
-    // the bottom edge with no way to reach the rest.
+    // The overlay scrolls.
     <div className="absolute inset-0 z-[20] overflow-y-auto bg-[radial-gradient(circle_at_30%_0%,rgba(105,117,255,.18),transparent_36%),linear-gradient(180deg,#f8faff_0%,#eef3fb_100%)] pb-16 dark:bg-[radial-gradient(circle_at_30%_0%,rgba(105,117,255,.18),transparent_36%),linear-gradient(180deg,#161c28_0%,#0f141d_100%)]">
       <div className="mx-auto flex min-h-full w-full max-w-[1120px] flex-col px-7 py-8">
         <div className="flex items-center gap-4">
@@ -270,9 +233,6 @@ export default function BuildOverlay() {
                style={{ width: `${pct ? Math.max(5, pct) : 11}%` }} />
         </div>
 
-        {/* Nobody watching a bar wants to wonder whether it has died. This
-            says what is happening, in the words someone who did not write
-            the backend would use. */}
         <p className="mt-3 flex items-center gap-2 text-[12px] leading-relaxed text-muted">
           <span className={cn('size-1.5 shrink-0 rounded-full',
             still > 90 ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse')} />
@@ -302,11 +262,6 @@ export default function BuildOverlay() {
         </div>
         )}
 
-        {/* Both panels are a fixed height rather than a share of whatever is
-            left. Sized by `flex-1` they grew with the run: a long build pushed
-            the whole overlay down the page and the preview under it went with
-            them. Five rows is what fits without either panel becoming the
-            page, and the rest is reached by scrolling inside it. */}
         <div className={cn('mt-8 grid gap-8',
                           rail.stages && 'lg:grid-cols-[1fr_360px]')}>
           <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] bg-white/72 p-6 shadow-[0_18px_55px_rgba(30,41,59,.08)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-white/[.035] dark:ring-white/[.05]">
@@ -328,10 +283,6 @@ export default function BuildOverlay() {
               )}
             </div>
 
-            {/* Scrolls, and follows. Five updates are visible and the newest
-                is always one of them — the list used to be capped at seven in
-                a box that could not scroll, so on a long build the stage that
-                had just happened was the one you could not see. */}
             <div className={cn('relative mt-6 overflow-y-auto pl-8 pr-1', PANEL_ROWS)}>
               <span className="absolute bottom-1 left-[10px] top-1 w-px bg-line2" />
               {events.map((event, i) => (
@@ -357,10 +308,7 @@ export default function BuildOverlay() {
           </div>
 
           {!work.rail && rail.stages ? (
-            /* A one-job run has no plan of tasks, so the column shows the
-               steps of this job instead. It is the same panel the build
-               uses for its phases, which is the point: a pencil edit is a
-               smaller run of the same machine, not a different screen. */
+            /* Show stage steps when the run has no task plan. */
             <aside className="flex min-h-0 flex-col overflow-hidden rounded-[28px] bg-white/72 p-6 shadow-[0_18px_55px_rgba(30,41,59,.08)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-white/[.035] dark:ring-white/[.05]">
               <p className="text-[15px] font-semibold text-ink">{work.eyebrow}</p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-muted">{work.detail}</p>
@@ -395,10 +343,7 @@ export default function BuildOverlay() {
               </div>
             </aside>
           ) : !work.rail ? null : phases.length > 0 ? (
-            /* The plan has tasks, so show them. A first build is the only run
-               that produces phases, and watching them tick over says more than
-               a restatement of the headline. Repairs and edits have no phases
-               and keep the panel below. */
+            /* The plan has tasks, so show them. */
             <TaskTable phases={phases} tests={tests} elapsed={elapsed} />
           ) : (
           <div className="flex min-h-0 flex-col justify-between rounded-[28px] bg-[#151b27] p-6 text-white shadow-[0_22px_58px_rgba(15,23,42,.2)] dark:bg-[#0b0f16]">
@@ -436,15 +381,7 @@ export default function BuildOverlay() {
   )
 }
 
-/**
- * The plan's tasks, ticking over as the build works down them.
- *
- * Shown in place of the dark "current work" card whenever the run has phases,
- * which in practice means a first build: a repair or an edit never produces
- * them and keeps the card. The styling follows the Progress panel beside it
- * rather than the old slab — two cards of the same material read as one
- * surface, where a black box beside a white one read as two.
- */
+/** The plan's tasks, ticking over as the build works down them. */
 function TaskTable({ phases, tests, elapsed }) {
   const done = phases.filter(p => p.status === 'done').length
   return (

@@ -306,7 +306,7 @@ def request_quota_increase(session, service_code: str, quota_code: str, desired:
 
 
 def check_permissions(session, actions: tuple[str, ...] = REQUIRED_ACTIONS) -> dict[str, Any]:
-    """Ask IAM whether the signed-in principal may perform each required action."""
+    """Check each required IAM action for the active principal."""
     identity = session.client("sts").get_caller_identity()
     arn = identity.get("Arn", "")
 
@@ -349,7 +349,7 @@ def check_permissions(session, actions: tuple[str, ...] = REQUIRED_ACTIONS) -> d
 
 
 def bootstrap_role_template(trusted_principal_arn: str = "") -> str:
-    """CloudFormation an administrator applies once to grant deploy permissions."""
+    """Build the one-time deployment permission stack."""
     import textwrap
 
     principal = str(trusted_principal_arn or "").strip()

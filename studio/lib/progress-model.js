@@ -1,15 +1,4 @@
-/**
- * One honest, forward-only progress number for a whole run.
- *
- * The backend does not report a single arc. Every sub-flow — a build, a
- * feature, an image, a repair — reports its own 0→100, so a run that has
- * reached 78% and then starts drawing a picture reports 20% next. The bar
- * used to follow that literally and appeared to go backwards.
- *
- * Here a lower number is read for what it is: a new piece of work starting,
- * not the run losing ground. Whatever has been earned is banked, and the new
- * sub-flow is given a share of the room that is left.
- */
+/** One honest, forward-only progress number for a whole run. */
 
 // Nothing is claimed above this until the run really finishes.
 export const CEILING = 97
@@ -30,7 +19,7 @@ export function emptyProgress() {
            at: 0, since: 0, started: false }
 }
 
-/** Fold one `{step, pct}` report in. The result never moves backwards. */
+/** Apply one progress report without moving backward. */
 export function advance(prev, step, rawPct, now = Date.now()) {
   const state = prev && typeof prev === 'object' ? prev : emptyProgress()
   const raw = clamp(Number(rawPct) || 0, 0, 100)
@@ -39,9 +28,7 @@ export function advance(prev, step, rawPct, now = Date.now()) {
   // A fresh run announces itself with 0.
   if (raw === 0) return { ...emptyProgress(), step: label, at: now, since: now, started: true }
 
-  // Whatever the creep has already shown someone is now owed to them. It was
-  // being displayed but not kept, so the next real report started from the
-  // smaller stored number and the bar visibly fell back.
+  // Whatever the creep has already shown someone is now owed to them.
   const shown = displayPct(state, now)
   const held = Math.max(state.pct, shown)
 

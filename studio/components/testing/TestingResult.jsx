@@ -64,15 +64,6 @@ export default function TestingResult() {
     setPdf(false)
   }
 
-  // A load retries four times with a pause between, so one can still be in
-  // flight when the project changes — and because this panel is keyed on the
-  // project it has been thrown away and rebuilt by then, leaving the old
-  // request to finish and write into the shared store anyway. Measured:
-  // opening one project showed the QA of the one before it, so a run with a
-  // full green suite read as "Nothing has been recorded for this project yet".
-  //
-  // The guard is the store rather than anything owned by this instance,
-  // because the instance that started the request no longer exists.
   async function load() {
     if (!project) return
     const want = project
@@ -98,9 +89,7 @@ export default function TestingResult() {
   }
 
   useEffect(() => { load() }, [project])
-  // `project` belongs in these deps: without it this effect keeps the closure
-  // from whichever render last flipped `live.running`, and reloads the QA of
-  // whatever project was open then.
+  // `project` belongs in these deps.
   useEffect(() => { if (!live.running && project) load() }, [live.running, project])
 
   const counts = useMemo(() => badges(qa), [qa])

@@ -21,11 +21,6 @@ MUTATION_PROSE_RE = re.compile(
     rf"\b(?:{_MUTATION_VERBS})\b|\bbooks?\s+(?:a|an|the|one|this|that|your|my|their)\b",
     re.I)
 
-READ_VERBS_RE = re.compile(
-    r"\b(?:shows?|lists?|displays?|views?|sees?|browses?|renders?|"
-    r"contains?|includes?)\b", re.I)
-
-
 def prose_mutates(text: str) -> bool:
     """Does this sentence describe changing stored data?"""
     return bool(MUTATION_PROSE_RE.search(str(text or "")))

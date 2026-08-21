@@ -65,8 +65,7 @@ class RefactorDecoratorCompatibilityTests(unittest.TestCase):
             self.assertIsInstance(mongo.data_dir, Path)
             self.assertIsInstance(mongo.pid_file, Path)
             self.assertEqual(mongo.bin_dir, Path(td) / "bin")
-            # Regression for /settings -> MONGO.status(): this must not attempt
-            # Path / bound-method after the monolith is split into mixins.
+            # Regression for /settings -> MONGO.status().
             status = mongo.status()
             self.assertIn("downloaded", status)
             self.assertIn("running", status)

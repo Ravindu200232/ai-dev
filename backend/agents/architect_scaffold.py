@@ -145,14 +145,8 @@ class ArchitectScaffoldMixin:
 
     UI_PORT = 7824
 
-    def trusted_origins(self) -> list:
-        """Every origin a browser can reach this app from."""
-        return [f"http://{host}:{port}"
-                for port in (self.dev_port, self.UI_PORT)
-                for host in ("localhost", "127.0.0.1")]
-
     def write_agent_files(self):
-        """`AGENTS.md` + `CLAUDE.md`, cooperating with Next rather than fighting it."""
+        """Write project guidance that works with Next.js."""
         if self.stack != "next":
             return
         ours = textwrap.dedent("""\
@@ -233,10 +227,7 @@ class ArchitectScaffoldMixin:
         "logged in", "signed in", "access",
     )
 
-    # Roles a stranger must never be handed for filling in a form. The last
-    # branch is the point: job titles are built out of a handful of endings,
-    # so a pharmacist, a dispatcher and a warden are all caught without this
-    # list ever having to name the trade.
+    # Roles a stranger must never be handed for filling in a form.
     PRIVILEGED_ROLE = re.compile(
         r"\b(admin\w*|owner|manager|management|staff|employee|moderator|mod|"
         r"super\w*|root|cashier|clerk|operator|seller|vendor|merchant|"
@@ -392,7 +383,7 @@ class ArchitectScaffoldMixin:
             """))
 
     def _keep_installed_deps(self, pkg: dict) -> None:
-        """Fold anything already declared into the package.json about to be written."""
+        """Merge existing declarations into the new package.json."""
         try:
             on_disk = json.loads(
                 (self.project_dir / "package.json").read_text(encoding="utf-8"))

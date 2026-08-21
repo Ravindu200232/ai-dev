@@ -22,8 +22,6 @@ class _NoQueue(Exception):
 DEFAULT_HOSTS = ("http://127.0.0.1:7865", "http://127.0.0.1:7860")
 
 
-PROMPT_LABEL = None
-NEGATIVE_LABEL = "Negative Prompt"
 ASPECT_LABEL = "Aspect Ratios"
 COUNT_LABEL = "Image Number"
 SEED_LABEL = "Seed"
@@ -208,7 +206,7 @@ class ImageAgent:
         args[self._slot(COUNT_LABEL, 7)] = 1
         use_seed = seed if seed else random.randint(1, 2 ** 31 - 1)
         if _attempt:
-            # A retry must not ask for the picture that was just rejected.
+            # A retry must avoid the last rejected picture.
             use_seed = (use_seed + _attempt * 7919) % (2 ** 31 - 2) + 1
         args[self._slot(SEED_LABEL, 9)] = str(use_seed)
 

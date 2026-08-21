@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .credentials import CREDENTIAL_VAULT
+from .security import redact_text
 
 CLIENT_NAME = "deployment-agent"
 CLIENT_TYPE = "public"

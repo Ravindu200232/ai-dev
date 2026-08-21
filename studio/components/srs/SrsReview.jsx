@@ -28,13 +28,7 @@ export default function SrsReview({ projectId, onApproved, onBack }) {
   const [viewing, setViewing] = useState(null)
   const box = useRef(null)
 
-  /**
-   * Throw this specification away and leave.
-   *
-   * The counterpart of Approve, and the same shape of decision: it is asked
-   * once before it happens, because what goes is everything written during
-   * the interview and nothing puts it back.
-   */
+  /** Throw this specification away and leave. */
   async function discard() {
     setBusy('discarding')
     try {
@@ -157,9 +151,6 @@ export default function SrsReview({ projectId, onApproved, onBack }) {
           </a>
         )}
 
-        {/* Approve sits beside the PDF button, not at the foot of a side
-            panel. It is the decision this whole screen exists to take, and it
-            was below the fold of a column that scrolls. */}
         <Button variant="solid" className="h-9 rounded-full px-4"
                 disabled={Boolean(busy) || Boolean(viewing)}
                 title={viewing ? 'Go back to the latest revision to approve it.'
@@ -170,9 +161,6 @@ export default function SrsReview({ projectId, onApproved, onBack }) {
             : <><Check className="size-3.5" /> Approve and build</>}
         </Button>
 
-        {/* Stopping is a decision this screen can take too, so it is offered
-            where the decision to go ahead is — not hidden behind Back, which
-            leaves the specification staged and looks like navigation. */}
         {asking ? (
           <span className="flex items-center gap-1.5">
             <span className="text-[10.5px] text-muted">Discard it?</span>
@@ -195,8 +183,6 @@ export default function SrsReview({ projectId, onApproved, onBack }) {
           </Button>
         )}
 
-        {/* The counts are a reference, not a permanent column. Opening them on
-            demand gives the document the width it was being denied. */}
         <button onClick={() => setSpecOpen(v => !v)}
                 title="The specification at a glance"
                 className={cn('flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[11px] font-semibold shadow-sm ring-1 transition',
@@ -306,8 +292,6 @@ export default function SrsReview({ projectId, onApproved, onBack }) {
           </div>
         </div>
 
-        {/* A drawer, opened from the header. `w-0` rather than unmounting so
-            the counts do not flash back in from nothing each time. */}
         <aside className={cn('flex shrink-0 flex-col overflow-hidden rounded-[24px]',
           'bg-white/62 shadow-[0_16px_42px_rgba(15,23,42,.06)] ring-1 ring-line/70',
           'backdrop-blur-xl transition-[width,opacity] duration-300 dark:bg-white/[.035]',

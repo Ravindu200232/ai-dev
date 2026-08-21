@@ -1,20 +1,15 @@
-"""Work out the real image keys behind `seedImage(`x-${row.field}`)`.
-
-Nothing here knows what any of those rows are. It reads the seed file the
-build actually wrote, finds the array the template loops over, and derives
-each row's key the same way the generated JavaScript does at runtime.
-"""
+"""Resolve image keys generated from seeded rows."""
 import re
 
 # Fields a row is usually named by, most specific first.
 LABEL_FIELDS = ("name", "title", "label", "full_name", "fullName",
                 "display_name", "displayName", "heading", "caption", "text")
 
-# Fields that are a slug of the row's label rather than a value of their own.
+# Fields derived from the row label.
 DERIVED_FIELDS = ("slug", "handle", "key", "code", "ref", "path", "permalink",
                   "identifier", "id", "_id", "uid")
 
-# `slug: slugify(d.name)`, `slug: d.name.toLowerCase()`, `key: kebab(x.title)`
+# Examples: `slugify(d.name)` and `kebab(x.title)`.
 _COMPUTED_RE = re.compile(
     r"[\w$]*\(?\s*(?:[\w$]+\s*\.\s*)?([A-Za-z_$][\w$]*)\s*\)?"
     r"(?:\s*\.\s*[\w$]+\s*\([^)]*\))*")
@@ -168,12 +163,7 @@ def _value_of(fields: dict, literals: dict, field: str) -> str:
 
 def template_keys(arch, body: str, at: int, prefix: str, expr: str,
                   suffix: str, *, strict: bool = True) -> dict:
-    """`{key: label}` for one `prefix${expr}suffix` template in `body`.
-
-    `strict` is for `seedImage`, which strips its key down to the safe set.
-    A raw `/generated/${row.name}.png` path keeps spaces, so it asks for the
-    loose check instead.
-    """
+    """Resolve one interpolated image-key template."""
     parts = [p.strip() for p in str(expr or "").split(".") if p.strip()]
     if not parts:
         return {}

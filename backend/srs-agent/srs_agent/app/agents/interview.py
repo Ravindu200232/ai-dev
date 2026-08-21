@@ -74,7 +74,7 @@ _BARE_RE = re.compile(r"[^a-z0-9 ]+")
 
 
 def _bare_word(text) -> str:
-    """An answer reduced to plain lowercase words, for matching against the sets."""
+    """Normalize an answer for set matching."""
     return _BARE_RE.sub("", str(text or "").lower()).strip()
 
 

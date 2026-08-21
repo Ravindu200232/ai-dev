@@ -1,14 +1,4 @@
-"""Do not compile the same bytes twice.
-
-Every verification stage ends by rebuilding, so it can tell whether its own
-repair broke the compile. That is the right instinct, but a stage that
-repaired nothing — or repaired only a test file — still pays sixty seconds
-for `next build` to reach the same answer it gave a minute ago.
-
-This records what was on disk the last time the build came back green. When
-a stage asks for a build and nothing the compiler reads has changed since,
-the answer is already known.
-"""
+"""Cache successful builds by content."""
 from __future__ import annotations
 
 import hashlib
@@ -26,7 +16,7 @@ CONFIG_FILES = ("package.json", "next.config.mjs", "next.config.js",
                 "postcss.config.js", ".env.local")
 SOURCE_EXT = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".css", ".json")
 
-# Things the compiler never reads, so a change here cannot break a build.
+# Files the compiler never reads.
 IGNORE_RE = re.compile(
     r"(^|/)(node_modules|\.next|\.git|\.agentforge|coverage|"
     r"tests?|__tests__|e2e|playwright-report|test-results)(/|$)", re.I)

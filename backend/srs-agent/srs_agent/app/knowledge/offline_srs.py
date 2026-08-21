@@ -400,11 +400,7 @@ def _derive_rtm(frs: list[dict], domain_tables: list[dict], protected_pages: lis
 
 
 def apply_real_details(doc: dict, answers=None, session=None) -> dict:
-    """Put the customer's own details on a document, in place.
-
-    Kept verbatim: the build seeds these instead of inventing a business.
-    An empty answer leaves the document exactly as it was.
-    """
+    """Apply customer details without inventing values."""
     if not isinstance(doc, dict):
         return doc
     real = _real_details(answers or [], session)
@@ -491,9 +487,7 @@ def merge_pack(skeleton: dict, pack: dict, answers=None, session=None) -> dict:
     roles = doc["roles"]
     doc["app_summary"].setdefault("target_users", [r["role_name"] for r in roles])
 
-    # Whatever real details the customer gave, kept verbatim. The build seeds
-    # these instead of inventing a business, and an empty answer leaves the
-    # document exactly as it was.
+    # Whatever real details the customer gave, kept verbatim.
     real = _real_details(answers or [], session)
     if real:
         doc["app_summary"]["organisation"] = real

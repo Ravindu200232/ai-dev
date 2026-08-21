@@ -40,18 +40,9 @@ class ArchitectNextScaffoldMixin:
               reactStrictMode: false,
               typescript: { ignoreBuildErrors: true },
               outputFileTracingRoot: process.cwd(),
-              // Forward browser console warnings and errors to the dev server's
-              // terminal, WITH their source location:
-              //   [browser] SummaryPanel is not defined (app/items/page.js:164:11)
-              // AgentForge captures that stream, so a client-side crash arrives with
-              // a file and a line instead of a bare message. Added in 16.2.
+              // Forward browser errors with source locations.
               logging: { browserToTerminal: 'warn' },
-              // Next 16 refuses dev requests whose origin it does not recognise,
-              // and answers 403 for every file under /_next/static. The page
-              // still returns 200, so it looks fine and runs no JavaScript —
-              // which is indistinguishable, from the outside, from an app whose
-              // buttons do nothing. Both the preview and the bug reproduction
-              // reach this app on 127.0.0.1, so both must be named here.
+              // Allow the preview's loopback origins in development.
               allowedDevOrigins: ['127.0.0.1', 'localhost'],
             }
 
@@ -103,14 +94,7 @@ class ArchitectNextScaffoldMixin:
             }}
 
             export default function RootLayout({{ children }}) {{
-              // suppressHydrationWarning is on <html> and <body> because
-              // extensions — Grammarly (data-gr-ext-installed), QuillBot
-              // (data-qb-installed), password managers — inject attributes
-              // into exactly these two elements before React hydrates. That
-              // produces a red "tree hydrated but some attributes … didn't
-              // match" overlay on every page for anyone running one, and it
-              // is not a fault in the app. The suppression is one level deep:
-              // real mismatches inside the tree are still reported.
+              // Ignore extension-added attributes at the document root.
               return (
                 <html lang="en" suppressHydrationWarning>
                   <body className="min-h-screen antialiased" suppressHydrationWarning>
@@ -142,17 +126,7 @@ class ArchitectNextScaffoldMixin:
             const uri = process.env.MONGODB_URI
             const dbName = process.env.MONGODB_DB
 
-            // Connected on FIRST USE, never when this file is imported.
-            //
-            // `new MongoClient(uri).connect()` at module scope opens a socket
-            // the moment anything imports this module — and `next build`
-            // imports every page and route during its "Collecting page data"
-            // pass. That made a running database a requirement to COMPILE the
-            // app, which is not a requirement it should have. It worked on a
-            // machine with mongod running and failed in CI, where the build
-            // died with `MongoServerSelectionError: connect ECONNREFUSED
-            // 127.0.0.1:27017`, blaming whichever route the collection worker
-            // happened to reach first.
+            // Connect lazily so builds do not require a running database.
             let clientPromise
 
             // Reuse across HMR reloads so dev doesn't leak a connection per edit.
@@ -171,8 +145,7 @@ class ArchitectNextScaffoldMixin:
               return clientPromise
             }
 
-            /** Awaitable exactly like the promise this replaced — it just does
-             *  not exist until something awaits it. */
+            /** A lazy awaitable matching the promise it replaced. */
             export default { then: (ok, no) => connection().then(ok, no) }
 
             export async function getDb() {
@@ -191,21 +164,7 @@ class ArchitectNextScaffoldMixin:
               return doc == null ? doc : JSON.parse(JSON.stringify(doc))
             }
 
-            // ---------------------------------------------------------------
-            // Files, stored in GridFS.
-            //
-            // A document has a 16MB ceiling, and one HD photo can pass it on
-            // its own — so an image kept inside the record it belongs to is a
-            // write that works until the day somebody uploads a real camera
-            // file. GridFS splits the bytes into 255KB chunks in a second
-            // collection and keeps only the metadata in `uploads.files`, so
-            // size stops being a limit at all.
-            //
-            // Documents store the URL these helpers return, never the bytes
-            // and never a base64 string: base64 is a third larger than the
-            // file it encodes, it cannot be cached by the browser, and it
-            // travels in full with every query that touches the row.
-            // ---------------------------------------------------------------
+            // Store large files in GridFS and keep only their URLs in rows.
 
             const BUCKET = 'uploads'
 
@@ -219,9 +178,7 @@ class ArchitectNextScaffoldMixin:
               return id ? `/api/files/${String(id)}` : ''
             }
 
-            // Everything callers actually hand us, as chunks. A web `File`
-            // from `request.formData()` is streamed rather than buffered, so
-            // a large upload never has to sit in memory in one piece.
+            // Stream every supported input without buffering the whole file.
             async function* chunksOf(source) {
               if (source == null) throw new Error('putFile: nothing to store')
               if (Buffer.isBuffer(source)) { yield source; return }
@@ -250,10 +207,7 @@ class ArchitectNextScaffoldMixin:
               })
             }
 
-            /**
-             * Store bytes and get back `{ id, url, filename, contentType, length }`.
-             * Accepts a File/Blob from a form, a Buffer, a Uint8Array or a stream.
-             */
+            /** Store bytes and return their file metadata. */
             export async function putFile(source, opts = {}) {
               const bucket = await getBucket()
               const filename = opts.filename || source?.name || 'upload'
@@ -281,12 +235,7 @@ class ArchitectNextScaffoldMixin:
                        contentType, length: upload.length || 0 }
             }
 
-            /** `putFile`, but only the first time for this `key`.
-             *  Seeding runs again on every empty database and must not pile up
-             *  a fresh copy of the same picture each time. Bytes are hashed
-             *  too, so two keys that happen to hold the same picture share one
-             *  stored file instead of two — the seeder generates in parallel
-             *  and a repeated prompt is a real possibility. */
+            /** Store one copy per key or content hash. */
             export async function putFileOnce(key, source, opts = {}) {
               const db = await getDb()
               const files = db.collection(`${BUCKET}.files`)
@@ -343,15 +292,7 @@ class ArchitectNextScaffoldMixin:
               } catch { return false }
             }
 
-            /**
-             * The URL for a generated picture, uploading it on first use.
-             *
-             * Seed data refers to images by key — `seedImage('facility')` —
-             * and gets back a real URL backed by GridFS. If image generation
-             * was switched off and no file was ever produced, the static path
-             * is returned instead, so seeding still succeeds and the app still
-             * renders.
-             */
+            /** Resolve a generated image key to GridFS or a static fallback. */
             export async function seedImage(key, opts = {}) {
               const name = String(key || '').replace(/[^A-Za-z0-9._-]/g, '')
               if (!name) return '/generated/placeholder.png'
@@ -415,11 +356,7 @@ class ArchitectNextScaffoldMixin:
             export const runtime = 'nodejs'
             export const dynamic = 'force-dynamic'
 
-            // A stored file is served back with its own type so <img> works —
-            // but never with a type the browser will EXECUTE. An upload form
-            // that accepts a .html file and serves it as text/html is stored
-            // XSS on the app's own origin, cookies included. Anything not on
-            // this list is sent as a download instead.
+            // Render only safe inline types; download everything else.
             const INLINE = new Set([
               'image/png', 'image/jpeg', 'image/gif', 'image/webp',
               'image/avif', 'image/bmp', 'image/x-icon', 'application/pdf',
@@ -466,17 +403,7 @@ class ArchitectNextScaffoldMixin:
 
             const MAX_MB = Number(process.env.MAX_UPLOAD_MB || 25)
 
-            /**
-             * Upload one file and get `{ id, url }` back.
-             *
-             *   const body = new FormData()
-             *   body.append('file', input.files[0])
-             *   const { url } = await fetch('/api/files', { method: 'POST', body })
-             *     .then(r => r.json())
-             *
-             * Store that `url` on the document. Do not read the file into a
-             * base64 string and do not send it as JSON.
-             */
+            /** Upload one file and return its id and URL. */
             export async function POST(request) {
               let form
               try {
@@ -548,17 +475,7 @@ class ArchitectNextScaffoldMixin:
               },
               secret: process.env.BETTER_AUTH_SECRET,
               baseURL: process.env.BETTER_AUTH_URL,
-              // Better Auth answers "Invalid origin" — visible on the form,
-              // with no account created — for any Origin not matched here.
-              // This app is reachable several ways: the dev server directly,
-              // AgentForge's preview proxy on another port, each under both
-              // `localhost` and `127.0.0.1` (different origins to a browser;
-              // Electron uses one and a normal tab the other), and the port
-              // moves when one is busy.
-              //
-              // Enumerating them is how this broke the first time, so match on
-              // the pattern instead — `*` is supported and only widens to
-              // loopback. A remote origin is still refused with 403, verified.
+              // Trust loopback preview origins on any available port.
               trustedOrigins: {TRUSTED_ORIGINS},
               // Must be last: it is what lets a Server Action or route handler
               // set the session cookie on the response.
@@ -584,14 +501,9 @@ class ArchitectNextScaffoldMixin:
             self.write_own("app/api/auth/[...all]/route.js", textwrap.dedent("""\
                 import { toNextJsHandler } from 'better-auth/next-js'
 
-                // Serves every auth endpoint: /api/auth/sign-in/email,
-                // /api/auth/sign-up/email, /api/auth/sign-out,
-                // /api/auth/get-session.
+                // Serve every Better Auth endpoint.
 
-                // Never at module scope: importing `@/lib/auth` builds the
-                // Better Auth instance, which connects to MongoDB, and
-                // `next build` imports this file while collecting page data.
-                // Built once and reused, on the first request.
+                // Build auth lazily so compilation never opens MongoDB.
                 let handlers
                 async function ready() {
                   if (!handlers) {
@@ -688,8 +600,7 @@ class ArchitectNextScaffoldMixin:
         return "\n\n".join(out)
 
 
-# A neutral 320x240 card. Any picture that was never drawn falls back to it,
-# so a page shows a calm grey frame instead of a broken image.
+# A neutral 320x240 card.
 PLACEHOLDER_PNG_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAIAAAD+Tyo8AAADMUlEQVR42u3TN24D"
     "QRREQd7/XhLNLikTyXvvziBAgNKZoIPhB6rQR+i3+AHKWnwDZQkYBAwIGBAwCBgQ"

@@ -33,7 +33,7 @@ class E2EGroundingMixin:
                    for a in aliases if a)
 
     def _field_is_grounded(self, key: str, hay: str) -> bool:
-        """True when runtime/source evidence actually exposes a matching form field."""
+        """Check whether evidence exposes a matching form field."""
         key = str(key or "").strip().lower()
         if not key or not hay:
             return False
@@ -60,10 +60,7 @@ class E2EGroundingMixin:
             return True
         return False
 
-    # Headings and button copy the app really renders. A refusal that does not
-    # carry these is a refusal the model cannot act on: it rewrites blind,
-    # picks another string that is not there, and the journey dies on the
-    # second attempt having never been told what WAS available.
+    # Headings and button copy the app really renders.
     _COPY_RE = re.compile(
         r">\s*([A-Z][^<>{}\n]{3,60}?)\s*<"                # >Featured Projects<
         r"|<h[1-6][^>]*>\s*\{?['\"`]?([^<>{}'\"`\n]{4,60})",  # heading text

@@ -1,12 +1,4 @@
-"""v26 — the author gets the fields the app has, the way it gets the test ids.
-
-Measured on a library build: the journey that registers a member failed on
-`nothing matched field 'name'` against a register form that has no such
-control, after every other gate had proved the app correct. The prompt already
-said to choose only fields present in the evidence — and the evidence was
-thousands of characters of JSX. A closed list is checkable; a source dump is
-not, which is exactly why the test ids got a list.
-"""
+"""Regression tests for generated field allowlists."""
 import unittest
 from pathlib import Path
 from types import SimpleNamespace

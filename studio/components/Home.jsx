@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { ArrowRight, Loader2, PencilLine, Sparkles } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { send } from '@/lib/ws'
@@ -55,8 +55,7 @@ export default function Home({ onStarted }) {
 
   function begin(p, srs = '') {
     if (!p) return
-    // The look is settled first: it is the cheapest thing to change and the
-    // one the rest of the build is written against.
+    // The look is settled first.
     if (agentMode) return setThemeFor({ idea: p, srs })
     startBuild(p, '', srs)
   }
@@ -104,22 +103,15 @@ export default function Home({ onStarted }) {
 
       await api.saveSettings({ srs_model: models.srs || models.agent || '' })
         .catch(() => { })
-      // A project has to exist before anything can be attached to it, and the
-      // idea is required — so somebody who uploaded a spec and typed nothing
-      // still gets a project, with the document as the thing that describes it.
+  // Attachments need a project and a written idea.
       const created = await api.srs('/projects', { idea: idea || 'See the attached files.' })
       const id = created.project.id
 
       if (files) {
-        // Before `analyze`, not after: the questions are generated from the
-        // brief, and the brief is the idea plus every source. Attaching the
-        // price list after the questions exist means being asked what is on it.
+        // Before `analyze`, not after.
         s.setSrs({ srsId: id, srsBusy: `Reading your ${files === 1 ? 'attachment' : `${files} attachments`}…` })
         const { ids, failed } = await attach.upload(id)
 
-        // Nothing typed and nothing readable is nothing to plan from, so say so
-        // rather than interview them about an idea that does not exist. With an
-        // idea typed, a failed attachment is a warning: the rest still works.
         if (failed && !ids.length && !idea) {
           throw new Error(files === 1
             ? 'that file could not be read, and there is nothing typed to go on'
@@ -154,9 +146,7 @@ export default function Home({ onStarted }) {
     )
   }
 
-  // The interview gets the whole pane, the way the review already does. It is
-  // three columns — what has been asked, the question, and the record being
-  // built — and none of that fits in the 860px well the intake is set in.
+  // The interview gets the whole pane, the way the review already does.
   if (srsPhase === 'interview' && srsId) {
     return (
       <Interview projectId={srsId}
@@ -166,18 +156,9 @@ export default function Home({ onStarted }) {
   }
 
   return (
-    // Flush left and unadorned. Nothing is centred, nothing glows behind it:
-    // the page is held together by the mark's edge, the rule under the
-    // lockup, and the column the copy is set in.
-    // `my-auto` on the block rather than `justify-center` on the scroller:
-    // centring a flex column taller than its box pushes the top out of reach,
-    // and the lockup is the first thing that goes.
+    // Flush left and unadorned.
     <div className="relative flex min-h-0 flex-1 flex-col overflow-auto bg-[radial-gradient(circle_at_30%_10%,rgba(93,106,251,.12),transparent_34%),radial-gradient(circle_at_85%_80%,rgba(80,180,255,.10),transparent_32%)] px-6">
       <div className="relative mx-auto my-auto w-full max-w-[980px] py-8">
-        {/* The mark set against the wordmark in type, rather than the drawn
-            lockup. The wordmark is the heading face at its largest — it is
-            the one place in the studio the type is allowed to be the artwork
-            — and the mark prints square, ruled, and in black and white. */}
         <div className="glass-panel grid grid-cols-[auto_1fr] items-center gap-5 rounded-[28px] p-6">
           <img src="/__agentforge/agentforge-mark.png"
                alt="AgentForge Studio — AI-powered full stack app builder"
@@ -196,8 +177,6 @@ export default function Home({ onStarted }) {
           </div>
         </div>
 
-        {/* What the studio does, and what it will do it with — two cells of
-            one band, divided by a rule. */}
         <div className="mt-5 grid grid-cols-[1fr_320px] gap-5">
           <p className="soft-card m-0 p-4 text-[14px] leading-[1.55] text-ink">
             Describe an app. It gets planned, written, tested, repaired and

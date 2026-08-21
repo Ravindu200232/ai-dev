@@ -125,7 +125,7 @@ export default function PreviewPane({ hidden }) {
     return () => clearInterval(id)
   }, [syncPath])
 
-  // Mirror the route used by the real Playwright browser in the visible preview.
+    // Mirror the Playwright route in the visible preview.
   useEffect(() => {
     const route = String(e2eLive?.route || '')
     if (!tests.running || !route.startsWith('/')) return
@@ -360,10 +360,6 @@ export default function PreviewPane({ hidden }) {
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col bg-transparent', hidden && 'hidden')}>
       <div className="flex h-[54px] shrink-0 items-center gap-3 border-b border-line/70 bg-white/72 px-4 backdrop-blur-2xl dark:bg-white/[.03]">
-        {/* Spaced pills, not a segmented bar. The hairlines between these
-            three were the only dividers left in the toolbar — the viewport
-            group and the edit-tool group beside them already sit as separate
-            pills, so the row read as two styles of control side by side. */}
         <div className="flex items-center gap-1 rounded-full border border-line/80 bg-panel/90 p-1 shadow-sm">
           <Cell tip={nav.back ? 'Back' : 'Nothing to go back to'}
                 disabled={!nav.back} onClick={() => step(-1)} className="rounded-full px-3">

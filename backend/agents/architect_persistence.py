@@ -1,4 +1,4 @@
-"""Output verification, existing-project loading and conversation persistence."""
+"""Output checks, project loading, and conversation storage."""
 from .architect_common import *
 
 

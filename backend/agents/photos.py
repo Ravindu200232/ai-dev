@@ -1,4 +1,4 @@
-"""Real photographs for the demo pages, inlined so they survive going offline."""
+"""Offline-safe photos for demo pages."""
 from __future__ import annotations
 
 import base64
@@ -170,9 +170,3 @@ def fill(html: str, settings: dict | None = None,
                        + ("" if got == len(phrases) else
                           f" — {len(phrases) - got} drawn as placeholders"))
     return filled, got
-
-
-def configured(settings: dict | None = None) -> bool:
-    settings = settings or {}
-    return bool(str(settings.get("unsplash_key", "")).strip()
-                or str(settings.get("pexels_key", "")).strip())

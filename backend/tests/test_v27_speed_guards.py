@@ -1,12 +1,4 @@
-"""v27 — work that is repeated with nothing changed in between.
-
-Three measured wastes from one 27-minute build: the API stage re-attacked the
-finding the runtime stage had just given up on (67s, a second model rewrite, a
-fifth production build, a sixth dev boot); an E2E repair bought a second round
-for a hypothesis one word apart from the one the browser had already refuted
-(21s); and `warm()` paid every route's first-compile one after another when
-`next dev` compiles them in parallel.
-"""
+"""Regression tests for repeated-work guards."""
 import importlib
 import unittest
 from pathlib import Path

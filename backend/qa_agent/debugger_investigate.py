@@ -1,4 +1,4 @@
-"""Agentic E2E investigation loop, tool execution and runtime-source prioritization."""
+"""E2E investigation, tool use, and runtime source selection."""
 from .debugger_common import *
 
 

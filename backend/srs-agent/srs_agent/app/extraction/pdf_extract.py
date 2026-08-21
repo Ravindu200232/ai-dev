@@ -1,4 +1,4 @@
-"""Reading a PDF: its text layer where it has one, the model where it does not."""
+"""Read PDF text directly or through the model."""
 from __future__ import annotations
 
 import asyncio

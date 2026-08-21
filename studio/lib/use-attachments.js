@@ -1,20 +1,6 @@
 'use client'
 
-/**
- * Files a customer attaches while describing their app, and the recorder that
- * makes one.
- *
- * Uploading is explicit rather than automatic. The first input box has no
- * project to attach anything to until "Plan it first" creates one, so the files
- * wait and are sent the moment the id exists — and the caller has to be able to
- * await that, because the questions the interview asks are generated from the
- * sources. An effect firing somewhere inside a child component cannot be
- * awaited, so `upload(projectId)` is a plain function the caller drives.
- *
- * Uploads run one at a time on purpose. Each one may put a scanned page or a
- * photo in front of a vision model, and three of those at once on a local
- * model is how you turn a working upload into a timeout.
- */
+/** Idea attachments and audio recording. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api, uploadMode } from './api'
@@ -23,7 +9,7 @@ let seq = 0
 
 const KIND = { pdf: 'document', image: 'picture', voice: 'recording', text: 'file' }
 
-export function describeFile(file) {
+function describeFile(file) {
   return KIND[uploadMode(file)] || 'file'
 }
 
@@ -43,14 +29,12 @@ export function useAttachments() {
       kind: describeFile(file),
       state: 'waiting',
       note: '',
-      // What this file is for, in the person's own words. Blank is allowed —
-      // it is a hint, not a gate.
+      // What this file is for, in the person's own words.
       purpose: '',
       url: '',
       read: '',
       sourceId: '',
-      // Which project the id above belongs to. A source id is meaningless to
-      // any other project, so this is what "already sent" is measured against.
+  // Project that owns the attachment id.
       sentTo: '',
     }))
     if (fresh.length) setItems(list => [...list, ...fresh])
@@ -66,21 +50,12 @@ export function useAttachments() {
 
   const reset = useCallback(() => setItems([]), [])
 
-  /**
-   * Send everything not already sent. Returns the source ids, which is what
-   * `InterviewAnswer.attachments` wants.
-   *
-   * One file failing does not fail the rest: a customer who attaches a recording
-   * and a price list, where only the recording cannot be decoded, should still
-   * have their price list read.
-   */
+  /** Send everything not already sent. */
   const uploading = useRef(false)
 
   const upload = useCallback(async projectId => {
     if (!projectId) return { ids: [], failed: 0 }
-    // Re-entrancy guard. Without it a second call sees files whose upload is
-    // still in flight — they have no source id yet — and sends every one of
-    // them again, duplicating the sources on the project.
+    // Re-entrancy guard.
     if (uploading.current) return { ids: [], failed: 0 }
     uploading.current = true
 
@@ -88,14 +63,7 @@ export function useAttachments() {
       let queue = []
       const already = []
       setItems(list => {
-        // Assignment, not append: React may invoke an updater twice in
-        // development, and appending would upload every file two times.
-        //
-        // Keyed on `sentTo`, not on `sourceId` alone. Going Back out of the
-        // interview abandons the project but leaves this component mounted
-        // with its files still listed, so the next "Plan it first" creates a
-        // NEW project — and an id issued by the old one names nothing in it.
-        // Testing `sourceId` sent those files nowhere, for ever.
+        // Assignment, not append.
         queue = list.filter(it => it.sentTo !== projectId)
         already.length = 0
         already.push(...list.filter(it => it.sentTo === projectId && it.sourceId)
@@ -119,10 +87,7 @@ export function useAttachments() {
             sourceId: id,
             sentTo: id ? projectId : '',
             read: text,
-            // `note` is the extractor's own warning — "some pages are scans",
-            // "read by OCR only". It is the difference between a file that was
-            // read and one that was merely accepted, so it is shown rather than
-            // swallowed.
+      // Keep extraction warnings such as scan or OCR notices.
             url: res?.url || '',
             note: res?.note || (text ? '' : 'Nothing could be read from this one.'),
           })
@@ -149,13 +114,7 @@ export function useAttachments() {
   }
 }
 
-/**
- * Recording an answer instead of typing it.
- *
- * MediaRecorder's default container is whatever the browser prefers — webm on
- * Chromium, mp4 on Safari — so the type is read back off the recorder rather
- * than assumed, and the extension follows it. faster-whisper decodes both.
- */
+/** Recording an answer instead of typing it. */
 export function useRecorder(onClip) {
   const [recording, setRecording] = useState(false)
   const [error, setError] = useState('')
@@ -165,16 +124,11 @@ export function useRecorder(onClip) {
   const stream = useRef(null)
   const starting = useRef(false)
 
-  // Kept in a ref so `start` stays stable: the caller passes an inline arrow,
-  // which would otherwise rebuild the callback on every render.
+  // Kept in a ref so `start` stays stable.
   const clip = useRef(onClip)
   clip.current = onClip
 
-  // Stopping the tracks is what turns the browser's recording indicator off.
-  // This runs on unmount too, and unmount-while-recording is easy to reach:
-  // pressing "Plan it first" mid-recording tears down the whole idle block.
-  // Without it the microphone stays live for the rest of the session with no
-  // way left in the UI to release it.
+      // Stop the tracks to clear the recording indicator.
   const release = useCallback(() => {
     clearInterval(ticker.current)
     ticker.current = null
@@ -193,10 +147,6 @@ export function useRecorder(onClip) {
 
   const start = useCallback(async () => {
     setError('')
-    // `recording` only becomes true after getUserMedia resolves, and the first
-    // use of the microphone puts a permission prompt in that gap. A second
-    // click during it would open a second stream and overwrite the only
-    // reference to the first, leaking it permanently.
     if (starting.current || rec.current?.state === 'recording') return
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       return setError('This browser cannot record audio.')

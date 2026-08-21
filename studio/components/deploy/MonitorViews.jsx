@@ -27,8 +27,7 @@ export function StatusBar({ snap, state }) {
 
   const live = String(state || '').toUpperCase() === 'LIVE'
   return (
-    // One ruled band across the pane: the state at the left in the heading
-    // face, then every fact as a label-and-figure pair. Nothing is boxed.
+    // One ruled band across the pane.
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b-2
                     border-line2 bg-panel2 px-4 py-[11px]">
       <span className="flex items-center gap-2 font-display text-[12.5px]
@@ -69,9 +68,6 @@ export function Overview({ snap }) {
 
   return (
     <div className="space-y-4">
-      {/* The score is the largest thing on the page, set in the heading face
-          and coloured only when it is short of the bar. The bar itself is a
-          ruled trough with the agent's own mark struck through it at 90. */}
       <div className="border border-line2 p-5">
         <div className="flex items-baseline gap-3.5">
           <span className={cn('font-display text-[64px] font-extrabold leading-[.9]',

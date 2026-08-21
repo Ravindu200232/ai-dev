@@ -107,10 +107,7 @@ def _repair_runtime(arch, proj_dir: Path, qa, analyzer, all_errors: str,
         return written
 
     if strict_scope:
-        # Scope stays: the repair may only touch the files the evidence
-        # pointed at. What is gone is the refusal to try at all — the fix is
-        # still checked by the parser and the production build, and rolled
-        # back whole if either says no.
+    # Keep repairs within the evidence-backed files.
         elog("WARN", "   ⚠ the scoped repair produced no change; the evidence "
                      "named nothing this fixer is allowed to edit")
         return []

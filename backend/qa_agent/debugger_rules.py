@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import re
+import logging
 from urllib.parse import urlparse
+
+log = logging.getLogger(__name__)
 
 
 def _route_source(route: str, files: dict[str, str]) -> str:
@@ -96,12 +99,7 @@ _EMPTY_IMG_RE = re.compile(
 
 
 def diagnose_broken_images(agent, arch, failures, packet: str) -> dict | None:
-    """A picture the page asks for and the build never drew.
-
-    An empty photo is a real defect, but the browser reports it as a quiet
-    404 rather than a failed step, so it used to sail past the E2E. The seed
-    is named here because that is where the key is invented.
-    """
+    """Find images requested but never generated."""
     files = getattr(arch, "files", None) or {}
     hits = []
     for line in str(packet or "").splitlines():
@@ -153,14 +151,7 @@ _NAVIGATION_PARAMS = {"page", "sort", "order", "q", "query", "search", "filter",
 
 
 def diagnose_native_form_submit(agent, arch, failures, packet: str) -> dict | None:
-    """A form that navigates instead of saving.
-
-    A `<form>` with no submit handler does what HTML has always done: it
-    reloads its own page with every field as a query parameter. Nothing is
-    written, no API is called, and the browser reports only that the URL did
-    not change to what the journey expected — which reads like a routing
-    problem and is not one.
-    """
+    """Detect forms that navigate instead of saving."""
     text = str(packet or "")
     for f in failures or []:
         text += "\n" + str(getattr(f, "message", "") or "")

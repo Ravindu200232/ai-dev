@@ -198,10 +198,6 @@ class ArchitectBoundaryMixin:
         """Named imports of a local module that the module does not export."""
         return group_messages(check_named_imports(self.files))
 
-    def _stems(self) -> set:
-        """Every written path with its.js/.jsx extension stripped."""
-        return {re.sub(r"\.jsx?$", "", p) for p in self.files}
-
     def missing_planned_files(self) -> list:
         """Files the plan promised that no phase actually produced."""
         planned = [f["path"] for p in self.plan.get("phases", [])

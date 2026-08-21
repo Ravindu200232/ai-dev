@@ -22,7 +22,7 @@ class AnalyzerRepairFindingsMixin:
         if not files:
             return []
 
-        # The prose plan tells us the user journey.
+        # Use the prose plan as the journey source.
         machine_lines = []
         plan_obj = getattr(self.arch, "plan", None) or {}
         for c in plan_obj.get("capabilities") or []:
@@ -155,5 +155,4 @@ class AnalyzerRepairFindingsMixin:
             if len(findings) >= 5:
                 break
         return findings
-
 

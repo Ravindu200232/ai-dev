@@ -51,7 +51,7 @@ def _where_in_file(before: str, element: dict, line: int = 0) -> str:
 
 
 def _section_span(element: dict) -> str:
-    """The two elements that bound the selected section: its first and its last."""
+    """Find the first and last elements in a selected section."""
     sec = element.get("section") or {}
     first, last = sec.get("start"), sec.get("end")
     if not isinstance(first, dict) or not isinstance(last, dict):
@@ -145,44 +145,6 @@ def _log_reach(rel: str, shared: list, route: str = "") -> None:
                  f"others as they are.")
 
 
-def _scope_verdict(rel: str, shared: list, instruction: str,
-                   route: str = "", ask: bool = True) -> str:
-    """`""` go ahead · `"scoped"` do it for this route only · `"asked"` stop."""
-    if len(shared) <= 1:
-        return ""
-    where = route or "this page"
-    if looks_like_global(instruction):
-        elog("WARN", f"   🌐 {rel} is rendered on {len(shared)} routes — "
-                     f"changing all of them, as asked")
-        return ""
-    if looks_like_page_only(instruction):
-        elog("INFO", f"   📐 {rel} is on {len(shared)} routes — changing "
-                     f"{where} only, as asked")
-        return "scoped"
-    if not ask:
-        # Said, not asked.
-        elog("WARN", f"   🌐 {rel} is on {len(shared)} routes, so this changes "
-                     f"all of them: {', '.join(shared[:6])}"
-                     + (f" (+{len(shared) - 6} more)" if len(shared) > 6 else ""))
-        elog("INFO", f"      Add “— on {where} only” next time to keep the "
-                     f"others as they are.")
-        return ""
-    elog("WARN", f"   🛑 Not done yet — that lives in {rel}, which is rendered "
-                 f"on {len(shared)} routes, not just {where}:")
-    elog("WARN", f"      {', '.join(shared[:8])}"
-                 + (f" (+{len(shared) - 8} more)" if len(shared) > 8 else ""))
-    elog("INFO", f"      Say “{instruction.strip()[:60]} — everywhere” to "
-                 f"change all of them,")
-    elog("INFO", f"      or “{instruction.strip()[:60]} — on {where} only” to "
-                 f"keep the others as they are.")
-    emit({"type": "ask", "kind": "scope", "file": rel, "routes": shared[:12],
-          "route": route,
-          "options": [f"{instruction.strip()[:60]} — on {where} only",
-                      f"{instruction.strip()[:60]} — everywhere"]})
-    eprog("Waiting for you", 0)
-
-    edone("", "", preview=route or "/")
-    return "asked"
 
 
 def _reach_label(arch, rel: str, route: str = "") -> str:

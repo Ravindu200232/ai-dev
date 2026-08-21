@@ -56,7 +56,7 @@ def _strip_fence(text: str) -> str:
 
 
 def _strip_accidental_path_close(text: str, path: str | None) -> str:
-    """Remove a leaked file-protocol/path closing tag from the end of a file body."""
+    """Remove a leaked path closing tag from a file body."""
     body = text or ""
     rel = (path or "").strip().replace("\\", "/").lstrip("./")
     if not rel:
@@ -75,7 +75,7 @@ def _clean_streamed_file_body(text: str, path: str | None) -> str:
 
 
 def _safe_flush_len(buf: str, tag: str) -> int:
-    """How much of `buf` can be emitted without risking a tag split across chunk."""
+    """Find the safe emit boundary without splitting a tag."""
     for k in range(min(len(tag) - 1, len(buf)), 0, -1):
         if buf.endswith(tag[:k]):
             return len(buf) - k

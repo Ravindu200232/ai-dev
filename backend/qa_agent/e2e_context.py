@@ -1,6 +1,6 @@
 """Project, route, account and runtime-evidence discovery for E2E journeys."""
 from .e2e_common import *
-# `journey_source_bundle` falls back to it when the caller has
+# Capability contracts provide a fallback journey bundle.
 from .e2e_contract import capability_contract
 
 
@@ -13,7 +13,6 @@ class E2EContextMixin:
         self.qa = session
         self.az = analyzer
         self.base_url = base_url.rstrip("/")
-        self.scenarios = []
         # Runtime DOM evidence is read-only and cached per role/journey.
         self._runtime_evidence_cache = {}
         # Per-role, per-route DOM snapshots.
@@ -21,7 +20,6 @@ class E2EContextMixin:
         self._runtime_dynamic_cache = {}
         self._warmed_routes = set()
         self._last_run_evidence = {}
-        self._last_cookie_jar = {}
         # Browser-loop circuit breaker.
         self._route_loop_fault = ""
         self._page_path_cache = None
@@ -369,7 +367,6 @@ class E2EContextMixin:
         except Exception:
             return ""
 
-    MARKUP_BUDGET = 30_000
     JOURNEY_PAGES = 8
 
     def _journey_pages(self, journey: dict = None) -> list:

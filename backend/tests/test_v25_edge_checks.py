@@ -1,10 +1,4 @@
-"""v25 — the questions no journey asks.
-
-Every gate checked whether the app does what it promises. None asked what it
-does with a wrong password or a link to a row that is gone, which are the two
-answers a real user finds first. Both run inside the browser context
-`global_integrity` already opened, so they cost navigations, not journeys.
-"""
+"""Regression tests for edge-case checks."""
 import re
 import unittest
 from pathlib import Path

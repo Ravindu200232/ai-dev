@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections import defaultdict, deque
+from collections import defaultdict
 from typing import Optional
 
 from reportlab.graphics.shapes import Circle, Drawing, Ellipse, Group, Line, Polygon, Rect, String

@@ -1,4 +1,4 @@
-"""Prose said "a small app"; the numbers demanded a big one. The numbers won."""
+"""Numeric scope must not override a small-app request."""
 import re
 import tempfile
 import unittest

@@ -1,4 +1,4 @@
-"""AgentForge's QA layer: tests written while the app generates, then run and fixed."""
+"""AgentForge test authoring, execution, and repair."""
 from .author import UnitTestAuthor
 from .e2e import E2EAgent
 from .debugger import AgenticE2EDebugger, DebugNotebook

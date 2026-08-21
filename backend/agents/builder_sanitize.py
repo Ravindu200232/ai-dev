@@ -3,16 +3,6 @@ from .builder_common import *
 
 
 class BuilderSanitizeMixin:
-    def _quick_check(self, code: str, component_name: str) -> str:
-        """Lightweight sanity check after extraction."""
-        if not code or len(code.strip()) < 30:
-            return "empty"
-        if "export default" not in code:
-            return "missing export default"
-        if re.search(rf'return\s*\(\s*<{re.escape(component_name)}\s*/?>', code):
-            return "self-referential render"
-        return ""
-
     def _sanitize_jsx(self, code: str, fname: str) -> str:
         """Deterministic post-processing of every JSX file before writing to disk."""
         changes = []

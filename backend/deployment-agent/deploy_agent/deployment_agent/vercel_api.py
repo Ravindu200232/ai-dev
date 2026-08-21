@@ -61,7 +61,7 @@ def list_deployments(token: str, project_id: str, team_id: str = "", limit: int 
 
 
 def deployment_events(token: str, deployment_id: str, team_id: str = "", limit: int = 100) -> list[dict[str, Any]]:
-    """Build log lines, shaped like the CloudWatch entries the Logs tab renders."""
+    """Build log lines shaped for the Logs tab."""
     payload = _request(
         "GET", f"/v3/deployments/{deployment_id}/events", token, team_id,
         params={"limit": limit, "direction": "backward"},
@@ -119,7 +119,7 @@ def list_domains(token: str, project_id: str, team_id: str = "") -> list[dict[st
 
 
 def add_domain(token: str, project_id: str, domain: str, team_id: str = "") -> dict[str, Any]:
-    """Adding a domain usually needs a DNS record the operator must create at their."""
+    """Add a domain and return any DNS record the operator must create."""
     return _request(
         "POST", f"/v10/projects/{project_id}/domains", token, team_id, json={"name": domain}
     )

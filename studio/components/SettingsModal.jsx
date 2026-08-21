@@ -59,9 +59,7 @@ export default function SettingsModal({ onClose, onSaved }) {
   const cloudOn = tone === 'ok'
 
   return (
-    // Full size. `max-w-none` is what releases the 520px the Modal primitive
-    // sets for small dialogs — tailwind-merge lets the later class win, so
-    // the width below is the one that applies.
+    // Full size.
     <Modal onClose={onClose}
            className="max-w-none w-[min(1160px,95vw)] h-[92vh] overflow-y-auto p-7">
       <header className="mb-4 flex items-center gap-3 border-b-2 border-line2 pb-3">
@@ -82,8 +80,6 @@ export default function SettingsModal({ onClose, onSaved }) {
         </div>
       </header>
 
-      {/* Two columns once there is room for them. A single stack of five
-          fields down a 1160px sheet leaves most of it empty. */}
       <div className="grid gap-3 lg:grid-cols-2">
         <Field label="Ollama host" value={host} onChange={setHost}
                placeholder="http://127.0.0.1:11434" />

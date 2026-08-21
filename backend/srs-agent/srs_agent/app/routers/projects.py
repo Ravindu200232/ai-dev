@@ -59,7 +59,7 @@ def _public_name(fname: str) -> str:
 
 async def _ingest(project_id: str, mode: str, data: bytes, fname: str, ctype: str,
                   purpose: str = "") -> dict:
-    """Save the upload, read it with whichever engine fits, record it as a source."""
+    """Save an upload, extract it, and record its source."""
     uploads = storage.project_dir(project_id) / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
     (uploads / Path(fname).name).write_bytes(data)
@@ -67,8 +67,6 @@ async def _ingest(project_id: str, mode: str, data: bytes, fname: str, ctype: st
     lower = fname.lower()
     purpose = " ".join(str(purpose or "").split())[:300]
 
-    # A picture also goes somewhere the finished app can serve it from, so the
-    # plan can name a real URL instead of describing a file nobody can reach.
     public_url = ""
     if lower.endswith(PUBLIC_IMAGE_EXT) or ctype.startswith("image/"):
         public = storage.project_dir(project_id) / "public" / "uploads"

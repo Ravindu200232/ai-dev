@@ -141,7 +141,7 @@ class AnalyzerRuntimeMixin:
                     break
 
     def inventory(self) -> str:
-        """One line per file: enough to reason about the project without reading it."""
+        """Summarize each file in one useful line."""
         lines = []
         for path, content in sorted(self.code_files().items()):
             first = next((l.strip() for l in content.splitlines() if l.strip()), "")
@@ -192,7 +192,7 @@ class AnalyzerRuntimeMixin:
         return int(getattr(self.arch, "num_ctx", 16384) * 0.55 * 3.4)
 
     def diagnose(self, report: AnalyzerReport, max_reads: int = 12) -> list:
-        """Ask the model what the fixed pass cannot see: whether the app actually does."""
+        """Ask the model what the fixed analysis cannot see."""
         system = (
             "You are auditing a finished Next.js 16 App Router + MongoDB "
             "project against the plan it was built from.\n\n"

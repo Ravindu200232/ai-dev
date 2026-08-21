@@ -309,7 +309,7 @@ def _press(page, target: str) -> tuple:
 
     control = None
     what = ""
-    # Escaped: these are the user's own words.
+    # Escape the original request text.
     pattern = re.compile(re.escape(target), re.I)
     for how in (lambda: page.get_by_role("button", name=pattern).first,
                 lambda: page.get_by_role("link", name=pattern).first,

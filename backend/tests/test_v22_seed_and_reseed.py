@@ -1,14 +1,4 @@
-"""v22 — the seed's own pictures, and a reseed that actually reseeds.
-
-Two faults from one run, and the second one cost five of six journeys.
-
-The seed asked for `seedImage('room-deluxe')` while the image stage had drawn
-`room-1.png`, so every room on the site rendered a 404. And dropping the
-database did not make the app seed again -- the generated `ensureSeeded()`
-caches its promise for the life of the node process -- so every journey after
-the first reseed signed in against an empty user collection and the E2E
-debugger spent its rounds on a login page that was correct.
-"""
+"""Regression tests for seed images and reseeding."""
 import importlib
 import re
 import unittest
@@ -255,9 +245,7 @@ class LoopedSeedImageTests(unittest.TestCase):
         self.assertTrue(drawn["doctor-dr-smith"].startswith("Dr. Smith,"))
 
     def test_a_row_that_is_also_a_login_still_gets_its_picture(self):
-        # The account exclusion covers `/generated/${u.name}.png` avatars, not
-        # a `seedImage` key: Dr. Smith is a doctor the app displays as well as
-        # a demo login, and the doctors page would render a 404 without it.
+        # Avatar paths do not exempt seedImage fields.
         drawn = self._sweep({"lib/seed.js": SEED_LOOPED})
         self.assertIn("doctor-dr-smith", drawn)
 

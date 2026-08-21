@@ -28,9 +28,6 @@ export default function CodePane({ hidden }) {
   const gutterRef = useRef(null)
   const paintRef = useRef(null)
 
-  // Edits live here until they are saved, keyed by path, so switching files
-  // and coming back does not lose what was typed — the same promise an editor
-  // makes with its tabs.
   const [draft, setDraft] = useState({})
   const [saving, setSaving] = useState('')
   const [error, setError] = useState('')
@@ -39,10 +36,7 @@ export default function CodePane({ hidden }) {
     if (liveFile && follow) tailRef.current?.scrollIntoView({ block: 'end' })
   }, [liveBuf, liveFile, follow])
 
-  // Following the writer is the default and it is what makes a build worth
-  // watching — but only until the reader picks a file. `setActiveFile` drops
-  // `follow`, so a click always shows what was clicked, whatever the build is
-  // doing and whether or not the stream it opened was ever closed.
+  // Follow new output unless the viewer scrolls away.
   const streaming = !!liveFile && follow
   const shown = streaming ? liveFile : activeFile
   const saved = activeFile ? (files[activeFile] ?? '') : ''
@@ -84,15 +78,12 @@ export default function CodePane({ hidden }) {
   }
 
   function onKeyDown(e) {
-    // Ctrl/Cmd+S, because anybody who types into a code pane will press it and
-    // the browser's own "save page" dialog is never what they meant.
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
       e.preventDefault()
       save()
       return
     }
-    // Tab indents instead of leaving the editor. Without it the first press
-    // moves focus to the next control and the keystroke is lost from the file.
+    // Tab indents instead of leaving the editor.
     if (e.key === 'Tab') {
       e.preventDefault()
       const el = e.target
@@ -113,14 +104,7 @@ export default function CodePane({ hidden }) {
   const lines = String(body || '').split('\n')
   const badge = shown ? fileBadge(shown.split('/').pop()) : null
 
-  // Re-tokenised only when the text or the file changes, not on every render —
-  // the pane re-renders on any store change, and a build changes the store
-  // several times a second.
-  //
-  // The trailing newline matters. A textarea's last line is a real line to the
-  // caret but produces no text node in the <pre>, so a file ending in `\n`
-  // renders one line shorter underneath and the last line of a long file sits
-  // a row above its own caret.
+  // Retokenize only when the file or text changes.
   const painted = useMemo(
     () => highlight(String(body || '') + '\n', shown || ''),
     [body, shown])
@@ -167,9 +151,6 @@ export default function CodePane({ hidden }) {
             writing…
           </span>
         )}
-        {/* Clicking a file stops following the writer, so the way back has to
-            be on screen — otherwise the live view is gone until the next file
-            starts, and on a slow one that is minutes. */}
         {!!liveFile && !follow && (
           <button onClick={() => useStore.setState({ follow: true })}
                   title={`Still writing ${liveFile}`}
@@ -198,9 +179,6 @@ export default function CodePane({ hidden }) {
         <div className="relative m-3 min-h-0 flex-1 overflow-hidden rounded-[18px] border border-line/80 bg-code shadow-[inset_0_1px_0_rgba(255,255,255,.04)]">
           {body || activeFile ? (
             <div className="flex h-full min-h-0">
-              {/* The gutter scrolls with the text rather than inside its own
-                  box: one scroll container, two columns, so a long file cannot
-                  drift out of step with its own line numbers. */}
               <div ref={gutterRef}
                    className="min-w-[46px] shrink-0 select-none overflow-hidden border-r
                               border-line pt-4 text-right font-mono text-[11px]
@@ -221,11 +199,7 @@ export default function CodePane({ hidden }) {
                   <span ref={tailRef} />
                 </pre>
               ) : (
-                // Two layers, one on top of the other. The <pre> underneath
-                // carries the colours; the <textarea> on top carries the
-                // caret, the selection and every keystroke, with its own text
-                // made invisible. `editor-layer` is what keeps the two in
-                // register — see globals.css.
+                // Two layers, one on top of the other.
                 <div className="relative min-h-0 flex-1">
                   <pre aria-hidden
                        ref={paintRef}

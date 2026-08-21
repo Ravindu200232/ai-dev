@@ -10,12 +10,7 @@ class AnalyzerDataMixin:
     PLACEHOLDER_ATTR_RE = re.compile(r"""placeholder\s*=\s*["'{][^"'}]*["'}]""")
 
     def credentials_exposed(self) -> list:
-        """Demo credentials rendered inside the generated app.
-
-        Every check here needs an account to leak. An app with no sign-in
-        seeds none, so an email in a contact form is just an email — and
-        calling it a credential leak has already cost one whole feature.
-        """
+        """Every check here needs an account to leak."""
         out = []
         creds = self.demo_credentials()
         if not creds:
@@ -40,8 +35,7 @@ class AnalyzerDataMixin:
             if re.search(r"""DEMO_ACCOUNTS|demoAccounts""", vis):
                 why.append("it renders a DEMO_ACCOUNTS list")
             prefilled = self.PREFILL_RE.search(vis)
-            # Only a SEEDED address is a leak. Any other default is the app's
-            # own copy, and removing it is not this check's business.
+            # Only a SEEDED address is a leak.
             if prefilled and any(e in vis.lower() for e in emails):
                 why.append("the sign-in form is pre-filled with a seeded "
                            "account's address")

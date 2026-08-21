@@ -2,12 +2,6 @@
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
-from typing import Callable
-
-from ..config import settings
-from ..services import storage
 
 _CARD = {
     "one_to_many": "||--o{",
@@ -31,9 +25,6 @@ def _san(text: str, limit: int = _LABEL) -> str:
     return (cut or text[:limit]) + "…"
 
 
-def _br(text: str, limit: int = _LABEL) -> str:
-    """Mermaid does not read `/n` inside a label — it needs `<br/>`."""
-    return _san(text, limit).replace(" — ", "<br/>")
 
 
 def _ent(name: str) -> str:

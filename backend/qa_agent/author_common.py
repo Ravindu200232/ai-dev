@@ -1,4 +1,4 @@
-"""The separate model call that reads a phase's code and writes tests for it."""
+"""Model-assisted test authoring for one build phase."""
 import contextlib
 import logging
 import re
@@ -81,59 +81,41 @@ string. This is the single most common way to get it wrong, and it fails with
 
   __seed('events', [{ _id: oid(), title: 'x', capacity: 2 }])   // fill a collection
   __reset()                                                     // in beforeEach
-  __all('events')     // READ A COLLECTION BACK — this is how you assert on what
-                      // a handler WROTE. Returns plain rows. Do not reach for
-                      // `getCollection`: it is async, so `getCollection('x')
-                      // .find(…)` calls `.find` on a Promise and dies with
-                      // `find is not a function`. Measured, in a real build,
-                      // where the test then deleted its own assertion.
+  __all('events')     // Read plain rows written by a handler.
+                      // Do not call `.find` on async `getCollection`.
   __setUser({ id: String(oid()), email: 'a@b.c', role: 'organizer' })  // or null
-  // The session user's id is `user.id`, a STRING. There is no `user._id` —
-  // that is a Mongo document's field, not a session's. A test that sets `_id`
-  // is describing a user that cannot exist and fails against correct code.
-  // EVERY request helper returns THREE things — `res` is the raw Response,
-  // which is the only way to reach a header or a redirect's Location.
+  // Session ids use the string field `user.id`, never `user._id`.
+  // Request helpers return status, JSON, and the raw response.
   const { status, json, res } = await postJson(POST, { eventId: '…' })
   await patchJson(PATCH, { collected: true }, { params: { id } })   // PUT, DELETE too
-  // The options object is the THIRD argument everywhere except `getJson`,
-  // whose second argument is the URL string. That asymmetry is real; passing
-  // an object there builds `new Request("[object Object]")`.
+  // Options are third, except `getJson`, whose URL is second.
   //   getJson(GET, 'http://localhost:5173/api/x?q=1', { params: { id } })
   //   postJson(POST, body, { params: { id } })
-  // `postForm` sends x-www-form-urlencoded, so every value arrives at the
-  // handler as a STRING — `expect(json.price).toBe(25)` fails, `'25'` passes.
+  // `postForm` values reach the handler as strings.
 
   // READ THE HANDLER'S FIRST FEW LINES AND MATCH THE BODY TO THEM.
   // `await request.json()`      → postJson
-  // `await request.formData()`  → postForm    ← a route behind a plain <form>
-  // Sending JSON to a handler that wanted a form makes `request.formData()`
-  // throw, the handler's own try/catch turns that into a 500, and the case
-  // fails as "expected 500 to be 400" — which reads as the route crashing and
-  // is not. Measured: two cases, nine repair rounds, never passed.
+  // `await request.formData()`  → postForm
+  // Sending JSON to a form handler makes `request.formData()` throw.
   await postForm(POST, { name: 'Fern', price: '25.00' })    // or a FormData
   oid()            // a VALID 24-char ObjectId — never write '123', it throws
 
-  // `oid()` hands back an ObjectId. What comes back OUT of a handler has been
-  // through JSON, so every id in it is a STRING. Comparing the two fails with
-  // `expected '6a77f2…' to be { Object (buffer) }` — wrap the seeded one:
+  // `oid()` returns an ObjectId; JSON responses return string ids.
   const id = oid()
-  __seed('kilns', [{ _id: id, name: 'Big Kiln' }])
+  __seed('items', [{ _id: id, name: 'Sample Item' }])
   expect(json[0]._id).toBe(String(id))          // ✓
   expect(json[0]._id).toBe(id)                  // ✗ ObjectId is not its string
 
   __setPath('/items')                   // what usePathname() returns
-  __setPath('/orders/abc', { params: { id: 'abc' } })   // and useParams()
-  __setPath('/slots', { query: 'bikeType=road' })   // what useSearchParams() sees
-  __setPath('/slots?bikeType=road')                 // the same thing, split for you
-  // usePathname() NEVER includes a query — Next does not put one there. A
-  // component that does `router.push(`${pathname}?${params}`)` is correct;
-  // if you leave a query in the pathname it builds a URL with two `?` in it
-  // and the test blames the component for what the test set up.
+  __setPath('/items/abc', { params: { id: 'abc' } })   // and useParams()
+  __setPath('/items', { query: 'filter=active' })   // what useSearchParams() sees
+  __setPath('/items?filter=active')                 // the same thing, split for you
+  // `usePathname()` never includes the query string.
+  // Put query data in `__setPath`'s options object.
   __resetNav()                          // in beforeEach, clears push/replace too
-  expect(push).toHaveBeenCalledWith('/basket')
+  expect(push).toHaveBeenCalledWith('/items')
 
-  // redirect() and notFound() THROW, exactly as Next's do — guard code is
-  // written assuming they never return. Assert the throw, then the target:
+  // `redirect` and `notFound` throw. Assert the throw and target.
   await expect(requireStaff()).rejects.toThrow('NEXT_REDIRECT')
   expect(redirect).toHaveBeenCalledWith('/login')
 
@@ -147,11 +129,11 @@ assigned `.value` to it and lost five more to
 failures, none of them about the app. If you genuinely need a helper that is not
 here, say so with `// SUSPECT:` rather than inventing one.
 
-FOR A DYNAMIC ROUTE — `app/api/orders/[id]/route.js` — the id goes in `params`,
+FOR A DYNAMIC ROUTE — `app/api/items/[id]/route.js` — the id goes in `params`,
 which is where Next puts it. The helper builds the promise the handler awaits:
 
-    await postJson(PATCH, { action: 'fire' }, { params: { id: String(orderId) } })
-    await getJson(GET, 'http://localhost:5173/api/orders/1', { params: { id } })
+    await postJson(PATCH, { action: 'save' }, { params: { id: String(itemId) } })
+    await getJson(GET, 'http://localhost:5173/api/items/1', { params: { id } })
 
 WHAT TO COVER, in this order:
   1. every early return — 401 with no session, 403 for the wrong role,
@@ -280,12 +262,12 @@ where they accounted for every single first-round failure:
      a second for a success state that was never going to arrive.
      `userEvent.click` fails the same way, for the same reason.
 
-         const { container } = render(<BookingForm {...props} />)
-         fireEvent.change(screen.getByLabelText(/date/i), { target: { value: '2024-12-01' } })
-         fireEvent.change(screen.getByLabelText(/time/i), { target: { value: '09:00' } })
+         const { container } = render(<EditorForm {...props} />)
+         fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Sample' } })
+         fireEvent.change(screen.getByLabelText(/status/i), { target: { value: 'active' } })
          fireEvent.submit(container.querySelector('form'))     // ✓ this runs it
          await waitFor(() =>
-           expect(screen.getByRole('heading', { name: /booked/i })).toBeVisible())
+           expect(screen.getByRole('heading', { name: /saved/i })).toBeVisible())
 
      Measured directly, one component, three idioms: `fireEvent.submit` called
      fetch in 16ms; `fireEvent.click` and `userEvent.click` both timed out
@@ -294,7 +276,7 @@ where they accounted for every single first-round failure:
      every generated app were a submit flow, and every one of them clicked.
 
      Fill the fields FIRST, with `fireEvent.change`, or a button guarded by
-     `disabled={!date || !time}` is still disabled when you submit.
+     `disabled={!name || !status}` is still disabled when you submit.
 
   9. If the component defers work — `setTimeout(() => router.refresh(), 2000)`
      — a bare `waitFor` cannot see it. waitFor gives up after 1000ms, so the
@@ -322,7 +304,7 @@ where they accounted for every single first-round failure:
          await act(() => vi.advanceTimersByTime(2000))
          expect(push).toHaveBeenCalledWith('/member')
 
-         // ✓ simplest of all — no fake clock, just a longer window
+         // ✓ no fake clock; use a longer window
          await waitFor(() => expect(push).toHaveBeenCalled(), { timeout: 2500 })
 
      Read the component for `setTimeout` before you assert on anything that

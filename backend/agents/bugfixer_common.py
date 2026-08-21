@@ -1,4 +1,4 @@
-"""Repairing a failing test — after deciding whether the test or the code is wrong."""
+"""Repair a failing test after locating the real fault."""
 import logging
 import threading
 import re

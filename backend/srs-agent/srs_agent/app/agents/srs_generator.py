@@ -128,7 +128,7 @@ def _plan_scope_guard(plan: dict, auth: bool):
 
 
 def _norm(name: str) -> str:
-    """Loose key so `Sale`, `sales` and `sale_items`/`Sale Item` compare sanely."""
+    """Normalize names for loose comparison."""
     key = re.sub(r"[^a-z0-9]", "", str(name or "").lower())
     if key.endswith("ies"):
         return key[:-3] + "y"

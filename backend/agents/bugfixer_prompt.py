@@ -1,4 +1,4 @@
-"""Test weakening guards, neighboring context and concise repair prompt creation."""
+"""Test guards, nearby context, and repair prompts."""
 from .bugfixer_common import *
 
 

@@ -1,7 +1,4 @@
-/**
- * The progress bar must never go backwards, whatever the backend reports.
- * Every sub-flow the backend actually has is replayed here in sequence.
- */
+/** Verify that progress stays monotonic across every backend flow. */
 import { advance, displayPct, emptyProgress, CEILING } from '../lib/progress-model.js'
 import { journeySummary } from '../lib/e2e-rate.js'
 import { WORK_STAGES, stageIndex, stagesFor } from '../lib/work-stages.js'
@@ -18,11 +15,7 @@ const FLOWS = [
 let fail = 0
 const t0 = 1700000000000
 
-/**
- * Watch the bar the way a person does: it is repainted between reports, not
- * only when one arrives. The first version of this file only sampled on a
- * report and so never saw the creep being shown and then taken back.
- */
+/** Sample repaints between reports to catch visible reversals. */
 function watch(gapsMs) {
   let s = emptyProgress(), last = 0, t = t0, drops = 0
   for (let r = 0; r < 400; r++) {

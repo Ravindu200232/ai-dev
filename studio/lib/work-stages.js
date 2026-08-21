@@ -1,31 +1,14 @@
-/**
- * The stages each kind of work really has.
- *
- * A first build has four; a pencil edit has three and none of them is
- * "plan". Showing the build rail for both said the same thing about two jobs
- * that share nothing — but showing no rail at all for the smaller jobs made
- * them look like a different product. So each kind keeps the same shape and
- * the same lamps, with its own steps.
- *
- * The boundaries are the percentages the backend already reports for that
- * flow, so a stage lights up exactly when its work starts. `raw` is the
- * sub-flow's own number, not the smoothed one on the bar.
- */
+/** The stages each kind of work really has. */
 
-/**
- * `upto` is the raw percentage at which this stage hands over to the next.
- * The last stage in a list has no bound; it runs to the end.
- */
+/** `upto` marks where a stage hands off to the next. */
 export const WORK_STAGES = {
-  // Planning 15 · Writing 40 · Verifying 65 · Watching 78 · Testing 88 · Final 95
+  // Planning, writing, verifying, watching, testing, then final checks.
   feature: [
     { id: 'plan', label: 'Plan', icon: 'brain', upto: 22 },
     { id: 'write', label: 'Write', icon: 'file', upto: 55 },
     { id: 'check', label: 'Check', icon: 'flask', upto: 84 },
     { id: 'live', label: 'Live', icon: 'sparkles' },
   ],
-  // Two flows land here: reproduce/repair/check (20·45·65·78) and the
-  // shorter read/apply/verify (10·35·80). Both walk these three in order.
   repair: [
     { id: 'reproduce', label: 'Reproduce', icon: 'bug', upto: 32 },
     { id: 'fix', label: 'Fix', icon: 'wrench', upto: 55 },
@@ -52,15 +35,12 @@ export const WORK_STAGES = {
   ],
 }
 
-/** The stages for this kind of work, or `null` when it has its own rail. */
+/** Return stages, or `null` for a custom progress rail. */
 export function stagesFor(kind) {
   return WORK_STAGES[String(kind || '')] || null
 }
 
-/**
- * Which stage a raw sub-flow percentage is in.
- * Returns the index, or the last stage once the flow is finishing.
- */
+/** Map raw sub-flow progress to a stage. */
 export function stageIndex(kind, raw) {
   const stages = stagesFor(kind)
   if (!stages) return -1
@@ -70,11 +50,4 @@ export function stageIndex(kind, raw) {
     if (bound === undefined || pct < bound) return i
   }
   return stages.length - 1
-}
-
-/** The label of the stage currently running, for a heading. */
-export function stageLabel(kind, raw) {
-  const stages = stagesFor(kind)
-  const i = stageIndex(kind, raw)
-  return i >= 0 && stages[i] ? stages[i].label : ''
 }

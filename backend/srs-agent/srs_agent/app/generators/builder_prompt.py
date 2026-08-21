@@ -238,7 +238,7 @@ def render_prompt(handoff: dict, plan: dict, *, auth: bool = False,
 
 
 def _cap(text: str) -> str:
-    """Return the complete handoff unless an explicit transport cap is configured."""
+    """Return the full handoff unless transport limits it."""
     if not MAX_WORDS and not MAX_CHARS:
         return text.rstrip() + "\n"
 

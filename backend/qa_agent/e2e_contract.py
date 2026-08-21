@@ -120,7 +120,7 @@ def capability_contract(arch, journey: dict) -> dict:
 
 
 def scenario_contract_issue(contract: dict, scenario, is_business_step) -> str:
-    """Reject a scenario that cannot prove the contract even if selectors parse."""
+    """Reject a scenario that cannot prove its contract."""
     if not contract:
         return ""
     expected_role = _actor_class(contract.get("actor"))

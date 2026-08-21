@@ -1,4 +1,4 @@
-"""The customer's own words, in one block any agent can paste into a prompt."""
+"""Customer wording formatted for agent prompts."""
 from __future__ import annotations
 
 IDEA_LIMIT = 3000

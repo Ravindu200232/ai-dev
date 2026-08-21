@@ -173,6 +173,16 @@ class AnalyzerUIMixin:
                         name = raw.split(":", 1)[-1].strip().split("=", 1)[0].strip()
                         if re.match(r"^[A-Za-z_$][\w$]*$", name):
                             string_vars.add(name)
+            for name in re.findall(
+                    r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*"
+                    r"(?:\(?\s*await\s+)?(?:params|searchParams)(?:\b|[?.])",
+                    body):
+                string_vars.add(name)
+            for name in re.findall(
+                    r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*"
+                    r"(?:searchParams|new\s+URL\([^)]*\)\.searchParams)\.get\s*\(",
+                    body):
+                string_vars.add(name)
 
             for field in oid_fields:
                 # Match the first query-object value for this field in common.
@@ -185,7 +195,7 @@ class AnalyzerUIMixin:
                         continue
                     if expr.endswith("._id") or re.search(r"\._id\b", expr):
                         continue
-                    risky = (expr in string_vars or expr in {"id", "roomId", "userId", "ownerId"}
+                    risky = (expr in string_vars or expr == "id"
                              or re.fullmatch(r"(?:user|session(?:\?\.user)?|session\.user)\??\.id", expr))
                     if not risky:
                         continue

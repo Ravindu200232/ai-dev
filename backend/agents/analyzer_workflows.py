@@ -1,4 +1,4 @@
-"""Workflow capability analysis, credential verification and login endpoint checks."""
+"""Workflow, credential, and login endpoint checks."""
 from .analyzer_common import *
 
 

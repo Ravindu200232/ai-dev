@@ -18,8 +18,6 @@ export default function Timeline({ qa }) {
         {' '}{floor}% floor.
       </p>
 
-      {/* Bars in a ruled frame, square-topped and flush to the baseline. A
-          build under the floor is the only one that takes the accent. */}
       <div className="relative mb-4 flex h-[150px] items-end gap-1.5 border-b-2
                       border-line2 bg-panel2 px-2 pt-2">
         <div className="pointer-events-none absolute inset-x-0 border-t border-dashed

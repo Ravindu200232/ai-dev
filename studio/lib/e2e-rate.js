@@ -1,14 +1,7 @@
-/**
- * How the end-to-end stage is reported to a person.
- *
- * A run is not a light switch. Five journeys with one failure is a very
- * different thing from five journeys with five, and "failing" said the same
- * word for both. This turns the stage into a rate: how many of the journeys
- * that were actually walked came out green.
- */
+/** How the end-to-end stage is reported to a person. */
 
-/** Group a stage's journeys into passed / failed / blocked / not run. */
-export function journeyTally(e2e) {
+/** Group journey results by outcome. */
+function journeyTally(e2e) {
   const rows = Array.isArray(e2e?.flows) ? e2e.flows : []
   const tally = { passed: 0, failed: 0, blocked: 0, skipped: 0, total: rows.length }
   for (const row of rows) {

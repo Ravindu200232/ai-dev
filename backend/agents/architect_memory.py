@@ -1,4 +1,4 @@
-"""Conversation compaction, safe paths, test invalidation and owned-file restore."""
+"""Conversation state, safe paths, tests, and file restore."""
 from .architect_common import *
 
 

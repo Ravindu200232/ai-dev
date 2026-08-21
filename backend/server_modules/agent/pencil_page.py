@@ -246,9 +246,7 @@ def run_pencil_edit(proj_name: str, instruction: str, payload: dict,
                 return run_feature(proj_name, change_request, model, think)
             return
 
-        # The same guard the page editor uses. A pencil edit is a smaller
-        # change than a page rewrite, so a reply that removes most of the
-        # file is more suspect here, not less.
+        # The same guard the page editor uses.
         why = guard_scope(before, written, designing=True)
         if why:
             elog("WARN", f"   ⛔ Rejected {res.path}: {why[:120]}")
@@ -353,13 +351,7 @@ _RENDER_IMPORT_RE = re.compile(r"""from\s+['\"](@/[^'\"]+|\.{1,2}/[^'\"]+)['\"]"
 
 
 def _rendered_by(arch, roots) -> set:
-    """Existing source the given files import, one level down.
-
-    A page's Navbar, its cards and its form live here. They are what a page
-    edit is usually actually about, and refusing them while allowing a brand
-    new component pushed the model into writing a second Navbar beside the
-    one that was wrong.
-    """
+    """Find source imported by the selected files."""
     files = getattr(arch, "files", None) or {}
     out = set()
     for root in roots:
@@ -458,10 +450,7 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
 
         mark = dev_log_mark()
 
-        # The page, its layouts, and everything they render. The old rule
-        # allowed a NEW component but refused an edit to the existing one the
-        # page already imports, so a fix to the real Navbar was dropped and
-        # the run reported that the model had returned nothing.
+        # The page, its layouts, and everything they render.
         writable = {path} | {p for p, _ in chain}
         writable.add("/".join(path.split("/")[:-1]) + "/layout.jsx")
         writable |= _rendered_by(arch, writable)
@@ -475,10 +464,7 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
                 key.endswith((".jsx", ".js"))
             fresh = editable and key not in arch.files
             if key not in writable and not fresh:
-                # Not silently dropped: an edit outside the page's own tree is
-                # usually the model following the bug somewhere real, and the
-                # parse/build checks downstream are what decide whether it was
-                # right. Keep it, and say where it went.
+                # Not silently dropped.
                 if editable:
                     elog("INFO", f"   ↔ {key} is outside this page's tree but "
                                  f"is app source — taking it; it is reverted "
@@ -534,8 +520,7 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
         if not got:
             head = " ".join("".join(raw).split())[:300] or "(empty response)"
             if refused:
-                # It DID write something. Saying "returned no file" sent
-                # people looking at the model when the rule was the problem.
+                # It DID write something.
                 elog("WARN", f"   ⚠ every write was outside what a page edit "
                              f"may change: {', '.join(refused[:4])}")
                 eerr(f"Nothing was changed — the edit went to "
@@ -590,58 +575,5 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
     except Exception as e:
         eerr(f"Page update error: {e}")
         log.exception("run_page_update")
-    finally:
-        stop_model(model)
-
-
-def run_agent_update(proj_name: str, instruction: str, model: str,
-                     think: bool = None):
-    """Agentic edit of an existing project — same write_file loop."""
-    set_tester_emit(emit)
-    try:
-        proj_dir = PROD_DIR / proj_name
-        if not proj_dir.exists():
-            eerr(f"Project not found: {proj_name}")
-            return
-        if not ensure_model(model):
-            eerr(f"Cannot load model: {model}")
-            return
-
-        stack = detect_stack(proj_dir)
-        elog("INFO", f"✏️  Agent update ({stack}) — {instruction[:70]}")
-        eprog("Reading project…", 10)
-
-        if stack == "next":
-            MONGO.ensure_running()
-
-        arch = ArchitectAgent(ollama, model, proj_dir, _agent_callbacks(proj_dir),
-                              stack=stack,
-                              mongo_uri=MONGO.uri_for(proj_name) if stack == "next" else "",
-                              db_name=db_name_for(proj_name) if stack == "next" else "",
-                              think=think)
-        arch.load_existing()
-        stack = arch.stack
-
-        eprog("Applying changes…", 35)
-        n = arch.update(instruction)
-        if not n:
-            eerr("Agent made no changes")
-            return
-        elog("INFO", f"   ✅ {n} file(s) updated")
-
-        arch.save_convo()
-
-        eprog("Verifying…", 80)
-        _fill_missing_images(arch, proj_dir)
-        res = verify_after_edit(arch, proj_dir, proj_name, stack=stack)
-        if res["routes_failed"]:
-            elog("WARN", f"   ⚠ {len(res['routes_failed'])} route(s) still "
-                         f"failing: {'; '.join(res['routes_failed'][:3])}")
-
-        eprog("Done!", 100)
-        edone(f"http://localhost:{DEV_PORT}", proj_name)
-    except Exception as e:
-        eerr(f"Agent update error: {e}")
-        log.exception("Agent update error")
     finally:
         stop_model(model)

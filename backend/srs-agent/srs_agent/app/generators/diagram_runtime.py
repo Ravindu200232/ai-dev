@@ -31,7 +31,6 @@ DIAGRAM_STANDARD = {
 }
 DIAGRAM_KINDS = [b[0] for b in _BUILDERS]
 NATIVE_DIAGRAM_KINDS = set(DIAGRAM_KINDS)
-DIAGRAM_TITLES = {b[0]: b[1] for b in _BUILDERS}
 
 
 _SUBGRAPH = re.compile(r"^subgraph\s+([A-Za-z][\w]*)")
@@ -190,18 +189,6 @@ def build_diagrams(srs: dict, on_error: Callable[[str], None] | None = None) -> 
                     "applicable": applicable, "applicability_note": reason,
                     "canonical_rendering": "native_svg"})
     return out
-
-
-def build_one(kind: str, srs: dict) -> dict:
-    """Deterministic single-diagram fallback by kind."""
-    doc = srs.get("srs_document", srs)
-    fn = dict((b[0], b[2]) for b in _BUILDERS).get(kind)
-    src = fn(doc) if fn else f'flowchart TD\n  a["{kind}"]\n  b["unavailable"]\n  a --> b'
-    applicable, reason = diagram_applicability(kind, doc)
-    return {"id": f"dia_{kind}", "kind": kind, "title": DIAGRAM_TITLES.get(kind, kind),
-            "format": "mermaid", "source": src, "standard": DIAGRAM_STANDARD.get(kind, ""),
-            "applicable": applicable, "applicability_note": reason,
-            "canonical_rendering": "native_svg"}
 
 
 _UNSET = object()

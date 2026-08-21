@@ -1,6 +1,6 @@
 
 
-export const PICK_CSS =
+const PICK_CSS =
   '.__lc_hi{outline:2px solid #5b7cf7!important;' +
   'outline-offset:-2px;background:rgba(91,124,247,.10)!important;' +
   'cursor:crosshair!important}'
@@ -108,8 +108,4 @@ export function attachPicker(frame, onPick) {
     doc.querySelectorAll('.__lc_hi').forEach(e => e.classList.remove('__lc_hi'))
     doc.getElementById('__lc_pick_style')?.remove()
   }
-}
-
-export function previewPath(frame) {
-  try { return frame.contentWindow.location.pathname } catch { return '/' }
 }

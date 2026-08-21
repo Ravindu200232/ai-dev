@@ -7,7 +7,7 @@ import { AlertTriangle, Activity, Camera, Check, FolderGit2, GitBranch, Globe,
 import { useStore } from '@/lib/store'
 import { api } from '@/lib/api'
 import { TARGETS, TERMINAL } from '@/lib/deploy-constants'
-import { useMonitor, providerOf } from '@/lib/use-monitor'
+import { useMonitor } from '@/lib/use-monitor'
 import { Button, Empty, SectionLabel, SubTab, SubTabs } from '../ui'
 import { cn } from '@/lib/utils'
 import DeployProgress from './DeployProgress'
@@ -70,19 +70,7 @@ export default function DeployPanel({ onSettings }) {
     return () => { alive.current = false }
   }, [refresh])
 
-  // `deployResults` carries the run's state, and it was read once on mount.
-  // A teardown is asynchronous — the API accepts it and CloudFormation spends
-  // minutes actually deleting — so the refresh fired by the delete button ran
-  // while the run was still LIVE, and nothing read it again. The panel went on
-  // showing "LIVE 100%" over a green pipeline for a stack that no longer
-  // existed, with the site's old address still offered as a link.
-  //
-  // The monitor already polls on its own cadence; this rides along rather than
-  // starting a second timer, and stops when the run reaches a terminal state.
-  // LIVE is not one of the states to stop on, even though TERMINAL lists it:
-  // a live deployment is exactly the one that can still be torn down, and
-  // treating it as finished is what left the panel describing a stack that
-  // had been deleted. Only the states nothing can follow end the polling.
+      // Refresh the deployment state read on mount.
   const FINISHED = ['DESTROYED', 'CANCELLED', 'FAILED', 'ROLLED_BACK']
   const snapAt = monitor.at
   useEffect(() => {

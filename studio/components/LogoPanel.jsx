@@ -12,8 +12,7 @@ import { cn } from '@/lib/utils'
 const ACCEPT_LOGO = '.png,.jpg,.jpeg,.webp,.gif,.bmp,image/*'
 
 export default function LogoPanel({ idea, model, onAccept, onSkip }) {
-  // Pictures the person brought. Empty is the normal case and means the
-  // build draws everything, exactly as it did before this existed.
+  // Pictures the person brought.
   const [pictures, setPictures] = useState([])
   const [prompt, setPrompt] = useState('')
   const [state, setState] = useState('writing')
@@ -24,8 +23,7 @@ export default function LogoPanel({ idea, model, onAccept, onSkip }) {
   const picker = useRef(null)
 
   const [waited, setWaited] = useState(0)
-  // Only for the label on the sheet — "draft 2" is the difference between
-  // looking at the mark you just asked for and looking at the one before it.
+  // Only for the label on the sheet.
   const [draft, setDraft] = useState(0)
 
   useEffect(() => {
@@ -63,9 +61,7 @@ export default function LogoPanel({ idea, model, onAccept, onSkip }) {
     setState('uploading')
     setError('')
     try {
-      // Answers in the same shape `draw` does, so everything below this point
-      // — the preview, Accept, and the build that copies the file to
-      // public/logo.png — cannot tell the two apart.
+    // Match the response shape returned by `draw`.
       const r = await api.imageUpload(chosen, { name: 'logo' })
       setImg(r.data_uri || '')
       setFile(r.file || '')
@@ -114,8 +110,6 @@ export default function LogoPanel({ idea, model, onAccept, onSkip }) {
               {img ? <><RefreshCw className="size-[13px]" /> Draw again</>
                    : <><Sparkles className="size-[13px]" /> Draw it</>}
             </Button>
-            {/* Not gated on `state === 'ready'` like Draw is: uploading needs
-                no prompt, so it should not wait behind the model writing one. */}
             <Button variant="outline"
                     disabled={state === 'drawing' || state === 'uploading'}
                     onClick={() => picker.current?.click()}
@@ -171,9 +165,7 @@ export default function LogoPanel({ idea, model, onAccept, onSkip }) {
                                     ? <img src={img}
                          alt={own ? `the logo you uploaded, ${own}` : 'the generated logo'}
                          className="max-h-full max-w-full" />
-                  // `file` without `img` must not read as "nothing here": the
-                  // panel would then deny the upload in the box and confirm it
-                  // in the line underneath, with Accept live.
+                  // `file` without `img` must not read as "nothing here".
                   : file
                     ? <span className="px-6 text-center text-[12px] text-muted">
                         Saved, but it could not be shown here. Accept only if
@@ -237,7 +229,7 @@ export default function LogoPanel({ idea, model, onAccept, onSkip }) {
   )
 }
 
-// What the mark ends up on, so "skip" is a decision rather than a guess.
+  // Record the surface that will carry the mark.
 const USES = [
   ['App icon', 'favicon and the header lockup'],
   ['Sign-in page', 'above the form'],

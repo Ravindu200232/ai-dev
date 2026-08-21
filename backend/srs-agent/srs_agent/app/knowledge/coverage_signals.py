@@ -1,11 +1,6 @@
 """Which coverage areas the brief already answers by itself."""
 from __future__ import annotations
 
-import re
-
-from ..schemas.questions import COVERAGE_AREAS
-
-
 BUSINESS_INDICATORS = (
     "service", "services", "shop", "store", "website", "web site", "platform",
     "app", "application", "system", "portal", "software", "tool", "marketplace",
@@ -46,28 +41,3 @@ _SIGNALS: dict[str, list[str]] = {
 def covered(area: str, brief: str) -> bool:
     b = (brief or "").lower()
     return any(k in b for k in _SIGNALS.get(area, []))
-
-
-def business_known(brief: str, classification: dict | None = None) -> bool:
-    """True if the idea already tells us the business/domain."""
-    classification = classification or {}
-    if float(classification.get("confidence", 0) or 0) >= 0.5:
-        return True
-    detected = str(classification.get("detected_domain", "")).strip().lower()
-    if detected and detected not in ("custom", "custom saas", ""):
-        return True
-    b = (brief or "").lower()
-    words = len(re.findall(r"[a-z]{3,}", b))
-    return words >= 5 and any(ind in b for ind in BUSINESS_INDICATORS)
-
-
-def covered_areas(brief: str, classification: dict | None = None) -> set[str]:
-    """Areas already answered by the idea itself."""
-    out: set[str] = set()
-    for area in COVERAGE_AREAS:
-        if area == "business_type":
-            if business_known(brief, classification):
-                out.add(area)
-        elif covered(area, brief):
-            out.add(area)
-    return out

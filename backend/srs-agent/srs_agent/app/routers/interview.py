@@ -1,4 +1,4 @@
-"""The requirement interview — one question at a time, driven by the customer."""
+"""Customer-led requirement interview endpoints."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException

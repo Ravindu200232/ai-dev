@@ -1,13 +1,4 @@
-"""v19 — the journey is written against the app that shipped, and the whole
-prompt reaches the model that writes it.
-
-Every case here pins one measured way a correctly generated app still failed
-its end-to-end gate: the journey was decided before the code was read, the
-proof contract named files the build never produced, the route table was cut
-off at forty rows, the prompt was three times the context window it was sent
-into, and the grounding check judged the scenario against a smaller view of
-the app than the author had been given.
-"""
+"""Regression tests for grounded E2E journeys."""
 import importlib
 import re
 import unittest

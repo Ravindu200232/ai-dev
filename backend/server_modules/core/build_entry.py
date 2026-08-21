@@ -152,6 +152,3 @@ def run_pipeline(prompt: str, refine_model: str, build_model: str):
     finally:
         set_stream_callback(None)
         cancel.finish()
-
-
-AGENT_STEPS = ["plan", "scaffold", "generate", "install", "test", "serve"]

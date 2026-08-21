@@ -25,7 +25,7 @@ class QASessionQueueMixin:
             self._enqueue(self._phase_of(batch[0]), batch)
 
     def _phase_of(self, rel: str) -> int:
-        """Which plan task a file belongs to, for the authoring prompt's "## This phase"."""
+        """Find the plan task that owns a file."""
         try:
             for i, ph in enumerate(self.arch.plan.get("phases") or [], start=1):
                 for f in ph.get("files") or []:
@@ -105,9 +105,6 @@ class QASessionQueueMixin:
                                 "status": "active"})
         self.ensure_runner()
         written = self.author.write_for(targets, phase)
-        self.jobs_done += 1
         self._fire("on_phase", {"phase": -14, "title": f"Writing tests — phase {phase}",
                                 "status": "done", "written": len(written),
                                 "files": written})
-
-

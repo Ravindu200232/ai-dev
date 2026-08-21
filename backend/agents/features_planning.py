@@ -251,9 +251,7 @@ class FeaturesAgentPlanningMixin:
 
         files = getattr(self.arch, "files", {}) or {}
 
-        # A page that does not exist has no source to quote. Asking for
-        # evidence inside it is unanswerable, and a 404 whose whole fix is
-        # "write the file" spent five rounds being told to prove it.
+        # A page that does not exist has no source to quote.
         creating = [f.get("path") for f in (spec.files or [])
                     if f.get("action") == "create"
                     or str(f.get("path") or "") not in files]
@@ -422,31 +420,16 @@ class FeaturesAgentPlanningMixin:
                 "Follow the dependency/data-flow evidence to the real owner. Every EXISTING file you plan to edit must have its own concrete EVIDENCE line. "
                 "Re-evaluate the root cause/ownership and output the COMPLETE analysis protocol again: CURRENT, GAP, CAUSE, EVIDENCE lines, SUMMARY, FILE lines, VERIFY, CONFIDENCE, DONE. Do not write code."})
 
-        # The rounds above are for making the analysis better, not for
-        # forbidding the attempt. What is left is a model that named a root
-        # cause and named the files, but could not quote a source line in the
-        # exact shape the protocol wanted — which is a formatting miss, not a
-        # reason to leave a broken app broken.
-        #
-        # Letting it try is safe here because nothing downstream trusts the
-        # attempt: the patch is parsed, the project is built, and a snapshot
-        # is restored the moment either fails. Gate the RESULT, not the try.
+        # These rounds improve the analysis; they do not block the attempt.
         return self._unproven_but_actionable(
             spec, self._analysis_issues(spec, mode, required_evidence_paths),
             what)
 
-    # The smallest thing worth calling a cause. Shorter than this is a label.
+        # A useful cause needs more detail than a label.
     MIN_CAUSE_CHARS = 12
 
     def _unproven_but_actionable(self, spec, issues, what: str):
-        """A repair that named a cause and a file may run, proof or not.
-
-        The rounds above exist to make the analysis better, not to forbid the
-        attempt. What reaches here is a model that worked out a root cause and
-        the files it lives in, but could not quote a source line in the exact
-        shape the protocol wanted — a formatting miss, not a reason to leave a
-        broken app broken.
-        """
+        """Allow a repair with a known cause and target file."""
         files = getattr(self.arch, "files", {}) or {}
         planned = [f for f in (spec.files or [])
                    if str(f.get("path") or "") in files

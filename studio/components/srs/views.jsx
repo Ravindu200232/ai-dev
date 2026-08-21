@@ -25,13 +25,7 @@ const idOf = (item, i) =>
   (item && typeof item === 'object'
     && (item.id || item.ref || item.module || item.category || item.area)) || `#${i + 1}`
 
-/**
- * A numbered section of the document.
- *
- * The number is set in the accent and the title in the heading face at 800,
- * over a 2px rule — the same head the printed spec would carry. The count
- * sits hard against the right edge so a column of sections lines up.
- */
+/** A numbered section of the document. */
 function Section({ title, children, count, n }) {
   return (
     <div className="mb-6">
@@ -67,13 +61,13 @@ function Bullets({ items, tone }) {
   )
 }
 
-/** Two columns of sections, with a 30px gutter and nothing else between them. */
+/** Two section columns with a fixed gutter. */
 const Columns = ({ children }) => (
   <div className="grid gap-x-[30px] md:grid-cols-2">{children}</div>
 )
 
 
-export function Document({ srs }) {
+function Document({ srs }) {
   const doc = srs.document || {}
   if (!srs.have?.document) return <Empty>No SRS document was adopted for this project.</Empty>
 
@@ -402,7 +396,7 @@ function PlanWorkflows({ items }) {
 }
 
 
-/** One row of the document's own facts: label at the left, value at the right. */
+/** Show one document fact as a label and value. */
 const Fact = ({ label, children }) => (
   <div className="flex items-baseline justify-between gap-3 border-b border-line
                   py-1.5 text-[11.5px]">
@@ -411,7 +405,7 @@ const Fact = ({ label, children }) => (
   </div>
 )
 
-export function Plan({ srs }) {
+function Plan({ srs }) {
   if (!srs.have?.plan) return <Empty>No approved plan was saved with this SRS.</Empty>
   return (
     <pre className="whitespace-pre-wrap break-words border border-line2 bg-panel2
@@ -421,7 +415,7 @@ export function Plan({ srs }) {
   )
 }
 
-export function Requirements({ srs }) {
+function Requirements({ srs }) {
   const doc = srs.document || {}
   const functional = list(doc.functional_requirements)
   const nonFunctional = list(doc.non_functional_requirements)
@@ -444,7 +438,7 @@ export function Requirements({ srs }) {
   )
 }
 
-export function Data({ srs }) {
+function Data({ srs }) {
   const tables = list((srs.document || {}).database_design?.tables)
   if (!tables.length) return <Empty>No database design in this SRS.</Empty>
   return (
@@ -494,7 +488,7 @@ export function Data({ srs }) {
   )
 }
 
-export function Roles({ srs }) {
+function Roles({ srs }) {
   const doc = srs.document || {}
   const matrix = list(doc.role_access_matrix)
   if (!list(doc.roles).length && !matrix.length) {
@@ -548,7 +542,7 @@ export function Roles({ srs }) {
   )
 }
 
-export function Handoff({ srs }) {
+function Handoff({ srs }) {
   const handoff = srs.handoff || {}
   const [copied, setCopied] = useState(false)
   if (!srs.have?.handoff) return <Empty>No builder handoff was saved with this SRS.</Empty>
@@ -586,7 +580,7 @@ export function Handoff({ srs }) {
   )
 }
 
-export function Diagrams({ srs }) {
+function Diagrams({ srs }) {
   const diagrams = list(srs.diagrams)
   const [open, setOpen] = useState(0)
   const [zoomed, setZoomed] = useState(false)
@@ -608,9 +602,6 @@ export function Diagrams({ srs }) {
       <div className="group relative overflow-x-auto rounded-[14px] border border-line2 bg-panel2 p-4">
         {current.svg
           ? <>
-              {/* The whole picture is the target, not a corner icon: at this
-                  size the diagram is a thumbnail, and clicking a thumbnail to
-                  enlarge it is the thing people already try. */}
               <button onClick={() => setZoomed(true)}
                       title="Open this diagram full size"
                       className="block w-full cursor-zoom-in text-left">
@@ -642,7 +633,7 @@ export function Diagrams({ srs }) {
   )
 }
 
-export function Interview({ srs }) {
+function Interview({ srs }) {
   const transcript = list((srs.interview || {}).transcript)
   const answers = list((srs.interview || {}).answers)
   if (!transcript.length) return <Empty>No interview was saved with this SRS.</Empty>
@@ -714,7 +705,7 @@ export function badgeFor(id, srs) {
   return null
 }
 
-export function Risks({ srs }) {
+function Risks({ srs }) {
   const doc = srs.document || {}
   const ambiguities = list(doc.ambiguities)
   const risks = list(doc.risk_priority)

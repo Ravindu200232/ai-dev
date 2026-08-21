@@ -4,14 +4,7 @@ import { AlertTriangle } from 'lucide-react'
 import { Empty, Table, TR, TH, TD } from '../ui'
 import { cn } from '@/lib/utils'
 
-/**
- * What Lighthouse's own failure codes mean, in words.
- *
- * The stage records the code and nothing else, and a code on its own reads as
- * "it did not run" — which is the opposite of what happened. Every one of
- * these means Lighthouse started, opened Chrome, and could not get a
- * measurable page out of the dev server.
- */
+/** What Lighthouse's own failure codes mean, in words. */
 const WHY = {
   CHROME_INTERSTITIAL_ERROR: [
     'Chrome could not open the app at all — it landed on an error page instead.',
@@ -46,9 +39,7 @@ const WHY = {
 export default function Performance({ qa }) {
   const p = qa?.performance
 
-  // Order matters. A failed run has BOTH an empty `scores` and a code, so the
-  // empty check has to come second — reading it first reported "has not run"
-  // over a run that did happen and said exactly why it stopped.
+  // Order matters.
   if (p?.runtimeError) {
     const [what, why] = WHY[p.runtimeError] || [
       'Lighthouse could not measure this app.', '',
@@ -87,8 +78,6 @@ export default function Performance({ qa }) {
   }
   return (
     <div>
-      {/* Each score is a ruled cell with a bar under it — the figure and the
-          measure in the same block, flush left, no dials. */}
       <div className="mb-[18px] grid border-l border-t border-line2
                       [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
         {Object.entries(p.scores).map(([k, n]) => (

@@ -41,7 +41,7 @@ class E2ELocatorsMixin:
         text = " ".join(filter(None, [getattr(sel, "kind", ""),
                                       getattr(sel, "role", ""),
                                       getattr(sel, "pattern", "")])).lower()
-        # Order matters: password often sits in a phrase that also.
+        # Order matters when field hints overlap.
         for key, words in (
             ("password", ("password", "passcode", "passwd")),
             ("email", ("email", "e-mail", "mail")),
@@ -121,8 +121,7 @@ class E2ELocatorsMixin:
         desired_text = re.sub(r"[^a-z0-9]+", " ",
                               getattr(sel, "pattern", "").lower()).strip()
         desired = self._normal_words(getattr(sel, "pattern", ""))
-        # Verb families every app shares. A domain word never belongs here —
-        # the app's own wording arrives through the DOM evidence instead.
+        # Verb families every app shares.
         synonym_groups = [
             {"book", "reserve", "request", "schedule", "order", "claim"},
             {"pay", "paid", "payment"},
@@ -332,10 +331,7 @@ class E2ELocatorsMixin:
         return None
 
 
-    # Everything the live DOM offered as a way to name a control. A patch that
-    # points at one of these is grounded even when the mechanical fallback
-    # could not build it — the model read the same evidence and found a
-    # handle the fallback's scoring rules threw away.
+    # Everything the live DOM offered as a way to name a control.
     def observed_handles(self) -> set:
         ev = dict(getattr(self, "_last_run_evidence", {}) or {})
         out = set()
@@ -361,7 +357,7 @@ class E2ELocatorsMixin:
         handles = self.observed_handles()
         if not handles:
             return False
-        # The words the patch tries to find the control by.
+        # Control terms used by the patch.
         wanted = re.findall(r"(?:name=|field=|testid=|placeholder=|href=|text=)"
                             r"/?([^/\n:]{2,60}?)/?(?:i\b|\s|$)", line)
         for raw in wanted:
@@ -407,7 +403,6 @@ class E2ELocatorsMixin:
                 if key and key in attrs:
                     matched = row; break
             verb = "SELECT" if matched and matched.get("tag") == "select" else st.verb
-        sel_text = replacement.describe()
         # describe() is human-oriented; emit parser grammar explicitly.
         if replacement.kind == "field":
             grammar_sel = f"field={replacement.pattern}"

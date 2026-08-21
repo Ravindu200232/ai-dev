@@ -146,7 +146,7 @@ class GeneratorWorkflowMixin:
                     # readiness commit-match both read this tag.
                     run: |
                       IMAGE="${{{{ vars.ECR_REPOSITORY_URI }}}}:${{{{ github.sha }}}}"
-                      # --network=host so `next build` inside the image can reach the MongoDB service on the runner's loopback.
+                      # Let Next reach MongoDB on the runner.
                       docker build --network=host -t "$IMAGE" {root}
                       docker push "$IMAGE"
                       echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
@@ -188,7 +188,7 @@ class GeneratorWorkflowMixin:
                         --task-definition "${{{{ steps.register.outputs.arn }}}}" \\
                         --desired-count 1 \\
                         --no-cli-pager
-                      # Waits for the new tasks to pass their target-group health check and the old ones to drain.
+                      # Wait for healthy tasks and drain old ones.
                       aws ecs wait services-stable \\
                         --cluster "${{{{ vars.ECS_CLUSTER }}}}" \\
                         --services "${{{{ vars.ECS_SERVICE }}}}"
@@ -282,7 +282,7 @@ class GeneratorWorkflowMixin:
                         ]' \\
                         --query Command.CommandId --output text)
                       echo "SSM command $COMMAND_ID dispatched"
-                      # The invocation is not queryable the instant send-command returns, and the built-in waiter caps out well.
+                      # SSM needs a short polling delay after dispatch.
                       STATUS=Pending
                       for _ in $(seq 1 60); do
                         sleep 5

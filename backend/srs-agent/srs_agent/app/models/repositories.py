@@ -130,9 +130,6 @@ async def list_diagrams(project_id: str) -> list[dict]:
     return await get_store().find(db.DIAGRAMS, {"project_id": project_id})
 
 
-async def save_artifact(doc: dict) -> dict:
-    await get_store().insert_one(db.ARTIFACTS, doc)
-    return doc
 
 
 async def add_event(doc: dict) -> dict:

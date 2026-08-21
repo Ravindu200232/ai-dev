@@ -1,11 +1,4 @@
-"""v23 — the unit author gets the list the E2E author has had all along.
-
-Measured on a hotel build: three invented `data-testid`s in one component test
-survived authoring, seven repair rounds and all three escalation tiers, and the
-stage ended `3 x invented testid`. The author was shown the component's source
-and a rule that says only use a testid "spelled out in the source above" — and
-asked to enforce that rule by scanning a 600-line file by eye.
-"""
+"""Regression tests for unit-test selector grounding."""
 import unittest
 from pathlib import Path
 from types import SimpleNamespace

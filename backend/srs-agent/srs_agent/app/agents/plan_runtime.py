@@ -19,7 +19,7 @@ log = logging.getLogger("agentforge.plan")
 async def generate_plan(*, project: dict, session: dict, brief: str = "",
                         previous: dict | None = None, revision: str = "",
                         coverage: dict | None = None) -> dict:
-    """Build the plan. Returns the enriched plan, or the skeleton on any failure."""
+    """Build an enriched plan, falling back to its skeleton."""
     pid = project.get("id", "")
     skeleton = build_offline_plan(project=project, session=session, brief=brief)
 

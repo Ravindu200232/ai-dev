@@ -111,8 +111,7 @@ def _landed_on(current: str, route: str) -> bool:
         return False
     return path.rstrip("/") == (route or "/").rstrip("/")
 
-# Filler an app-agnostic reader should ignore. No domain nouns belong here —
-# whatever this app is about has to come from its own routes and plan.
+# Filler an app-agnostic reader should ignore.
 CONCEPT_STOPWORDS = {
     "page", "pages", "view", "views", "list", "lists", "item", "items",
     "management", "manage", "managing", "section", "sections", "detail",
@@ -182,9 +181,7 @@ def system_prompt(accounts) -> str:
     return SYSTEM.replace("{auth_rules}", auth_rules(accounts))
 
 
-# What `get_by_role` will actually see. A number box is a spinbutton, not a
-# textbox, so a scenario that says `role=textbox name=/price/i` misses a
-# perfectly good <input type="number"> and the run blames the app for it.
+# What `get_by_role` will actually see.
 INPUT_ROLE = {
     "number": "spinbutton", "range": "slider", "checkbox": "checkbox",
     "radio": "radio", "submit": "button", "button": "button",
@@ -227,8 +224,7 @@ def same_role_family(wanted: str, found: str) -> bool:
     return any(wanted in group and found in group for group in ROLE_FAMILY)
 
 
-# Routes that answer without a session. Anything else is app data, whatever
-# the app happens to be about.
+# Routes that answer without a session.
 OPEN_ROUTES = {"/", "/login", "/signin", "/sign-in", "/signup", "/sign-up",
                "/register", "/about", "/contact", "/pricing", "/terms",
                "/privacy", "/forgot-password", "/reset-password"}

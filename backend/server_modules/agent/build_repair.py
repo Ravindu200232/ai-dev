@@ -412,12 +412,7 @@ def _repair_toolchain(proj_dir: Path, why: str) -> bool:
 def run_build_fix_loop(arch, proj_dir: Path, db_ok: bool,
                        max_rounds: int = MAX_BUILD_FIX, *,
                        force: bool = False) -> bool:
-    """Compile the app and let the model repair whatever `next build` rejects.
-
-    Stages each rebuild so they can tell whether their own repair broke the
-    compile. When a stage changed nothing the compiler reads, the answer is
-    already known and the minute it costs is wasted, so it is skipped.
-    """
+    """Build the app and repair compiler errors."""
     from agents.build_cache import already_green, mark_green
     if not force:
         try:

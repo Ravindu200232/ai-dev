@@ -11,16 +11,6 @@ class BrokenImport:
     spec: str
     available: list
 
-    def close_match(self) -> str | None:
-        """A very near neighbour, or None."""
-        lower = self.name.lower()
-        same = [n for n in self.available if n.lower() == lower]
-        if len(same) == 1:
-            return same[0]
-        hit = difflib.get_close_matches(self.name, self.available, n=1,
-                                        cutoff=0.92)
-        return hit[0] if hit else None
-
     def message(self) -> str:
         return (f"{self.importer}:{self.line}: imports {{ {self.name} }} from "
                 f"'{self.spec}', which exports only: "

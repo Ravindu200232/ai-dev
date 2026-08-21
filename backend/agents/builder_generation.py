@@ -55,7 +55,7 @@ class BuilderGenerationMixin:
         return self._install_deps()
 
     def fix(self, errors: list):
-        """1. Run `npm run build` to get the real compile error with exact file+line."""
+        """Run the build and return its exact compile error."""
         log.info(f"   🔧 Starting fix pass ({len(errors)} tester errors)")
 
         build_errors = self._npm_build_errors()
@@ -128,7 +128,7 @@ class BuilderGenerationMixin:
             return ""
 
     def _fix_component(self, name: str, broken: str, errors: str, codebase: str, raw_context: str = "") -> str:
-        """Ask LLM to fix a component, giving it full error context + full codebase."""
+        """Ask the model to fix a component with full context."""
 
         console_errors = []
         for line in errors.splitlines():
@@ -317,7 +317,7 @@ class BuilderGenerationMixin:
         return result
 
     def _filter_owned(self, fpaths: list) -> list:
-        """Filter file paths to only those we generated (in built_files or on disk)."""
+        """Keep only generated file paths."""
         result = []
         for f in fpaths:
             if len(f) > 120:
@@ -341,7 +341,7 @@ class BuilderGenerationMixin:
         return "\n".join(relevant) if relevant else all_errors[:600]
 
     def _build_codebase_context(self) -> str:
-        """Return a concise summary of all generated files so the LLM has full context."""
+        """Summarize generated files for the model."""
         parts = []
 
         priority = ["src/App.jsx", "src/main.jsx", "src/index.css"]

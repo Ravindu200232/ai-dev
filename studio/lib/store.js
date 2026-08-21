@@ -12,7 +12,7 @@ const readJSON = (k, fallback) => {
 
 
 const DEFAULTS = {
-  // Open in the light macOS theme unless the browser saved another choice.
+// Use the light theme until the browser saves another choice.
   theme: 'light',
 
   models: { refine: 'llama3.1:8b', build: 'qwen2.5-coder:14b', agent: '', qa: '',
@@ -34,7 +34,7 @@ export const KEYS = {
 }
 
 
-export const RESUMABLE_SRS_PHASES = new Set(['interview', 'plan', 'review'])
+const RESUMABLE_SRS_PHASES = new Set(['interview', 'plan', 'review'])
 
 
 
@@ -46,42 +46,22 @@ export const useStore = create((set, get) => ({
   setStatus: (status, statusText) => set({ status, statusText }),
 
   busy: false,
-  // Opening a stored project also puts the workspace in `busy`, which is what
-  // the build overlay watches. It is not a build, so it says so: the overlay
-  // reads this and shows a plain loading panel instead of the Plan-Build-
-  // Check-Ready rail, which claimed a build was starting every time somebody
-  // clicked a finished project in the rail.
+  // Stored projects use the build overlay while opening.
   opening: false,
 
-  // Bumped whenever the set of projects on disk has changed — a build made
-  // one, a cancel removed one. The sidebar watches the number rather than the
-  // list, so the one place that knows how to fetch projects stays the only
-  // place that does, and nothing has to thread a callback through the socket.
+  // Increment when projects on disk change.
   projectsStamp: 0,
 
-  // Which kind of work is running: a whole build, a feature, a repair, an
-  // edit made with the select tool, a pencil edit, a picture. The overlay is
-  // the only thing that reads it, and it reads it because a feature and a
-  // twenty-minute build have almost nothing in common to show — one has four
-  // stages and a task list, the other has one job and a log.
+  // Which kind of work is running.
   workKind: '',
   setWorkKind: (workKind) => set({ workKind }),
   setOpening: (opening) => set({ opening }),
-  // The ask box moved out of the workspace header and into the preview's own
-  // drawer, where the console and terminal already live. The drawer sits
-  // inside PreviewPane and the send path — the tuned-prompt review, the
-  // attachments, the console evidence — all belong to the page, so the button
-  // raises this and the page renders the composer.
   askOpen: false,
   setAskOpen: (askOpen) => set({ askOpen }),
   setBusy: (busy) => set(busy ? { busy } : { busy, opening: false }),
   bumpProjects: () => set(s => ({ projectsStamp: s.projectsStamp + 1 })),
 
-  // Which page of the generated app the preview is showing. The ask box needs
-  // it — "this page is blank" and "the booking button does nothing" both mean
-  // nothing without knowing which page — and the router and the reproduction
-  // both take it. It lives here rather than in PreviewPane's own state because
-  // the box that needs it is in the header, two components away.
+  // Which page of the generated app the preview is showing.
   previewRoute: '/',
   setPreviewRoute: (previewRoute) => set({ previewRoute }),
 
@@ -121,8 +101,6 @@ export const useStore = create((set, get) => ({
 
   steps: {},
   setStep: (id, status) => set(s => ({ steps: { ...s.steps, [id]: status } })),
-  // Forward-only: see lib/progress-model.js for why a raw drop is a new
-  // piece of work rather than the run losing ground.
   progress: emptyProgress(),
   setProgress: (step, pct) =>
     set(s => ({ progress: advance(s.progress, step, pct) })),
@@ -140,12 +118,7 @@ export const useStore = create((set, get) => ({
   liveFile: null,
   liveBuf: '',
 
-  // While a file is being written the code pane follows the writer — that is
-  // the point of watching a build. Picking a file from the list is the reader
-  // saying "show me this one instead", so it stops following until the next
-  // file starts. Without it the pane belonged to whichever stream was open,
-  // and a stream that never closed (an agent that announced a write and then
-  // refused it) made every click do nothing for the rest of the session.
+  // While a file is being written the code pane follows the writer.
   follow: true,
   putFile: (name, content) => set(s => ({ files: { ...s.files, [name]: content } })),
   setFiles: (files) => set({ files }),
@@ -191,11 +164,7 @@ export const useStore = create((set, get) => ({
   },
   persist: (key, value) => { try { LS?.setItem(key, value) } catch { } },
 
-  // Everything here is about ONE project, so opening another one has to clear
-  // all of it. `qaReport` and `undo` were left behind: the testing tab showed
-  // the previous project's report until its own arrived, and the undo button
-  // stayed live pointing at a snapshot id taken in a different project — which
-  // `api.undo(project, id)` would have posted against the new one.
+      // Clear project state before opening another project.
   reset: (project) => set({
     project, logs: [], steps: {}, phases: [], files: {},
     activeFile: null, liveFile: null, liveBuf: '', follow: true,
@@ -240,8 +209,7 @@ export const useStore = create((set, get) => ({
   undo: null,
   setUndo: (undo) => set({ undo }),
 
-  // A question the run stopped on, waiting for an answer. Null the rest of the
-  // time. `ws.answerQuestion` is what clears it.
+  // A question the run stopped on, waiting for an answer.
   question: null,
 }))
 

@@ -70,10 +70,7 @@ def run_agent_pipeline(prompt: str, model: str, think: bool = None,
             except OSError as e:
                 elog("WARN", f"   ⚠ Could not copy the logo: {e}")
 
-        # Pictures the person brought themselves. They land where a drawn one
-        # would, so nothing downstream has to know the difference — and the
-        # generator skips any key that is already on disk, which is exactly
-        # what "use mine instead of drawing one" has to mean.
+        # Pictures the person brought themselves.
         adopt_uploaded_images(uploads, proj_dir)
 
         if srs_id:
@@ -128,7 +125,7 @@ def run_agent_pipeline(prompt: str, model: str, think: bool = None,
 
                               dev_port=DEV_PORT,
                               think=think,
-                              theme=theme, theme_html=theme_html,
+                              theme_html=theme_html,
                               theme_page=theme_page)
         qa.bind(arch)
 
@@ -388,12 +385,11 @@ def run_agent_pipeline(prompt: str, model: str, think: bool = None,
 
         runtime_errors = list(errors or [])
         try:
-            runtime_report, runtime_clean, runtime_written = (
+            runtime_report, runtime_clean, _ = (
                 run_runtime_verification_stage(
                     arch, proj_dir, analyzer, db_ok=db_ok, build_ok=build_ok))
         except Exception as e:
             runtime_clean = False
-            runtime_written = 0
             runtime_report = AnalyzerReport()
             runtime_report.findings.append(Finding(
                 "blocker", "RUNTIME_STAGE_FAILED",
@@ -402,11 +398,10 @@ def run_agent_pipeline(prompt: str, model: str, think: bool = None,
             log.exception("runtime verification stage")
 
         try:
-            api_report, api_clean, api_written = run_api_verification_stage(
+            api_report, api_clean, _ = run_api_verification_stage(
                 arch, proj_dir, analyzer, db_ok=db_ok, build_ok=build_ok)
         except Exception as e:
             api_clean = False
-            api_written = 0
             api_report = AnalyzerReport()
             api_report.findings.append(Finding(
                 "blocker", "API_STAGE_FAILED",

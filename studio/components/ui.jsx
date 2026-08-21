@@ -58,7 +58,7 @@ export function Badge({ tone = 'mute', className, children }) {
   )
 }
 
-/** The head of a section: the label at the left, its count at the right. */
+/** Show a section label and count. */
 export function SectionLabel({ children, right, className }) {
   return (
     <div className={cn('flex items-center justify-between gap-2',
@@ -69,24 +69,10 @@ export function SectionLabel({ children, right, className }) {
   )
 }
 
-/** The same, one step quieter — a sub-head inside a panel that already has one. */
-export function SubLabel({ children, right, className }) {
-  return (
-    <div className={cn('flex items-center justify-between gap-2',
-      'label-xs text-label', className)}>
-      <span>{children}</span>
-      {right}
-    </div>
-  )
-}
-
 /** Segmented choice control. */
 export function Seg({ block, className, children }) {
   return (
-    // Space between the options, not a rule. The hairline every child after
-    // the first used to draw sat right against the rounded ground of the
-    // selected one, so the band read as a ruled table cell rather than a
-    // switch.
+    // Space between the options, not a rule.
     <div className={cn('flex gap-1',
       block ? 'w-full rounded-xl bg-panel2 p-1' : 'w-fit rounded-xl border border-line bg-panel2 p-1', className)}>
       {children}
@@ -152,12 +138,7 @@ export function Modal({ onClose, children, className }) {
     return () => document.removeEventListener('keydown', key)
   }, [onClose])
   return (
-    // A dialog taller than the window used to be centred with no way to reach
-    // its ends: nothing scrolled, so the heading sat above the fold and the
-    // buttons below it. The delete confirmation is the longest one there is,
-    // and it showed as a strip with "Keep it" and "Delete the resources" half
-    // cut off. The backdrop scrolls now, and the sheet is capped so it cannot
-    // outgrow the window in the first place.
+  // Keep tall dialogs reachable within the viewport.
     <div onClick={onClose}
          className="fixed inset-0 z-[600] flex items-center justify-center
                     overscroll-contain bg-slate-950/35 p-4 backdrop-blur-md">
@@ -196,19 +177,7 @@ export function Dropdown({ open, onClose, children, className }) {
   )
 }
 
-/**
- * A label for something that has no room for one.
- *
- * It used to draw its own dark panel above the child. In a rail this narrow
- * that panel covered the controls underneath it — the thing being described
- * was hidden by its own description — and a hard black rectangle was the only
- * square-cornered, full-contrast surface in a light and rounded interface.
- *
- * The browser's own tooltip has neither problem: it opens beside the pointer
- * rather than over the layout, and it is the one piece of chrome a person
- * already recognises. `side` is kept because callers pass it and because
- * where a tooltip should sit is worth being able to say.
- */
+/** A label for something that has no room for one. */
 export function Tip({ text, children, className, side = 'top' }) {
   return (
     <span className={cn('relative inline-flex', className)} title={text || undefined}>
@@ -217,22 +186,7 @@ export function Tip({ text, children, className, side = 'top' }) {
   )
 }
 
-/**
- * What every editable field in the studio has to carry.
- *
- * Writing extensions rewrite a field before React hydrates it. Grammarly adds
- * `data-gramm`, QuillBot adds `data-qb-tmp-id` with a fresh random id, and
- * both add `spellcheck` — so the server's HTML and the client's DOM disagree
- * on attributes this app never set, and React reports a hydration mismatch on
- * a page that is perfectly correct. It cannot be fixed by matching them: the
- * QuillBot id is random per load, so there is nothing to match.
- *
- * `suppressHydrationWarning` is React's own answer for exactly this — it stops
- * the warning for this element's attributes and nothing else. The opt-out
- * attributes are set as well, so the extensions that honour them leave the
- * field alone rather than being merely tolerated: in a code editor a grammar
- * checker is not noise, it underlines source and offers to correct it.
- */
+/** What every editable field in the studio has to carry. */
 export const plainField = {
   suppressHydrationWarning: true,
   spellCheck: false,
@@ -249,7 +203,7 @@ export const Input = ({ className, ...rest }) => (
     {...plainField} {...rest} />
 )
 
-/** A textarea with the same protection. Everything else passes through. */
+/** A textarea with the same input protection. */
 export const TextArea = forwardRef(function TextArea({ className, ...rest }, ref) {
   return <textarea ref={ref} className={className} {...plainField} {...rest} />
 })
@@ -266,8 +220,7 @@ export const TR = ({ className, children, ...rest }) => (
     {children}
   </tr>
 )
-/* The column head is the one rule in a table that is drawn strong — it is
-   what separates the header band from the rows under it. */
+/* The column head is the one rule in a table that is drawn strong. */
 export const TH = ({ className, children }) => (
   <th className={cn('border-b-2 border-line2 px-2.5 py-2 text-left',
     'text-[10px] font-semibold uppercase tracking-[.08em] text-label',

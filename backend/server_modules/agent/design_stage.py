@@ -4,13 +4,7 @@ THEME_TIMEOUT_S = 900
 
 def _draw_design(direction, brief, app_name, model, settings, out, lock,
                  why=None):
-    """One design of the whole application, in one call.
-
-    This is the heaviest moment in the product: five calls to the build model
-    at the same instant. A busy daemon answers some of them with 503, and a
-    dropped design used to leave no trace at all — five of them left the
-    picker spinning with nothing to show and no reason for it.
-    """
+    """Generate one application design."""
     k = direction["index"]
     raw = ""
     try:
@@ -82,7 +76,7 @@ def _designs_dir() -> Path:
 
 def stage_designs(designs: list, *, source: str, srs_id: str, idea: str,
                   model: str) -> str:
-    """Write the five demos to disk under the projects folder and return the key."""
+    """Write five demos and return their project key."""
     key = "des_" + uuid.uuid4().hex[:12]
     try:
         dest = _designs_dir() / key

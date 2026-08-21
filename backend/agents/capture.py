@@ -18,7 +18,6 @@ MAX_B64 = 1_500_000
 class CaptureResult:
     png_b64: str = ""
     crop: dict = field(default_factory=dict)
-    page_size: dict = field(default_factory=dict)
     logged_in: bool = False
     error: str = ""
 
@@ -120,8 +119,6 @@ def capture_region(route: str, *, viewport: dict, scroll: dict, strokes: list,
                     page.wait_for_timeout(300)
 
                 size = page.evaluate(_OVERLAY_JS, strokes)
-                res.page_size = size
-
                 clip = dict(crop)
                 clip["x"] = max(0, min(clip["x"], size["w"] - 10))
                 clip["y"] = max(0, min(clip["y"], size["h"] - 10))

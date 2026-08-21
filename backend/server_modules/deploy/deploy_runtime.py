@@ -150,7 +150,7 @@ def _deploy_serving(run: dict) -> bool:
 
 def _deploy_wait(project: str, run_id: str, until: set, deadline: float,
                  settle_from: set = frozenset(), settle_after: float = 240.0) -> dict:
-    """Poll the run until it reaches one of `until`, draining events as it goes."""
+    """Poll until a target state while draining events."""
     parked_since = None
     while time.time() < deadline:
         run_state = DEPLOY_RUNS.get(project) or {}

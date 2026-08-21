@@ -8,19 +8,7 @@ const MIN = 0.4
 const MAX = 8
 const STEP = 0.25
 
-/**
- * A diagram at the size it deserves.
- *
- * The inline copy in the SRS panel is a thumbnail in everything but name — a
- * sequence diagram with eight lifelines, or an ERD with six entities, is
- * legible only because the browser scrolls it sideways. This is the same SVG
- * with room to read it: click to open, wheel or the buttons to zoom, drag to
- * pan, Escape to close.
- *
- * The SVG is scaled through a CSS transform rather than by rewriting its
- * width. A transform scales the vector, so text stays sharp at 8×, and it
- * leaves the markup exactly as the generator wrote it.
- */
+/** A diagram at the size it deserves. */
 export default function DiagramViewer({ svg, title, onClose }) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -40,7 +28,7 @@ export default function DiagramViewer({ svg, title, onClose }) {
     return () => document.removeEventListener('keydown', key)
   }, [onClose, reset])
 
-  // Non-passive so the page behind does not scroll while the diagram zooms.
+      // Block page scrolling while the diagram zooms.
   useEffect(() => {
     const el = surface.current
     if (!el) return

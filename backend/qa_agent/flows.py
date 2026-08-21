@@ -1,4 +1,4 @@
-"""The scenario grammar: what the model is allowed to say about a user journey."""
+"""Scenario grammar for model-authored user journeys."""
 import logging
 import re
 from dataclasses import dataclass, field
@@ -20,10 +20,6 @@ VERBS = {
     "EXPECT_NO_ERROR": 0,
 }
 ASSERTIONS = {"EXPECT_TEXT", "EXPECT_URL", "EXPECT_VALUE", "EXPECT_NO_ERROR"}
-
-
-SELECTOR_KINDS = ("role", "label", "placeholder", "text", "testid",
-                  "field", "href")
 
 
 CLICKABLE_CSS = ("button, a, [role=\"button\"], [role=\"link\"], "
@@ -247,13 +243,13 @@ def parse_selector(raw: str):
             key = pat.strip().lower()
             if not field_css(key):
                 return None, (f"unsafe field={pat!r}; use an observed simple "
-                              "field name such as email, price or guestCount")
+                              "field name such as email, status or referenceCode")
             pat = key
         if kind == "href":
             pat = pat.strip()
             if not pat.startswith("/") or pat.startswith("//") or \
                     not re.fullmatch(r"/[A-Za-z0-9_./?=&%#:+~-]*", pat):
-                return None, "href= must be a same-app path such as /orders/new"
+                return None, "href= must be a same-app path such as /items/new"
         return Selector(kind=kind, pattern=pat, flags=flags, is_regex=is_rx), ""
 
     pat, flags, is_rx, why = _pattern(raw)
@@ -498,8 +494,7 @@ export default defineConfig({
   retries: 0,
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:5173',
-    // 'load', never 'networkidle': the dev server's HMR socket never closes,
-    // so a networkidle wait can only ever time out.
+    // HMR keeps a socket open, so wait for `load`.
     actionTimeout: 15000,
     trace: 'off',
   },
@@ -524,26 +519,22 @@ Selectors — one of these semantic forms, and nothing else:
     role=button name=/sign in|log in/i
     field=email
     field=password
-    field=start
-    field=end
-    field=price
-    field=amount
+    field=name
+    field=title
     field=status
-    field=rating
-    field=review
     field=quantity
-    field=guestCount
+    field=referenceCode
     placeholder=/search/i
     text=/welcome back/i
-    testid=order-total
-    href=/orders/new
+    testid=save-item
+    href=/items/new
 
 For login/authentication fields prefer `field=email` and `field=password`.
 Those target input type/name/autocomplete and survive placeholder wording such
 as "name@example.com". Business forms also have semantic selectors such as
-`field=start`, `field=end`, `field=price`, `field=amount`, `field=status`, `field=rating`, `field=review`, and `field=quantity`.
+`field=name`, `field=title`, `field=status`, and `field=quantity`.
 Use them instead of guessing visible copy. A simple observed field name such as
-`field=guestCount` or `field=nightlyRate` is also allowed and binds by
+`field=referenceCode` or `field=unitCount` is also allowed and binds by
 name/id/aria/placeholder. Use placeholder= only when that exact placeholder was
 observed in source/runtime DOM.
 

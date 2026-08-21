@@ -169,9 +169,8 @@ const env = Object.fromEntries(
 const uri = env.MONGODB_URI
 const name = env.MONGODB_DB
 
-// The guard that PERMITS a drop. Every database this app creates is
-// `agentforge_`-prefixed, so anything else belongs to something that is not
-// AgentForge and is refused rather than deleted.
+// Only AgentForge databases may be dropped.
+// Refuse every database without the expected prefix.
 if (!name.startsWith('agentforge_')) {
   console.log(JSON.stringify({ ok: false, error: 'refusing: ' + name }))
   process.exit(1)

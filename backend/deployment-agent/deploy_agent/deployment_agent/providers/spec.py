@@ -1,4 +1,4 @@
-"""Static per-target facts, and the one result type the deploy seam returns."""
+"""Deployment target facts and result types."""
 
 from __future__ import annotations
 

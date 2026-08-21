@@ -11,7 +11,7 @@ const ALWAYS = new Set([
   'vite.config.js', 'vite.config.ts', 'next.config.js', 'next.config.mjs',
 ])
 
-export function sanitizeProjectName(name) {
+function sanitizeProjectName(name) {
   return String(name || 'imported-project')
     .toLowerCase()
     .replace(/[^a-z0-9-_]+/g, '-')

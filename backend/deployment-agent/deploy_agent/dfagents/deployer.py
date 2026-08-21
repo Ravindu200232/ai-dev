@@ -30,18 +30,3 @@ class DeploymentAgent(DeploymentCoreMixin, DeploymentPrepareMixin, DeploymentAws
             args=(run_id, aws_profile, region, mongodb_uri, project_key, credential_reference, vercel_token),
             daemon=True,
         ).start()
-    def deploy(
-        self,
-        run_id: str,
-        aws_profile: str,
-        region: str,
-        mongodb_uri: str,
-        approved: bool,
-        credential_reference: str = "",
-        vercel_token: str = "",
-    ) -> None:
-        _run, project_key = self._validate_request(run_id, mongodb_uri, approved)
-        self._reserve_project(run_id, project_key)
-        self._deploy_reserved(
-            run_id, aws_profile, region, mongodb_uri, project_key, credential_reference, vercel_token
-        )

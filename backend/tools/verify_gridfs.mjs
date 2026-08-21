@@ -1,16 +1,4 @@
-/**
- * Prove GridFS works against a real MongoDB before trusting a build to it.
- *
- * Run it from a generated project, or anywhere the `mongodb` driver is
- * installed:
- *
- *     node tools/verify_gridfs.mjs "mongodb+srv://user:pass@host/dbname"
- *
- * With no argument it reads MONGODB_URI, then .env.local. It writes a 20MB
- * file — deliberately larger than the 16MB a document can hold — reads it
- * back, compares every byte, checks that re-seeding the same key does not
- * store a second copy, and removes everything it created.
- */
+/** Verify large GridFS writes, reads, deduplication, and cleanup. */
 import { MongoClient, GridFSBucket, ObjectId } from 'mongodb'
 import { readFile } from 'node:fs/promises'
 import crypto from 'node:crypto'
@@ -71,7 +59,7 @@ try {
   const bucket = new GridFSBucket(db, { bucketName: BUCKET })
   const key = `verify:${crypto.randomUUID()}`
 
-  // 20MB of non-repeating bytes: repetition would hide a chunk written twice.
+  // Unique bytes expose duplicated chunks.
   const source = crypto.randomBytes(20 * MB)
   const sourceHash = crypto.createHash('sha256').update(source).digest('hex')
 

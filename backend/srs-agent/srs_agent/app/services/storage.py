@@ -34,10 +34,6 @@ def save_srs_json(project_id: str, srs: dict, version: str) -> Path:
     return path
 
 
-def srs_json_path(project_id: str) -> Path:
-    return project_dir(project_id) / "srs_latest.json"
-
-
 def srs_pdf_path(project_id: str, version: str | None = None) -> Path:
     name = f"SRS_v{version}.pdf" if version else "SRS_latest.pdf"
     return project_dir(project_id) / name

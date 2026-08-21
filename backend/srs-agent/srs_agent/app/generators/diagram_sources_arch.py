@@ -172,7 +172,7 @@ def _state_transitions(doc: dict, life: dict) -> list[tuple[str, str, str]]:
 
 
 def class_object_diagram(doc: dict) -> str:
-    """UML class diagram source; the native renderer also shows an object instance."""
+    """Build UML class diagram source."""
     tables = ((doc.get("database_design") or {}).get("tables") or [])[:10]
     lines = ["classDiagram"]
     for t in tables:
@@ -221,7 +221,7 @@ def state_machine_diagram(doc: dict) -> str:
 
 
 def dfd_diagram(doc: dict) -> str:
-    """Level-1 data-flow view: external entities, processes, stores, labelled data."""
+    """Build the level-one data-flow view."""
     actors, _ = actors_and_use_cases(doc)
     modules = [str(m) for m in (doc.get("main_modules") or []) if str(m).strip()][:5] or ["Core processing"]
     stores = [str(t.get("table_name")) for t in (((doc.get("database_design") or {}).get("tables") or [])[:5]) if t.get("table_name")]
@@ -249,7 +249,7 @@ def dfd_diagram(doc: dict) -> str:
 
 
 def bpmn_diagram(doc: dict) -> str:
-    """Mermaid preview of BPMN semantics; native SVG is the main BPMN rendering."""
+    """Build the Mermaid preview for the BPMN diagram."""
     workflows = doc.get("business_workflows") or []
     steps = [str(s) for s in ((workflows[0].get("steps") if workflows else []) or []) if str(s).strip()][:8]
     if not steps:

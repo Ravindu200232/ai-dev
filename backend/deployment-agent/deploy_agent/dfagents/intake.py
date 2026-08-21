@@ -61,7 +61,7 @@ class IntakeAgent:
         return spec
 
     @staticmethod
-    def _ignore(directory: str, names: list[str]) -> set[str]:
+    def _ignore(_directory: str, names: list[str]) -> set[str]:
         return {name for name in names if name in SKIP_DIRS or name.startswith(".env")}
 
     def _discover_services(self, root: Path) -> list[ServiceSpec]:

@@ -1,4 +1,4 @@
-"""What previous builds got wrong, so the next one is told before it starts."""
+"""Lessons from earlier builds for the next run."""
 from __future__ import annotations
 
 import json
@@ -96,6 +96,44 @@ def _unbag_lint(message: str) -> tuple:
     return (f"LINT_{slug}" if slug else "", remedy.strip() or rule.strip())
 
 
+FINDING_REMEDIES = {
+    "INERT_CONTROL": "Implement the promised action or remove the control.",
+    "MISSING_FILE":
+        "Write every file promised by the accepted plan before verification.",
+    "MISSING_PLANNED_DATA":
+        "Wire each planned read from its data source through the owning page.",
+    "SEED_VOLUME": "Keep demo data small unless the request asks for more.",
+    "ROLE_REDIRECT": "Route each signed-in role to its planned landing page.",
+    "NO_WAY_THERE":
+        "Link every planned page from its parent or shared navigation.",
+    "BROKEN_CONTRACT":
+        "Implement the declared action at its owning boundary and verify it.",
+    "UNAWAITED_COLLECTION":
+        "Await the collection before calling database methods on it.",
+    "NO_SIGNUP":
+        "Add sign-up only when the accepted requirements allow registration.",
+    "LAYOUT_CHROME":
+        "Keep shared navigation out of full-screen authentication pages.",
+    "DEAD_LINK": "Create the promised destination or remove the dead link.",
+    "UNBUILT_PROMISE":
+        "Implement every promise in the accepted plan before handoff.",
+    "MONGO_ID_TYPE":
+        "Convert transport ids at the MongoDB boundary and keep client ids as strings.",
+    "MISSING_PACKAGE":
+        "Install a package only when source imports it and it is not present.",
+}
+
+
+def _portable_remedy(code: str, remedy: str) -> str:
+    """Return only lessons safe to reuse across projects."""
+    if code in FINDING_REMEDIES:
+        return FINDING_REMEDIES[code]
+    text = " ".join(str(remedy or "").split())
+    if code.startswith(("TEST_", "LINT_")):
+        return text
+    return ""
+
+
 def from_findings(findings) -> list:
     """`(code, fix)` pairs out of an AnalyzerReport's findings."""
     out = []
@@ -109,7 +147,9 @@ def from_findings(findings) -> list:
             if code:
                 out.append((code, remedy))
             continue
-        out.append((code, getattr(f, "fix", "") or message))
+        remedy = _portable_remedy(code, getattr(f, "fix", "") or message)
+        if remedy:
+            out.append((code, remedy))
     return out
 
 
@@ -178,9 +218,11 @@ def from_qa_history(rounds) -> list:
 def prompt_block(path: Path = None) -> str:
     """The block for the builder's system prompt, or "" when there is nothing."""
     lessons = load(path)
-    # A remedy is the price of admission.
-    ranked = [(code, row) for code, row in lessons.items()
-              if row.get("count", 0) >= MIN_PROJECTS and (row.get("remedy") or "").strip()]
+    ranked = []
+    for code, row in lessons.items():
+        remedy = _portable_remedy(code, row.get("remedy") or "")
+        if row.get("count", 0) >= MIN_PROJECTS and remedy:
+            ranked.append((code, {**row, "remedy": remedy}))
     ranked.sort(key=lambda kv: (kv[1].get("count", 0), kv[1].get("last_seen", "")),
                 reverse=True)
     if not ranked:

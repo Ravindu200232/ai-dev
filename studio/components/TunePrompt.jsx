@@ -1,21 +1,6 @@
 'use client'
 
-/**
- * "Is this what you mean?" — the edit request, read back before it runs.
- *
- * What people type into the edit box is four or five words typed while
- * looking at the thing they mean: "blackground image include". Every word
- * they left out was in front of them, and the model never sees it. Measured
- * on a real edit, that request produced a background image AND an 80%-white
- * overlay laid on top of it — the picture landed, the page looked identical,
- * and the person had no way to know their request was the ambiguous part.
- *
- * So the request is said back properly first, and shown. Three ways out:
- * send it, change the words and ask again, or send exactly what was typed
- * (attachments and all — the box shows the words, not the paste).
- * Nothing runs until one of them is chosen — an edit is a rewrite of a real
- * file, and it is cheaper to read one sentence than to undo one.
- */
+/** Review an edit request before it runs. */
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Loader2, RefreshCw, X } from 'lucide-react'
 import { Button, Modal } from './ui'
@@ -71,8 +56,6 @@ export default function TunePrompt({ typed, tuned, onSend, onSendTyped,
         </p>
 
         <p className="label-2xs mt-4 text-muted2">Asking for</p>
-        {/* Editable on purpose. If it read the request wrong, the fix is to
-            say it differently — not to cancel and start over. */}
         <textarea
           ref={box}
           value={text}

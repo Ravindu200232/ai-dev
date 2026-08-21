@@ -1,6 +1,8 @@
 """Fallback domain used when the brief has no confident match."""
 from __future__ import annotations
 
+from typing import Any
+
 from .domains_core import GUEST_ROLE, SUPER_ADMIN, f, fk, pk, status, timestamps
 
 GENERIC_DOMAIN: dict[str, Any] = {
@@ -56,5 +58,4 @@ GENERIC_DOMAIN: dict[str, Any] = {
         {"area": "Scope", "risk": "Under-specified domain", "severity": "Medium", "reason": "Idea is generic, so the model is a sensible default.", "mitigation": "Refine via the requirement questions and prompt customization."},
     ],
 }
-
 

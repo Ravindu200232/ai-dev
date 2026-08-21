@@ -169,7 +169,7 @@ class DeploymentCoreMixin:
         )
         if conclusion == "success":
             self.store.transition_run(run_id, RunState.VALIDATING)
-            # Github was last set to "running" when the workflow was.
+            # Complete the step that triggered the workflow.
             self.emit(run_id, "step", "github", "complete", 92,
                       "GitHub Actions workflow completed")
             self.emit(run_id, "step", "deploy", "complete", 93, "GitHub Actions completed; validating the live service")

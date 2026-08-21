@@ -69,9 +69,6 @@ export default function PreviewConsoleDrawer() {
             <SquareTerminal className="size-3.5" /> Terminal
           </button>
 
-          {/* Ask sits with the other two on purpose: this bar is already the
-              place you look when the preview is doing something you did not
-              expect, and asking about it was a trip back up to the header. */}
           <button onClick={() => setAskOpen(true)} disabled={!project || busy}
                   title={project ? 'Describe a change, report a bug, or ask a question'
                                  : 'Open a project first'}

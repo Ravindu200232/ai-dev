@@ -5,29 +5,9 @@ import { ChevronRight, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 
-/**
- * The project as a tree, the way an editor shows it.
- *
- * The pane used to list `Object.keys(files).sort()` — sixty full paths in one
- * flat column, each one truncated in a 180px gutter, so `app/api/customers/`
- * and `app/api/products/` were told apart by the last few characters that
- * happened to fit. A tree is not decoration here: it is the only way the
- * shape of a generated project is legible at all.
- *
- * No icon font and no icon package. This runs with no network, and the studio
- * already has `lucide-react`; what makes a file type recognisable at a glance
- * is mostly COLOUR, not glyph — VS Code's own themes lean on exactly that. So
- * the badge is the extension in its own colour, which stays sharp at 10px
- * where a two-tone glyph turns to mush. It is one of the two places in the
- * interface allowed a palette of its own; the code pane next to it is the
- * other, and for the same reason.
- */
+/** The project as a tree, the way an editor shows it. */
 
 
-// Roughly the colours a developer already expects from an editor's icon theme,
-// pinned as literals rather than theme tokens: a file type means the same
-// thing in light mode and dark, and the badges have to stay apart from each
-// other rather than from the panel behind them.
 const KIND = {
   jsx:  ['#0ea5c6', 'JSX'],
   js:   ['#a68a00', 'JS'],
@@ -52,8 +32,6 @@ const KIND = {
   txt:  ['#7a8494', 'TXT'],
 }
 
-// A few names carry more meaning than their extension does, exactly as they do
-// in an editor's icon theme: `package.json` is not just some JSON.
 const BY_NAME = {
   'package.json': ['#5f9e2f', 'NPM'],
   'package-lock.json': ['#7a8494', 'LCK'],
@@ -79,7 +57,7 @@ export function fileBadge(name) {
 }
 
 
-/** `{path: content}` → nested `{name, path, children[]}`, folders before files. */
+/** Turn flat paths into a folder-first tree. */
 function build(paths) {
   const root = { name: '', path: '', dirs: new Map(), files: [] }
   for (const p of paths) {
@@ -109,13 +87,7 @@ function build(paths) {
 }
 
 
-/**
- * Which folders start open.
- *
- * All of them, unless the project is big enough that "all of them" is the flat
- * list again with extra indentation. Past the threshold only the top level
- * opens, which is what an editor does with a large repository.
- */
+/** Which folders start open. */
 function initialOpen(tree, total) {
   const open = new Set()
   const walk = (node, depth) => {
@@ -135,9 +107,7 @@ export default function FileTree({ files, active, dirty, onPick }) {
   const [open, setOpen] = useState(() => new Set())
   const [seeded, setSeeded] = useState('')
 
-  // Re-seeded when the project changes, not on every render: a folder the
-  // reader closed must stay closed while they work, and `files` changes on
-  // every file an agent writes.
+  // Re-seeded when the project changes, not on every render.
   const stamp = paths.length + ':' + (paths[0] || '')
   if (stamp !== seeded) {
     setSeeded(stamp)

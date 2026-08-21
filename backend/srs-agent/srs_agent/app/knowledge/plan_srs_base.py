@@ -1,4 +1,4 @@
-"""Compose the SRS from the plan the customer approved — and from nothing else."""
+"""Compose the SRS only from the approved plan."""
 from __future__ import annotations
 
 import copy
@@ -417,5 +417,4 @@ def _logo_prompt(app_name: str, pack: dict, branding: dict) -> str:
         f"No text, no lettering, no gradients, no photorealism, no drop shadows. "
         f"Square composition, generous margin, transparent background, SVG-like clean edges."
     )
-
 

@@ -147,9 +147,9 @@ PART 1 — a detailed markdown document. Use these headings:
                            app is, it almost certainly has a front door.
 
                            `reached from` is the ONE control that opens
-                           the page: `navbar (member)`, or the page it
+                           the page: `navbar (signed-in user)`, or the page it
                            sits on and the thing you press — `/owner, the
-                           "Classes" card`. For an /api row, the page that
+                           "Manage" card`. For an /api row, the page that
                            calls it. Only paths that are rows of this
                            table, and never an arrow — arrow chains belong
                            in ## Page Flow and the tooling reads any row
@@ -167,7 +167,7 @@ PART 1 — a detailed markdown document. Use these headings:
                            GIVE EACH ROLE ITS OWN SECTION. If the request
                            describes what different roles see, every one of
                            them gets its own route prefix — /member,
-                           /technician, /manager — and each screen the
+                           /staff, /admin — and each screen the
                            request names becomes its OWN route under it,
                            not a tab inside one shared page. A request
                            naming three roles with four screens between
@@ -177,22 +177,21 @@ PART 1 — a detailed markdown document. Use these headings:
                            branches on `user.role` is the one thing not to
                            do here, and it is the failure this rule exists
                            for: measured on the same request twice, one
-                           plan produced /member, /member/book, /technician,
-                           /technician/report, /technician/add-session,
-                           /manager, /manager/staff, /manager/stock — and
+                           plan produced /member, /member/history, /staff,
+                           /staff/tasks, /staff/reports,
+                           /admin, /admin/users, /admin/settings — and
                            the other produced /dashboard and nothing else,
                            so two of the three roles had nowhere to go.
 
                            Next does NOT inherit a page's guard, so the
                            `who` cell is answered again for every page
-                           under /manager, not just its landing page.
+                           under /admin, not just its landing page.
   ## Accounts            – ONLY if people sign in; omit the heading
                            entirely for an app where they do not. Answer
                            all four, each on its own line:
 
                            `Roles: ` every role, comma separated, the most
-                           ordinary one FIRST — the customer, the member,
-                           the visitor who buys something. That first role
+                           ordinary non-staff one FIRST. That first role
                            is the one a new account becomes, so the order
                            is a decision, not a list.
 

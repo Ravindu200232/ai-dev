@@ -3,15 +3,11 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, Check, Expand, Loader2, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '@/lib/api'
-import { Button, Modal } from './ui'
+import { Modal } from './ui'
 import { cn } from '@/lib/utils'
 
 
-/**
- * What the wait actually means. Five whole-app designs are five calls to the
- * build model at once — the heaviest moment in the product — so a long wait
- * here is normal and a silent spinner is not a status.
- */
+/** What the wait actually means. */
 function drawingNote(waited) {
   if (waited > 240) return 'the model is taking much longer than usual — it may be busy'
   if (waited > 150) return 'still drawing — five designs run at the same time'

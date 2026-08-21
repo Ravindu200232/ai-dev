@@ -219,7 +219,7 @@ def save_project_file(proj_name: str, rel: str, content: str) -> dict:
 
 
 def get_project_files(proj_name: str) -> dict:
-    """Read all source files from a project directory, return as {path: content}."""
+    """Read project sources into a path-to-content map."""
     proj_dir = PROD_DIR / proj_name
     if not proj_dir.exists():
         return {}

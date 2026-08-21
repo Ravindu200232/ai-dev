@@ -31,9 +31,7 @@ export default function ModelPicker({
   const current = unique.find(m => m.id === value)
 
   return (
-    // The picker is a row of the rail, not a control sitting inside one: the
-    // role reads as a fixed-width label at the left, the model fills the rest
-    // in the mono face, and a 1px rule closes the row off from the next.
+    // The picker is a row of the rail, not a control sitting inside one.
     <div className="relative">
       <Tip text={hint} className="w-full">
         <button onClick={(e) => { e.stopPropagation(); setOpen(o => !o); setQ('') }}

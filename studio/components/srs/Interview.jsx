@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowRight, Check, FileText, Loader2, Paperclip, SkipForward,
+  ArrowLeft, ArrowRight, FileText, Loader2, SkipForward,
   Sparkles,
 } from 'lucide-react'
 import { api } from '@/lib/api'

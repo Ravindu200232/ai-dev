@@ -55,10 +55,6 @@ class TestTarget:
     phase: int = 0
     reason: str = ""
 
-    @property
-    def is_route(self) -> bool:
-        return self.tier == TIER_ROUTE
-
 
 @dataclass
 class TestFailure:

@@ -113,19 +113,6 @@ export function activityEvent(text = '', level = 'INFO') {
   return null
 }
 
-export function humanActivity(text = '', level = 'INFO') {
-  return activityEvent(text, level)?.title || ''
-}
-
-export function activityAgent(text = '') {
-  const low = String(text).toLowerCase()
-  if (low.includes('test') || low.includes('vitest') || low.includes('e2e') || low.includes('playwright')) return 'qa'
-  if (low.includes('repair') || low.includes('fix') || low.includes('root cause')) return 'fixer'
-  if (low.includes('analy') || low.includes('plan')) return 'analyst'
-  if (pathFrom(text) || low.includes('wrote') || low.includes('build')) return 'builder'
-  return 'orchestrator'
-}
-
 export function liveFileActivity(path = '') {
   return {
     kind: path.startsWith('tests/') ? 'test' : 'build',

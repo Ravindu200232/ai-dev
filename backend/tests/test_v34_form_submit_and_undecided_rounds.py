@@ -1,4 +1,4 @@
-"""The checkout that navigated instead of saving, and the round that decided nothing."""
+"""Form navigation and undecided-round regressions."""
 import unittest
 from pathlib import Path
 

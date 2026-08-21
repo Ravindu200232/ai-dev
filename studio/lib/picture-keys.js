@@ -1,11 +1,4 @@
-/**
- * The name a picture is known by inside a build.
- *
- * A page asks for `/generated/<key>.png`, and the drawing pass skips any key
- * already on disk. So the key an upload is given decides whether it replaces
- * a generated picture or sits beside one nothing ever looks at. The backend
- * accepts `[A-Za-z0-9._-]{1,60}` and nothing else.
- */
+/** The name a picture is known by inside a build. */
 
 const MAX = 60
 
@@ -17,7 +10,7 @@ export function keyFromName(filename) {
   return key || 'picture'
 }
 
-/** A key the build will accept, and that no other picture already has. */
+/** Create a unique build-safe picture key. */
 export function uniqueKey(want, taken) {
   const used = Array.isArray(taken) ? taken : []
   const base = keyFromName(want)
@@ -30,7 +23,7 @@ export function uniqueKey(want, taken) {
   return `${base}-${Date.now()}`.slice(0, MAX)
 }
 
-/** `{key: server path}` — the shape the build already uses for the logo. */
+/** Map picture keys to server paths. */
 export function uploadMap(pictures) {
   const out = {}
   for (const row of pictures || []) {

@@ -36,20 +36,9 @@ class DeploymentTarget(str, Enum):
     AWS_ECS = "aws_ecs"
 
 
-class CredentialMode(str, Enum):
-    GITHUB_SESSION = "github_session"
-    GITHUB_TOKEN = "github_token"
-    AWS_PROFILE = "aws_profile"
-    AWS_TEMPORARY = "aws_temporary"
-    AWS_ACCESS_KEY = "aws_access_key"
-    VERCEL_TOKEN = "vercel_token"
-
-
 class GateStatus(str, Enum):
-    PENDING = "pending"
     PASSED = "passed"
     FAILED = "failed"
-    SKIPPED = "skipped"
 
 
 @dataclass
@@ -89,86 +78,6 @@ class EnvironmentContract:
 
     def unresolved(self) -> list[EnvironmentEntry]:
         return [entry for entry in self.entries if entry.required and not entry.value_present]
-
-
-@dataclass
-class DeploymentRequest:
-    run_id: str
-    target: DeploymentTarget
-    approved: bool
-    credential_mode: CredentialMode
-    credential_reference: str = ""
-    region: str = ""
-    team_id: str = ""
-    production: bool = True
-
-    def safe_dict(self) -> dict[str, Any]:
-        return {
-            "run_id": self.run_id,
-            "target": self.target.value,
-            "approved": self.approved,
-            "credential_mode": self.credential_mode.value,
-            "credential_reference": self.credential_reference,
-            "region": self.region,
-            "team_id": self.team_id,
-            "production": self.production,
-        }
-
-
-@dataclass
-class ProviderCapabilities:
-    target: DeploymentTarget
-    supports_git_integration: bool
-    supports_rollback: bool
-    supports_sensitive_environment: bool
-    requires_container_build: bool
-
-
-@dataclass
-class ProviderArtifactSet:
-    target: DeploymentTarget
-    records: list[dict[str, Any]] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class SmokeTest:
-    name: str
-    method: str
-    path: str
-    required: bool = True
-
-
-@dataclass
-class SmokeTestResult:
-    name: str
-    method: str
-    path: str
-    status_code: int
-    passed: bool
-    elapsed_ms: int = 0
-    error: str = ""
-
-
-@dataclass
-class FailureEvidence:
-    stage: str
-    code: str
-    message: str
-    retry_action: str
-    details: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class DeploymentResult:
-    target: DeploymentTarget
-    success: bool
-    commit_sha: str = ""
-    deployment_id: str = ""
-    application_url: str = ""
-    provider_metadata: dict[str, Any] = field(default_factory=dict)
-    smoke_tests: list[SmokeTestResult] = field(default_factory=list)
-    failure: FailureEvidence | None = None
 
 
 @dataclass
@@ -268,21 +177,6 @@ class ArtifactRecord:
     size: int
     original_exists: bool
     original_sha256: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class PipelineEvent:
-    run_id: str
-    type: str
-    stage: str
-    status: str
-    percent: int
-    message: str
-    data: dict[str, Any] = field(default_factory=dict)
-    timestamp: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

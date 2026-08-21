@@ -29,45 +29,35 @@ export const api = {
   open: (project) => post(`/open/${encodeURIComponent(project)}`, {}),
   deleteProject: (project) => post('/delete-project', { project }),
 
-  // Stop the running build. The backend kills whatever child process is
-  // holding the thread, then removes the half-built project and the
-  // specification it was built from — a cancelled run leaves nothing.
+  // Stop the running build.
   cancelBuild: () => post('/build/cancel', {}),
 
-  // Throw away a specification that has not been approved. Answered by the
-  // local backend, not the SRS agent: the staging directory is a file on
-  // this machine and the two share it.
+  // Throw away a specification that has not been approved.
   discardSrs: (srs_id) => post('/discard-srs', { srs_id }),
   undo: (project, id) => post('/undo', { project, id }),
 
   logoPrompt: (prompt, model, opts) => localJob('/logo-prompt', { prompt, model }, opts),
   image: (body, opts) => localJob('/image', body, opts),
 
-  // Five designs of one page. A job, not a POST: it is five model calls and
-  // outlives any request timeout.
+  // Five designs of one page.
   themes: (body, opts) => localJob('/themes', body, opts),
   tune: (body, opts) => localJob('/tune', body, opts),
 
-  // The same answer as `image`, from a file instead of a prompt. A plain POST
-  // rather than a job: this writes a file, where generating one waits on
-  // Fooocus and needs the shim to outlive the 30s rewrite.
+  // The same answer as `image`, from a file instead of a prompt.
   imageUpload: (file, body) => Promise.resolve(tooBig(file)).then(big => {
     if (big) throw big
     return fileToBase64(file).then(data_base64 =>
       post('/image-upload', { ...body, filename: file.name, data_base64 }))
   }),
 
-  // Read one attachment for an editing chat: a picture is saved into the
-  // project and described, a PDF and a recording come back as text.
+  // Read one attachment for an editing chat.
   attach: (file, body) => Promise.resolve(tooBig(file)).then(big => {
     if (big) throw big
     return fileToBase64(file).then(data_base64 =>
       post('/attach', { ...body, filename: file.name, data_base64 }))
   }),
 
-  // Put your own picture where the one you picked is. Returns as soon as the
-  // work is queued; the result arrives over the websocket like every other
-  // edit, so the log, the phases and the undo point behave the same.
+  // Replace the selected picture with an upload.
   imageSwap: (file, body) => Promise.resolve(tooBig(file)).then(big => {
     if (big) throw big
     return fileToBase64(file).then(data_base64 =>
@@ -88,8 +78,7 @@ export const api = {
     ? req(`/srs${path}`)
     : srsJob(path, body),
 
-  // `purpose` is what the person says the file is for. The model can
-  // describe any picture; only they know which job it has.
+  // `purpose` describes how the file will be used.
   srsUpload: (project, file, opts = {}) => Promise.resolve(tooBig(file)).then(big => {
     if (big) throw big
     return fileToBase64(file).then(data_base64 =>
@@ -132,8 +121,6 @@ async function deployJob(method, path, body, { onWait, signal } = {}) {
   }
 }
 
-export { deployJob }
-
 async function srsJob(path, body, { onWait, signal } = {}) {
   const started = await post('/srs/jobs', { path, method: 'POST', body })
   const id = started.job_id
@@ -152,20 +139,7 @@ async function srsJob(path, body, { onWait, signal } = {}) {
   }
 }
 
-export { srsJob }
-
-
-// An attachment goes up as base64 inside a JSON body rather than as multipart,
-// because the job shim above is what keeps a slow upload alive: the rewrite in
-// front of the SRS abandons any request at 30 seconds, and transcribing a
-// recording or showing a scanned PDF to a vision model runs past that. The shim
-// replays JSON only, so the file has to be JSON.
-// Measured against the running stack: the Next rewrite in front of both APIs
-// refuses a request body over 10 MiB with a bare 500 that never reaches Python,
-// so nothing server-side can turn it into a sentence. base64 costs a third on
-// top, which leaves roughly this much actual file. Checked here so the answer
-// is instant and says what is wrong, rather than a crash after a long upload.
-export const MAX_UPLOAD_BYTES = 7_500_000
+const MAX_UPLOAD_BYTES = 7_500_000
 
 function tooBig(file) {
   if ((file?.size || 0) <= MAX_UPLOAD_BYTES) return null
@@ -178,8 +152,7 @@ function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error(`${file.name} could not be read`))
-    // readAsDataURL gives "data:<type>;base64,<payload>"; the server strips the
-    // prefix too, so a change here cannot break it.
+    // readAsDataURL gives "data:<type>;base64,<payload>".
     reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
     reader.readAsDataURL(file)
   })
@@ -196,9 +169,6 @@ export function uploadMode(file) {
   if (type.startsWith('audio/') || /\.(wav|mp3|m4a|ogg|webm|flac)$/.test(name)) return 'voice'
   return 'text'
 }
-
-export { fileToBase64 }
-
 
 async function localJob(path, body, { onWait, signal } = {}) {
   const started = await post('/jobs', { path, method: 'POST', body })
@@ -217,9 +187,6 @@ async function localJob(path, body, { onWait, signal } = {}) {
     return job.result
   }
 }
-
-export { localJob }
-
 
 export const HTTP_FALLBACK = {
   build: '/build',

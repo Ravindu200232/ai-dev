@@ -1,4 +1,4 @@
-"""Symbol ledgers, import repair, command execution and client/server directives."""
+"""Symbol tracking, import repair, commands, and directives."""
 from .architect_common import *
 
 
@@ -114,7 +114,7 @@ class ArchitectSymbolMixin:
                     f"{target}/index.js", f"{target}/index.jsx"))
 
     def redirect_dead_imports(self) -> int:
-        """Repoint an import whose path does not exist at the file that really exports."""
+        """Point a broken import at the file that exports it."""
         exporters = self._named_exporters()
         fixed = 0
         for path, content in list(self.files.items()):
@@ -189,10 +189,6 @@ class ArchitectSymbolMixin:
         if not missing:
             return 0
 
-        # Asking for a file the prompt forbids writing gets a refusal, and the
-        # refusal streams into the log a token per line. The import is the
-        # defect: this app has no sessions, so the page must stop asking for
-        # one rather than have `lib/auth.js` invented for it.
         forbidden = sorted(m for m in missing if m in self.OWNED_FILES)
         if forbidden:
             self._log("WARN", f"   ⛔ {', '.join(forbidden)} cannot be created — "
@@ -220,8 +216,7 @@ class ArchitectSymbolMixin:
                                 "status": "done", "written": n})
         return n
 
-    # Written by the scaffold when the app has sign-in, and never by a model.
-    # A missing one of these means the app has no auth at all.
+        # The scaffold writes this when the app has sign-in.
     OWNED_FILES = frozenset({
         "lib/auth.js", "lib/auth-client.js",
         "app/api/auth/[...all]/route.js", "lib/mongodb.js",
@@ -271,8 +266,6 @@ class ArchitectSymbolMixin:
         r"|on(Click|Change|Submit|Input|KeyDown|KeyUp|Focus|Blur)\s*="
         r"|from\s+['\"]framer-motion['\"]"
         r"|\b(window|document|localStorage)\s*\.")
-    IMPORT_LINE_RE = re.compile(r"^\s*import\s.+$", re.M)
-
     def _next_files(self):
         for path, content in list(self.files.items()):
             if path in self.NEXT_PROTECTED or not path.endswith((".js", ".jsx")):

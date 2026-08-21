@@ -1,4 +1,4 @@
-"""The bytes of the files a fix is about to touch, so a bad fix costs nothing."""
+"""File snapshots for safe repair rollback."""
 import logging
 from pathlib import Path
 

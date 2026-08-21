@@ -140,8 +140,6 @@ function Step({ n, step, last, artifacts }) {
              : 'text-accent border-accent bg-panel'
   return (
     <li className="relative flex gap-3 pb-3 last:pb-0">
-      {/* The thread down the left is the only line here that is not a rule:
-          it joins one step to the next, so it stays a hairline. */}
       {!last && <span className="absolute left-[11px] top-6 h-[calc(100%-1.5rem)] w-px bg-line2" />}
       <span className={cn('relative z-10 flex size-[22px] shrink-0 items-center justify-center',
                           'border', tone)}>

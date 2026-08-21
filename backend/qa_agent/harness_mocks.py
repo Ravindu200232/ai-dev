@@ -58,11 +58,7 @@ class HarnessMockMixin:
                 // repeated here or every import of @/lib/* fails to resolve.
                 alias: {
                   '@': fileURLToPath(new URL('.', import.meta.url)),
-                  // next/link needs a real client router to render. Every
-                  // client component imports it, and a model mocking it by
-                  // hand gets the default export wrong — measured, four
-                  // failures in one file from a factory with no `default`.
-                  // Aliasing it once here means no test ever has to.
+                  // Use one stable `next/link` mock with a default export.
                   'next/link': fileURLToPath(
                     new URL('./tests/helpers/nextLink.jsx', import.meta.url)),
                 },
@@ -96,13 +92,7 @@ class HarnessMockMixin:
             import { cleanup } from '@testing-library/react'
             import { afterEach, beforeEach, vi } from 'vitest'
 
-            // jsdom does not navigate, and its `location` is non-configurable —
-            // so a component calling `window.location.reload()` cannot be
-            // tested at all: asserting on `location.href` never matches, and
-            // stubbing it throws `TypeError: Cannot redefine property: reload`.
-            // Both were measured on real builds. Replacing the whole object on
-            // `window` (not a property on `location`) makes the ordinary thing
-            // work: the component reloads, the test asserts it did.
+            // Replace jsdom's fixed location with testable navigation spies.
             const realLocation = window.location
             function freshLocation() {
               return {
@@ -126,9 +116,7 @@ class HarnessMockMixin:
             """)
 
     def _next_link(self):
-        return textwrap.dedent("""            // Written by AgentForge. `next/link` is aliased to this in
-            // vitest.config.mjs, so a component that imports it renders a
-            // plain anchor and no test has to mock it.
+        return textwrap.dedent("""            // Stable `next/link` test alias.
             export default function Link({ href, children, ...rest }) {
               return <a href={typeof href === 'string' ? href : '#'} {...rest}>{children}</a>
             }
@@ -136,28 +124,12 @@ class HarnessMockMixin:
 
     def _mongo_mock(self):
         return textwrap.dedent("""\
-            // Written by AgentForge. Stands in for @/lib/mongodb, which throws at
-            // import without MONGODB_URI and opens a connection at module
-            // scope. A module, not a factory, because vi.mock is hoisted.
+            // Hoisted in-memory replacement for @/lib/mongodb.
             import { ObjectId } from 'mongodb'
 
             const store = new Map()
 
-            /*
-             * A structural copy that KEEPS Date and ObjectId as themselves.
-             *
-             * This was `JSON.parse(JSON.stringify(d))`, which turns a Date
-             * into a string and an ObjectId into a hex string. The real driver
-             * hands both back as objects, so any route doing the ordinary
-             * thing — `job.createdAt.toISOString()` — died with
-             * "toISOString is not a function", got caught by its own
-             * try/catch, and returned the 500 it reserves for a database
-             * fault. The test then reported `expected 500 to be 200`, which
-             * reads as a broken route and is not one; nothing in that chain
-             * mentions the mock. Measured: every `expected 500 to be 200` in
-             * two separate builds, and three repair rounds spent on a route
-             * whose code was correct.
-             */
+            /* Copy rows without flattening Date or ObjectId values. */
             const clone = (d) => {
               if (d == null || typeof d !== 'object') return d
               if (d instanceof Date) return new Date(d.getTime())
@@ -168,22 +140,7 @@ class HarnessMockMixin:
               return out
             }
 
-            /*
-             * Query matching.
-             *
-             * This used to understand four operators — $in, $ne, $gte, $lte —
-             * and fall through to a string comparison for everything else.
-             * That is the failure mode the sort comment above warns about, in
-             * its worst form: `{ price: { $gt: 10 } }` stringifies to
-             * "[object Object]", equals nothing, and the route returns an
-             * empty list. The route is correct. The test fails. Nothing in
-             * the message mentions the mock, so the repair loop rewrites a
-             * correct test until it agrees with a broken one.
-             *
-             * So: implement what a route actually uses, and THROW on anything
-             * still unsupported. A named error points at the mock; a silent
-             * empty result points at the app.
-             */
+            /* Match supported queries and reject unknown operators. */
             function valueAt(doc, path) {
               if (!path.includes('.')) return doc == null ? undefined : doc[path]
               return path.split('.').reduce(
@@ -283,17 +240,7 @@ class HarnessMockMixin:
               })
             }
 
-            /*
-             * Applying an update, in one place.
-             *
-             * Four call sites used to do this inline and all four understood
-             * only $set and $inc. Everything else — $push above all — was
-             * dropped on the floor: the route appended to an array, the mock
-             * kept the old one, and the assertion that the array grew failed
-             * against a route that is correct. Same trap as the query
-             * operators, same answer: implement what routes use, throw by
-             * name on the rest.
-             */
+            /* Apply every supported update operator in one place. */
             function setPath(doc, path, value) {
               if (!path.includes('.')) { doc[path] = value; return }
               const parts = path.split('.')
@@ -399,15 +346,7 @@ class HarnessMockMixin:
               if (!store.has(name)) store.set(name, [])
               const docs = () => store.get(name)
               const cursor = (rows) => ({
-                /*
-                 * Actually sorts. It used to ignore its argument and hand the
-                 * rows back in insertion order, which chains fine and returns
-                 * the wrong answer — so `find().sort({ createdAt: -1 })` in a
-                 * route was tested against a list that was never sorted, and
-                 * "newest first" passed or failed by luck of the seed order.
-                 * A mock that silently does nothing is worse than one that
-                 * throws: nothing points at the mock.
-                 */
+                /* Sort rows with the same direction rules as MongoDB. */
                 sort: (spec = {}) => {
                   const keys = Object.entries(spec)
                   if (!keys.length) return cursor(rows)
@@ -461,17 +400,7 @@ class HarnessMockMixin:
                   }
                   return { matchedCount: 0, modifiedCount: 0, upsertedId: null }
                 },
-                /*
-                 * The bulk verbs. Their absence does not read as a missing
-                 * mock — the route calls `updateMany`, TypeError is thrown
-                 * inside its own try/catch, and the handler returns the 500 it
-                 * was written to return for a real database fault. So the test
-                 * fails with "expected 500 to be 200" and every reader,
-                 * including the repair agent, goes looking for a bug in a route
-                 * that is correct. Measured: one build's last remaining failure
-                 * after every other round had cleared, and three repair rounds
-                 * spent on it.
-                 */
+                /* Match the driver's bulk update behavior. */
                 updateMany: async (q, update = {}) => {
                   const hits = docs().filter((d) => matches(d, q))
                   for (const hit of hits) applyUpdate(hit, update)
@@ -501,14 +430,7 @@ class HarnessMockMixin:
                   const out = opts.returnDocument === 'after' ? clone(hit) : before
                   return opts.includeResultMetadata ? { value: out } : out
                 },
-                /*
-                 * `bulkWrite` is how a route applies a list of edits in one
-                 * call — "mark these five attendances" is written that way far
-                 * more often than as a loop. Missing, it fails the same silent
-                 * way `updateMany` did: TypeError inside the route's own
-                 * try/catch, a 500 that reads as a database fault, and a test
-                 * reporting "expected 500 to be 200" about correct code.
-                 */
+                /* Apply supported bulk write operations in order. */
                 bulkWrite: async (ops = []) => {
                   const res = { insertedCount: 0, matchedCount: 0,
                                 modifiedCount: 0, deletedCount: 0,
@@ -555,14 +477,7 @@ class HarnessMockMixin:
 
             export async function getCollection(name) { return collection(name) }
             export async function getDb() { return { collection } }
-            /*
-             * NOT `clone`. The two do opposite jobs and sharing one function
-             * for both is what hid the bug above. `clone` is the driver
-             * handing a document back, so it keeps Date and ObjectId as
-             * objects; `serialize` is the app flattening a document to cross
-             * the RSC boundary, so it must turn them into strings — that is
-             * the whole reason the app calls it. Matches `lib/mongodb.js`.
-             */
+            /* Flatten a row for the RSC boundary, unlike `clone`. */
             export function serialize(doc) {
               return doc == null ? doc : JSON.parse(JSON.stringify(doc))
             }
@@ -578,12 +493,6 @@ class HarnessMockMixin:
             /** Read a collection back, to assert on what the handler wrote. */
             export function __all(name) { return (store.get(name) || []).map(clone) }
 
-            /**
-             * A valid 24-char ObjectId, re-exported from here as well as from
-             * request.js. `oid` reads like it belongs with the mongo mock, and
-             * models import it from here — which yields undefined and fails as
-             * `TypeError: oid is not a function`, eight times in one measured
-             * run. Exporting it twice costs nothing and ends the class.
-             */
+            /** Create a valid ObjectId from either test helper module. */
             export function oid(hex) { return hex ? new ObjectId(hex) : new ObjectId() }
             """)

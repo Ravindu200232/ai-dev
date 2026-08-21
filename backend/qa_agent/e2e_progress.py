@@ -69,7 +69,7 @@ MIN_REPAIR_ROUNDS = 2
 
 def stop_after_no_progress(round_no: int, progressed: bool, minimum_rounds: int = MIN_REPAIR_ROUNDS,
                            *, exhausted: bool = False) -> bool:
-    """Stop when evidence is exhausted, otherwise honor the normal repair floor."""
+    """Stop on exhausted evidence or the normal repair floor."""
     if exhausted and not bool(progressed):
         return True
     try:

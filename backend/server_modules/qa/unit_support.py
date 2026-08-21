@@ -12,8 +12,6 @@ MAX_QA_DEAD = 4
 def _qa_skip_note(qa, why: str) -> None:
     """Say why the stage stopped early, without calling the tests skipped."""
     elog("INFO", f"   🧪 {why}")
-    if qa and getattr(qa, "report", None) is not None:
-        qa.report.stopped_reason = why
 
 
 QA_TIERS = {
@@ -117,5 +115,4 @@ def read_qa_results(proj_name: str) -> dict:
     out["tests"] = tests
     out["have"]["tests"] = bool(tests)
     return out
-
 

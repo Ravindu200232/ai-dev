@@ -150,7 +150,7 @@ class CommandRunner:
         log.info(txt)
 
     def _resolve(self, argv: list) -> list:
-        """Use the same npm/node AgentForge itself resolved, not whatever is on PATH."""
+        """Use the npm and Node binaries resolved by AgentForge."""
         prog = Path(argv[0]).name.lower()
         if prog.startswith("npx"):
             return [self._npx()] + argv[1:]

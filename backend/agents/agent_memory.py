@@ -1,14 +1,4 @@
-"""A notebook the agents keep for themselves, per project.
-
-`lessons.py` is the long-lived store: what went wrong across every build.
-This is the short-lived one — what THIS run has already tried, ruled out and
-decided. It exists so an agent stops re-proposing the fix it just watched
-fail, which is the single thing that most makes a loop feel mechanical
-rather than like someone working through a problem.
-
-The agents write to it themselves with `<remember>`, so what gets kept is
-what the model thought was worth keeping.
-"""
+"""Store persistent notes for each project."""
 from __future__ import annotations
 
 import json
@@ -172,11 +162,6 @@ class AgentMemory:
             lines.append(line)
             used += len(line)
         return "\n".join(lines)
-
-    def forget_all(self) -> bool:
-        self.data = {"entries": []}
-        return save(self.project_dir, self.data)
-
 
 def memory_for(arch, agent: str = "agent") -> AgentMemory:
     """The notebook for whatever project this agent is working on."""

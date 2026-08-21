@@ -1,12 +1,4 @@
-"""v20 — stage state that outlived what it described, and time spent serially
-that did not have to be.
-
-Four measured faults, one per class: the clean room replayed every journey
-against a database the replay before it had consumed; the warm-route set
-claimed routes were compiled after the process that compiled them was killed;
-the dynamic-DOM cache overwrote itself with nothing; and the picture sweep ran
-one request at a time, after the tests, on the pipeline's own thread.
-"""
+"""Regression tests for stage timing and state cleanup."""
 import importlib
 import unittest
 from contextlib import contextmanager
@@ -181,8 +173,7 @@ class PictureSweepTests(unittest.TestCase):
 
     def test_a_picture_is_not_announced_twice(self):
         _, logged, _ = self._sweep()
-        # ImageAgent.generate owns the per-picture line; this side must not
-        # print a second one that reads as a second attempt.
+        # ImageAgent.generate owns the per-picture line.
         starts = [t for t in logged if "lobby.png —" in t]
         self.assertEqual([], starts)
 

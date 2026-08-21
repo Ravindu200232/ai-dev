@@ -1,11 +1,4 @@
-"""v21 — three faults read straight off one live run.
-
-The repair rewrote a page into `await getCollection('bookings').find(...)` and
-the next journey met a 500; the reseed announced the fixtures were back while
-the demo users were not, and the journey's own sign-in came back 401; and the
-change planner read its own format keyword as a dependency and opened with
-`npm install FILE`.
-"""
+"""Regression tests for faults seen in live runs."""
 import importlib
 import re
 import unittest
@@ -26,7 +19,7 @@ class PromiseUsedAsValueTests(unittest.TestCase):
         after = dict(before)
         after["app/my-bookings/page.jsx"] = after_body
         return validate_repair_invariants(
-            before, after, ["app/my-bookings/page.jsx"], "APP_FIX", {})
+            before, after, ["app/my-bookings/page.jsx"], "APP_FIX")
 
     def test_the_exact_regression_from_the_run_is_rejected(self):
         problems = self._check(
@@ -56,8 +49,7 @@ class PromiseUsedAsValueTests(unittest.TestCase):
             "const rows = db.getCollection('bookings').find({})"))
 
     def test_a_fault_the_repair_did_not_introduce_is_not_blamed_on_it(self):
-        # Already broken before the patch: the guard reports what this repair
-        # changed, not what it inherited.
+        # Report damage from this repair, not earlier failures.
         broken = ("const bookings = await getCollection('bookings')"
                   ".find({}).toArray()")
         self.assertEqual([], self._check(broken + "\nconst x = 1", broken))
@@ -68,7 +60,7 @@ class PromiseUsedAsValueTests(unittest.TestCase):
         after = dict(before)
         after["app/p/page.jsx"] = "const s = money(12).toFixed(2)"
         self.assertEqual([], validate_repair_invariants(
-            before, after, ["app/p/page.jsx"], "APP_FIX", {}))
+            before, after, ["app/p/page.jsx"], "APP_FIX"))
 
 
 class SeededAccountWaitTests(unittest.TestCase):

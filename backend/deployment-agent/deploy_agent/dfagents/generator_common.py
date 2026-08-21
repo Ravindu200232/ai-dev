@@ -7,7 +7,7 @@ from .generator_shared import _EAGER_CONNECT, _LAZY_CONNECT, generator_class
 class GeneratorCommonMixin:
     @staticmethod
     def _render_service(service: ServiceSpec, plan: DeploymentPlan) -> ServiceSpec:
-        """Use the validated AI plan while keeping discovery authoritative for unsafe."""
+        """Use the plan while discovery remains authoritative for unsafe changes."""
         return replace(
             service,
             root=plan.service_root or service.root,
@@ -27,7 +27,7 @@ class GeneratorCommonMixin:
         actions: list[str],
         build_error: str,
     ) -> tuple[list[ArtifactRecord], bool]:
-        """Apply only bounded, predefined compatibility repairs in the isolated review."""
+        """Apply bounded compatibility repairs in the review copy."""
         if not actions:
             return records, False
         service = self._render_service(spec.services[0], plan)
@@ -268,11 +268,7 @@ class GeneratorCommonMixin:
                 """
                 import { toNextJsHandler } from 'better-auth/next-js'
 
-                // Deferred by the deployment agent: importing `@/lib/auth` at
-                // module scope builds Better Auth, which connects to MongoDB,
-                // and `next build` imports this file while collecting page
-                // data. The build has no database, so that failed CI with
-                // ECONNREFUSED 127.0.0.1:27017 while working locally.
+                // Build auth lazily so compilation never opens MongoDB.
                 let handlers
                 async function ready() {
                   if (!handlers) {

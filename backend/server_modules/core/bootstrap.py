@@ -44,25 +44,23 @@ from agents.images import ImageAgent
 from agents.seed_keys import family_key, template_keys
 from agents.source_guidance import feature_image_requested
 from agents.picker import (ELEMENT_EDIT_SYSTEM, ElementResolver, describe,
-                           guard_scope, looks_like_addition, looks_like_global,
-                           looks_like_page_only, looks_like_removal,
-                           looks_like_retext, routes_rendering)
+                           guard_scope, looks_like_addition, looks_like_removal,
+                           looks_like_retext,
+                           routes_rendering)
 from agents.mongo import MONGO, db_name_for
 from agents import cancel
 from agents.bugfixer import BugFixerAgent
 from agents.commands import CommandRunner
 from agents.workspace import WorkspaceTools, TOOL_HELP
 from agents.agent_memory import AgentMemory, memory_for
-from agents.build_cache import already_green, clear as clear_build_state, mark_green
+from agents.build_cache import already_green, mark_green
 from qa_agent import (E2EAgent, AgenticE2EDebugger, DebugNotebook,
                       FileSnapshot, QASession, TestHarness, TestFailure,
                       UnitTestAuthor, VitestRunner, select_targets)
 from qa_agent.e2e import KIND_SELECTOR
 from qa_agent.e2e_progress import (
     failure_signature as _e2e_failure_signature,
-    failure_severity as _e2e_failure_severity,
     measure_progress as _e2e_progress,
-    normalize_message as _e2e_norm_message,
     extend_round_budget as _e2e_extend_budget,
     stop_after_no_progress as _e2e_stop_no_progress,
     MIN_REPAIR_ROUNDS as E2E_MIN_FIX,
@@ -191,7 +189,7 @@ set_default_client(ollama)
 
 
 def default_agent_model() -> str:
-    """Pick a sane agent model when the caller didn't name one: the saved choice."""
+    """Use the saved agent model when none was provided."""
     saved = str(load_settings().get("agent_model", "")).strip()
     if saved:
         return saved

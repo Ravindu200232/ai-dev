@@ -16,7 +16,7 @@ SIGN_IN_HINT = (
 
 
 def _candidate_auth_files() -> list[Path]:
-    """Every place a `vercel login` token is known to live, most specific first."""
+    """Find a Vercel login token, most specific source first."""
     candidates: list[Path] = []
     override = os.environ.get("VERCEL_DIR")
     if override:

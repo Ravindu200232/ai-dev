@@ -1,4 +1,4 @@
-"""SRS generation + read endpoints (requirements, diagrams, ambiguities, risks)."""
+"""SRS generation and read endpoints."""
 from __future__ import annotations
 
 from pathlib import Path

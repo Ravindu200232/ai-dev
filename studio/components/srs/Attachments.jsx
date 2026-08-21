@@ -22,7 +22,7 @@ function clock(s) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-/** Compact controls for the brief footer or normal buttons elsewhere. */
+/** Attachment controls for compact and full layouts. */
 export function AttachButtons({ attach, disabled, label = 'Attach', cell }) {
   const picker = useRef(null)
   const recorder = useRecorder(file => attach.add([file]))
@@ -117,10 +117,6 @@ export function AttachList({ attach, className }) {
                 )}
               </div>
 
-              {/* A picture can be a logo, a screenshot of a layout somebody
-                  wants copied, or a photo to put on a page — and the model's
-                  description reads the same for all three. Only the person
-                  knows which, so this is where they say it. */}
               {it.kind === 'picture' && it.state !== 'failed' && (
                 <input
                   value={it.purpose || ''}

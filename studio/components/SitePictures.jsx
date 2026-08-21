@@ -9,15 +9,7 @@ import { uniqueKey } from '@/lib/picture-keys'
 
 const ACCEPT = '.png,.jpg,.jpeg,.webp,.gif,.bmp,image/*'
 
-/**
- * Pictures the person already has, instead of ones the agent draws.
- *
- * Generating is still what happens by default — this is closed until it is
- * opened, and an empty list changes nothing about the build. What it buys is
- * the case the generator cannot serve: a real photograph of the real thing.
- * Anything uploaded here is written into `public/generated/<key>.png` before
- * the drawing pass runs, and that pass skips every key already on disk.
- */
+/** Pictures the person already has, instead of ones the agent draws. */
 export default function SitePictures({ pictures, onChange }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)

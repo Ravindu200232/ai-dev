@@ -1,22 +1,5 @@
 
-/**
- * Syntax colouring for the code pane, written here rather than installed.
- *
- * Prism and highlight.js both do this better and neither is here: AgentForge
- * runs with no network by design, so a CDN tag is out, and a package added for
- * one pane is 200KB in every studio build for four languages the generator
- * actually emits. What it emits is JS/JSX, CSS, JSON and Markdown — a
- * tokeniser for those four is a regex each.
- *
- * ONE pass per language, alternatives ordered so the greedy things win.
- * Comments and strings come first in every pattern: a `//` inside a string is
- * not a comment and a keyword inside a comment is not a keyword, and matching
- * them first is what makes both true without a state machine.
- *
- * The output is HTML, so every captured run is escaped on the way out. The
- * input is a file the user is editing — `</textarea>` typed into it must land
- * as text and not as markup.
- */
+/** Lightweight syntax coloring for the code pane. */
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' }
 const esc = (s) => s.replace(/[&<>]/g, c => ESC[c])
@@ -35,8 +18,7 @@ const KEYWORDS = new Set([
 const LITERALS = new Set(['true', 'false', 'null', 'undefined', 'NaN', 'Infinity'])
 
 
-// Order matters more than cleverness here. Comment, then the three string
-// forms, then JSX tag names, then everything a word can be.
+// Order matters more than cleverness here.
 const JS = new RegExp([
   /\/\*[\s\S]*?\*\/|\/\/[^\n]*/,                       // 1 comment
   /`(?:\\[\s\S]|\$\{[^}]*\}|[^\\`])*`/,                // 2 template
@@ -143,18 +125,8 @@ const BY_EXT = {
 }
 
 
-/**
- * `code` as HTML with token spans, for a file called `name`.
- *
- * Falls back to escaped plain text for anything unrecognised — a `.txt`, a
- * `.env`, a file whose extension the map has never heard of. Colourless is a
- * fine answer; guessing a grammar is not.
- *
- * There is a size ceiling because this runs on every keystroke. Past it the
- * text goes through escaped and uncoloured: a 200KB `package-lock.json` is not
- * worth a re-tokenise per character, and it is not read for its syntax.
- */
-export const HIGHLIGHT_MAX = 120_000
+/** `code` as HTML with token spans, for a file called `name`. */
+const HIGHLIGHT_MAX = 120_000
 
 export function highlight(code, name = '') {
   const text = String(code ?? '')

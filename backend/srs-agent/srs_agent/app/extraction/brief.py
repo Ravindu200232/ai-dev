@@ -29,8 +29,7 @@ def build_brief(raw_idea: str, sources: list[dict[str, Any]]) -> str:
         fname = src.get("filename") or ""
         header = f"{mode} SOURCE" + (f" ({fname})" if fname else "")
         lines = [f"{header}:"]
-        # What it is for comes before what it looks like: a model can describe
-        # any picture, and the description never says which job it has.
+        # What it is for comes before what it looks like.
         if purpose:
             lines.append(f"The person says this is for: {purpose}")
         if url:

@@ -193,9 +193,9 @@ PLANNING RULES:
     in silence.
   • THE WHOLE APP, NOT THE INTERESTING HALF. The failure this rule exists
     for is real and it is the common one: a plan that builds the public side
-    beautifully and gives the manager a single "Admin" page with a table
-    on it, or plans the customer's journey end to end and leaves the
-    technician's screens as "TODO in a later phase". There is no later
+    beautifully and gives staff a single "Admin" page with a table
+    on it, or plans the public journey end to end and leaves the
+    staff screens as "TODO in a later phase". There is no later
     phase. Every screen the request names is a page in this plan with its
     own file; every role the request names has every screen it was
     described as having; every list has its create, its edit and its

@@ -29,7 +29,7 @@ class E2EJourneyAuthoringMixin:
                 continue
             steps = [f"go to {h}" if n == 0 else f"then reach {h}"
                      for n, h in enumerate(hops)]
-            # Whose section does this chain spend its time in
+            # Infer the role from the route chain.
             role = ""
             for r in roles:
                 if r and any(h.lstrip("/").split("/")[0] == r for h in hops):
@@ -58,7 +58,7 @@ class E2EJourneyAuthoringMixin:
         return out
 
     def _auto_journeys(self, roles: list, covered_ids=None) -> list:
-        """Synthesize meaningful E2E journeys when the project did not declare them."""
+        """Create E2E journeys when the project declares none."""
         covered_ids = {str(x or "").upper() for x in (covered_ids or []) if str(x or "").strip()}
         plan = getattr(self.arch, "plan", None) or {}
         caps = [c for c in (plan.get("capabilities") or [])

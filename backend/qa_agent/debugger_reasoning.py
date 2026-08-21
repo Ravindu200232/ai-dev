@@ -1,4 +1,4 @@
-"""Code search, route mapping, decision parsing and fixed fallback reasoning."""
+"""Code search, route mapping, and fallback reasoning."""
 from .debugger_common import *
 
 
@@ -149,8 +149,7 @@ class DebuggerReasoningMixin:
         low = str(text or "").lower()
         if "★" in str(text or "") or "star" in low:
             words |= {"star", "rating", "review"}
-        # Only the pairs that actually change a word. Everything else is
-        # normalised by shape, so any app's nouns collapse the same way.
+        # Only the pairs that actually change a word.
         aliases = {"catalog": "catalogue", "rate": "rating", "rated": "rating",
                    "reviews": "review", "categories": "category"}
         return {aliases.get(x, singular(x)) for x in words}

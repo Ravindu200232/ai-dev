@@ -53,7 +53,7 @@ def feature_image_requested(text: str) -> bool:
 
 
 def feature_image_prompt(text: str) -> str:
-    """Return the extra feature contract only when visual generation was asked for."""
+    """Return the visual contract only when requested."""
     return FEATURE_IMAGE_POLICY if feature_image_requested(text) else ""
 
 

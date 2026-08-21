@@ -1,10 +1,4 @@
-"""The nouns THIS app is about, read off the idea and the plan.
-
-Prompts used to teach every rule with one industry's nouns. A model building
-something else then reads those nouns twenty times and drifts toward them.
-Nothing here knows any domain — it takes the words the request and the plan
-already use, and falls back to neutral ones when the app has not said yet.
-"""
+"""Extract domain vocabulary from the brief and plan."""
 import re
 from dataclasses import dataclass
 
@@ -69,9 +63,9 @@ class Vocab:
     """Example nouns for one app. Neutral when the app has not said."""
     thing: str = "item"
     things: str = "items"
-    child: str = "order"
-    children: str = "orders"
-    actor: str = "customer"
+    child: str = "entry"
+    children: str = "entries"
+    actor: str = "user"
 
     def as_map(self) -> dict:
         return {
@@ -115,12 +109,7 @@ def _plan_collections(plan: dict) -> list:
 
 
 def _idea_nouns(text: str, skip: str = "") -> list:
-    """The things the request is about, the ones it pluralises first.
-
-    A description names its entities in the plural almost every time —
-    "readers borrow copies from branches" — and its adjectives never are,
-    which sorts the nouns out without knowing a single domain.
-    """
+    """Extract pluralized entities from the request."""
     words = re.findall(r"[A-Za-z][A-Za-z-]{3,}", str(text or ""))
     counts, plurals, first = {}, {}, {}
     for i, raw in enumerate(words):
@@ -139,16 +128,16 @@ def _idea_nouns(text: str, skip: str = "") -> list:
 def _actor_of(plan: dict, idea: str) -> str:
     role = str((plan or {}).get("signup_role") or "").strip().lower()
     if role and role not in {"user", "admin", "administrator"}:
-        return re.sub(r"[^a-z]", "", role) or "customer"
+        return re.sub(r"[^a-z]", "", role) or "user"
     for account in ((plan or {}).get("demo_accounts") or []):
         got = str((account or {}).get("role") or "").strip().lower()
         if got and got not in {"admin", "administrator", "user", "owner"}:
-            return re.sub(r"[^a-z]", "", got) or "customer"
+            return re.sub(r"[^a-z]", "", got) or "user"
     for word in ("customer", "client", "member", "visitor", "buyer",
                  "subscriber", "student", "patient", "guest", "passenger"):
         if re.search(r"\b" + word + r"s?\b", str(idea or ""), re.I):
             return word
-    return "customer"
+    return "user"
 
 
 def derive(idea: str = "", plan: dict = None) -> Vocab:
@@ -163,14 +152,13 @@ def derive(idea: str = "", plan: dict = None) -> Vocab:
     if len(picked) > 1:
         v.child, v.children = singular(picked[1]), plural(singular(picked[1]))
     elif picked:
-        v.child, v.children = "order", "orders"
+        v.child, v.children = "entry", "entries"
     if v.child == v.thing:
-        v.child, v.children = "order", "orders"
+        v.child, v.children = "entry", "entries"
     return v
 
 
-# `<<thing>>` rather than `{thing}`: the prompts are full of JSX, and a
-# `{children}` slot silently ate React's own children prop.
+# `<<thing>>` rather than `{thing}`.
 _SLOT_RE = re.compile(r"<<(thing|things|child|children|actor|"
                       r"Thing|Things|Child|Children)>>")
 

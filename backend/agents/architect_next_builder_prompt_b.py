@@ -7,7 +7,7 @@ PROMPT_PART_B = r"""
    Pick one and use it everywhere for a given field: a document written
    with `new ObjectId(user.id)` is never found by `find({ownerId: user.id})`.
 
-   URL/REQUEST IDS ARE STRINGS TOO. `params.id`, `searchParams.roomId`,
+   URL/REQUEST IDS ARE STRINGS TOO. `params.id`, `searchParams.itemId`,
    route params and ids read from JSON are plain strings. If the Data Model
    says the Mongo field is ObjectId, convert at the database boundary:
 
@@ -17,7 +17,7 @@ PROMPT_PART_B = r"""
 
    NEVER `findOne({ _id: id })` for an ObjectId `_id`; the page file exists
    but every valid-looking detail URL returns 404. The same rule applies to
-   `find({ userId: user.id })`, `roomId`, `ownerId`, and every foreign key
+   `find({ userId: user.id })`, `itemId`, `ownerId`, and every foreign key
    declared ObjectId. Convert the query value or compare `.toString()`; do
    not mix representations. Import ObjectId from `@/lib/mongodb`, not by
    constructing a second Mongo client.

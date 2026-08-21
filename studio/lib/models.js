@@ -1,4 +1,4 @@
-export const CURATED = [
+const CURATED = [
   { id: 'llama3.1:8b', label: 'Llama 3.1 8B', tag: 'fast',
     desc: 'Meta. Fast instruction following.' },
   { id: 'llama3.2:3b', label: 'Llama 3.2 3B', tag: 'fast',

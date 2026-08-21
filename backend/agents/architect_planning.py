@@ -20,8 +20,6 @@ class ArchitectPlanningMixin:
             r"login|schedule(?:s|d|ing)?|reserve(?:s|d|ing)?|cancel(?:s|led|ing)?|"
             r"seed(?:s|ed|ing)?|show(?:s|ed|ing)?|set(?:s|ting)?|send(?:s|ing)?|"
             r"receive(?:s|d|ing)?|export(?:s|ed|ing)?|import(?:s|ed|ing)?)\b", re.I)
-        # Common role words, then the endings job titles are actually made
-        # of, so a role this file has never heard of still reads as an actor.
         actor_rx = re.compile(
             r"\b(?:guest|admin(?:istrator)?|customer|client|user|member|"
             r"manager|owner|staff|employee|seller|buyer|visitor|organizer|"
@@ -138,9 +136,7 @@ class ArchitectPlanningMixin:
         stop = {"with","from","that","this","into","their","every","using","allows",
                 "ability","engine","management","system","feature","users","user",
                 "interface","instant","instantly","administrative"}
-        # Wording varies even when the capability is identical. These groups
-        # are the ones every app shares — nothing here names a domain, so a
-        # every kind of app is read in exactly the same way.
+        # Wording varies even when the capability is identical.
         aliases = {
             "price": "pricing", "prices": "pricing", "pricing": "pricing",
             "rate": "pricing", "rates": "pricing", "cost": "pricing",

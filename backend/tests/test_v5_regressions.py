@@ -26,8 +26,7 @@ class DynamicRepairScopeTests(unittest.TestCase):
                 self.written = {}
             def _builder_sys(self): return "builder"
             def _stream(self, convo, sink, temperature=0.4):
-                # Intentionally send the dependency BEFORE the importing page;
-                # streaming allowlists used to reject this exact ordering.
+                # Intentionally send the dependency BEFORE the importing page.
                 sink('<write_file path="components/CartItem.jsx">'
                      "export default function CartItem(){return <div/>}"
                      '</write_file>')

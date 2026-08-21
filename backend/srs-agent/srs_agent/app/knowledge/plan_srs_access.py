@@ -132,7 +132,7 @@ def _role_matrix(roles: list[dict], plan: dict, public: list[dict],
 
 
 def _rtm(frs: list[dict], tables: list[dict], pages: list[dict]) -> list[dict]:
-    """Map each FR to the most relevant pages and records without dropping scope."""
+    """Map each requirement to its pages and records."""
     table_names = [t["table_name"] for t in tables]
     out = []
     for fr in frs:
@@ -167,5 +167,4 @@ def _rtm(frs: list[dict], tables: list[dict], pages: list[dict]) -> list[dict]:
             "test_case": f"TC-{fr['id'][3:]}",
         })
     return out
-
 

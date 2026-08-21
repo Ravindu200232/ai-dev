@@ -8,8 +8,8 @@ from .diagram_sources_arch import (
     dfd_diagram, state_machine_diagram, system_context_diagram,
 )
 from .diagram_runtime import (
-    DIAGRAM_KINDS, DIAGRAM_STANDARD, DIAGRAM_TITLES, NATIVE_DIAGRAM_KINDS,
-    STANDARD_DIAGRAM_KINDS, build_diagrams, build_one, diagram_applicability,
+    DIAGRAM_KINDS, DIAGRAM_STANDARD, NATIVE_DIAGRAM_KINDS,
+    STANDARD_DIAGRAM_KINDS, build_diagrams, diagram_applicability,
     mermaid_problems, render_diagrams, valid_mermaid,
 )
 

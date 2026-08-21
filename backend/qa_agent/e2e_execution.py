@@ -1,4 +1,4 @@
-"""Browser execution, failure capture, scenario patching and checkpoint resume."""
+"""Browser runs, failure capture, scenario repair, and resume."""
 import base64
 from .e2e_common import *
 
@@ -32,7 +32,6 @@ class E2EExecutionMixin:
         mutation_events = []
         runtime_events = []
         route = initial_url or "/"
-        active_label = ""
         step_trace = []
         resume_auth_error = ""
         current_step_index = -1
@@ -225,7 +224,6 @@ class E2EExecutionMixin:
                         route = st.value
                     self._intended_route = route
                     label = st.describe()
-                    active_label = label
                     self._fire("on_e2e_event", {
                         "state": "step", "index": idx + 1, "total": len(sc.steps),
                         "label": label, "verb": str(getattr(st, "verb", "") or ""),
@@ -295,11 +293,8 @@ class E2EExecutionMixin:
                             sess = {"status": 0, "error": str(e)[:160]}
                         try:
                             cookies = ctx.cookies()
-                            self._last_cookie_jar = {c.get("name", ""): c.get("value", "")
-                                                     for c in cookies if c.get("name")}
                             cookie_names = [c.get("name", "") for c in cookies if c.get("name")]
                         except Exception:
-                            self._last_cookie_jar = {}
                             cookie_names = []
                         try:
                             storage = ctx.storage_state()

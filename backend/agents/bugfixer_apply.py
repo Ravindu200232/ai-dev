@@ -131,7 +131,7 @@ class BugFixerApplyMixin:
 
     def fix_runtime(self, errors: str, spec, *, server_log: str = "",
                     round_no: int = 1, privileged_paths=None) -> list:
-        """Repair what broke when the app ran, against a plan of which files change."""
+        """Repair the runtime failure within the planned files."""
 
         planned = [f for f in getattr(spec, "files", [])
                    if self.runtime_editable(f["path"], privileged_paths)]

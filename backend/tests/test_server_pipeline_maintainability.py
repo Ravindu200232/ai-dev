@@ -14,8 +14,6 @@ class ServerPipelineMaintainabilityTests(unittest.TestCase):
         self.assertTrue(server.__file__.endswith("server_runtime.py"))
         self.assertTrue(callable(server.run_feature))
         self.assertTrue(callable(server._e2e_one_flow))
-        # Runtime fragments execute in one namespace so old monkeypatch/state
-        # behaviour remains identical to the original monolith.
         self.assertIs(server.run_feature.__globals__, server.__dict__)
         self.assertIs(server._e2e_one_flow.__globals__, server.__dict__)
 

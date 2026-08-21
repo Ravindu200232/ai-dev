@@ -1,4 +1,4 @@
-"""In-process event bus that persists agent events and fans them out to SSE."""
+"""Persist agent events and publish them over SSE."""
 from __future__ import annotations
 
 import asyncio

@@ -1,6 +1,6 @@
 # Security, API, runtime and performance checks.
 def run_security_stage(arch, proj_dir: Path, analyzer) -> tuple:
-    """Ask whether the app is safe to put in front of people, and fix what is not."""
+    """Final app safety checks and repairs."""
     from qa_agent.security import SecurityAgent
 
     ephase({"phase": -22, "title": "Security check", "status": "active"})
@@ -162,7 +162,7 @@ def _serious_findings(report) -> list:
 
 
 def _merge_analyzer_reports(*reports):
-    """One report for the final gate; preserve the strongest evidence only once."""
+    """Build one final report with unique strong evidence."""
     merged = AnalyzerReport()
     seen = set()
     for report in reports:
@@ -637,7 +637,7 @@ def run_runtime_verification_stage(arch, proj_dir: Path, analyzer, *, db_ok: boo
             "clean": clean, "issues": len(serious), "written": written})
     return report, clean, written
 
-# Findings a stage tried, failed to fix, and stopped on.
+        # Unresolved findings from a stopped stage.
 _EXHAUSTED_FINDINGS = set()
 
 

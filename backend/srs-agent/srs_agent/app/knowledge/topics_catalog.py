@@ -5,7 +5,7 @@ from . import app_types as catalog
 from .topics_core import (
     CRUD, LANDING, RECORD_PROFILES, TOOL, Topic, _and, _app_type_options,
     _domain_tables, _field_options, _mark_auth, _offering_options, _pack,
-    _palette_options, _sections_options, _snake_value, _yes_no, ans, archetype, has_auth, only_for,
+    _sections_options, _snake_value, _yes_no, ans, archetype, has_auth, only_for,
     open_registration, question_set, roles_list, self_signup_roles, tables_list, wants_images,
     wants_leads,
 )
@@ -571,4 +571,3 @@ TOPICS: list[Topic] = [
         coverage=("special_rules",),
     ),
 ]
-

@@ -1,13 +1,6 @@
 'use client'
 
-/**
- * Attach and record, for the editing chats.
- *
- * Deliberately smaller than the intake's version: those boxes have room to show
- * what was read back, and these sit in a one-line bar over the preview. What is
- * shown is the filename, whether it has been read, and a way to drop it — the
- * reading itself goes into the prompt, which is where it matters.
- */
+/** Attach and record, for the editing chats. */
 import { useRef } from 'react'
 import { FileText, Image as ImageIcon, Loader2, Mic, Paperclip, Square, X } from 'lucide-react'
 

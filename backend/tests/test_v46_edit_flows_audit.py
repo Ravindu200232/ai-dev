@@ -101,8 +101,7 @@ class OneReturnShapeTests(unittest.TestCase):
     def test_the_page_update_never_returns_a_tuple(self):
         body = PENCIL.read_text(encoding="utf-8")
         start = body.index("def run_page_update")
-        end = body.index("def run_agent_update", start)
-        self.assertNotIn('return False, ""', body[start:end])
+        self.assertNotIn('return False, ""', body[start:])
 
     def test_the_pencil_write_round_still_returns_its_pair(self):
         body = PENCIL.read_text(encoding="utf-8")

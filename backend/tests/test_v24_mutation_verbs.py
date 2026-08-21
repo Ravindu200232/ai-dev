@@ -1,11 +1,4 @@
-"""v24 — one ledger decides what changes data.
-
-Three lists used to answer that question and disagreed, and a library build
-lost all five journeys between them: a read-only public browse journey was
-required to persist a business change because "Book detail shows one book"
-matched `book`, and two journeys that clicked 'Return' and 'Sign Up' were
-rejected before they ran because neither verb was in the other list.
-"""
+"""Regression tests for mutation verb handling."""
 import unittest
 from pathlib import Path
 from types import SimpleNamespace

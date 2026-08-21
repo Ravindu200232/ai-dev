@@ -29,16 +29,11 @@ export default function Sidebar({
       await api.deleteProject(name)
       s.addLog('SUCCESS', `Deleted ${name}`)
     } catch (e) {
-      // Reported, not trusted. The request in front of this API is abandoned
-      // at 30 seconds and a delete used to run past it, so "the connection
-      // died" and "nothing happened" are not the same thing — the project was
-      // gone and the studio went on showing it. The list below is what
-      // settles it: whatever the server did, this asks it again.
+      // Reported, not trusted.
       s.addLog('WARN', `Delete of ${name} did not report back — ${e.message}. `
                      + 'Checking whether it went.')
     }
-    // The studio was pointing at a folder that may have stopped existing, so
-    // it lets go either way; `onDeleted` re-reads the list from the server.
+      // Release a project folder that may no longer exist.
     if (project === name) useStore.getState().reset(null)
     onDeleted?.(name)
     setRemoving('')
@@ -87,18 +82,7 @@ export default function Sidebar({
     s.persist(storeKey, next ? '1' : '0')
   }
 
-  // The Images chip is the only switch here that another program has to agree
-  // with. Agent and Thinking are settings this browser holds and sends with
-  // the next build; images are drawn by Fooocus, which the server reaches over
-  // HTTP and which the chip never told anything. So the chip was on, the
-  // server's own `image_enabled` was whatever it had been left at, and the
-  // build logged "image generation is off" with the switch lit.
-  //
-  // Two things follow from that. The chip has to write the server's setting,
-  // and it has to say whether Fooocus is actually answering — turning it on is
-  // exactly the moment somebody wants to know, and it is a separate program
-  // that gets started and stopped by hand, so the answer has to be asked for
-  // again each time rather than remembered from boot.
+    // The backend also tracks the Images switch.
   async function checkFooocus() {
     setFooocus(f => ({ ...(f || {}), checking: true }))
     try {
@@ -114,11 +98,7 @@ export default function Sidebar({
   useEffect(() => {
     api.settings()
       .then(cfg => {
-        // The server's setting is the one that decides, so the chip adopts it
-        // rather than the other way round — otherwise a switch left on in this
-        // browser would claim a capability the build does not have. A server
-        // too old to report it leaves the saved chip alone rather than
-        // switching it off on the strength of a missing field.
+        // Follow the server's image setting.
         if (!cfg || !('image_enabled' in cfg)) return
         useStore.setState({ images: !!cfg.image_enabled })
         s.persist(KEYS.images, cfg.image_enabled ? '1' : '0')
@@ -160,9 +140,7 @@ export default function Sidebar({
       s.addLog('WARN', `Could not start Fooocus — ${e.message}`)
       return setFooocus(f => ({ ...(f || {}), checking: false }))
     }
-    // Cold start is minutes, not seconds, and the answer is what the chip
-    // shows — so poll rather than ask once and report a failure that is only
-    // a model still loading.
+        // Keep the chip aligned with the backend result.
     for (let i = 0; i < 60; i++) {
       await new Promise(r => setTimeout(r, 5000))
       const r = await api.imageCheck().catch(() => null)
@@ -195,13 +173,6 @@ export default function Sidebar({
   return (
     <aside className="glass-panel flex w-[var(--sidebar-w)] shrink-0 flex-col overflow-hidden rounded-[24px]">
       <header className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-line/70 px-4 py-4">
-        {/* The artwork, not a letter standing in for it. `basePath` is
-            `/__agentforge`, so a file in `studio/public` is served from under
-            it — an absolute `/agentforge-mark.png` would go to the generated
-            app's dev server instead, which is a different site entirely.
-
-            Square, ruled and printed in black and white: photography in this
-            system never carries colour of its own. */}
         <img src="/__agentforge/agentforge-mark.png" alt="AgentForge"
              width={34} height={34}
              className="size-9 shrink-0 rounded-xl border border-white/60 object-cover shadow-sm" />
@@ -226,9 +197,6 @@ export default function Sidebar({
         </Tip>
       </header>
 
-      {/* The connection, as a ruled band rather than a chip — a square dot,
-          the server's own words in the mono face, and the state as a label
-          hard against the right edge. */}
       <div className="mx-3 mt-3 flex items-center gap-2 rounded-xl border border-line/70 bg-white/45 px-3 py-2 shadow-sm dark:bg-white/[.025]">
         <span className={cn('size-2 shrink-0 rounded-full shadow-sm', dot)} />
         <span className="min-w-0 truncate font-mono text-[10.5px] text-muted">
@@ -283,9 +251,6 @@ export default function Sidebar({
                        hint={deployRoomy
                          ? `The deployment plan is written by ${deployEffective}.`
                          : `${deployEffective} has a ${maxContext(cat.all, deployEffective).toLocaleString()}-token window — a plan it cannot finish will not deploy.`} />
-          {/* The picture generator sits with the other model choices rather
-              than only behind the Images switch: the switch says whether to
-              generate at all, this says what generates. */}
           <ModelPicker label="Image" value={models.image} placeholder="Fooocus"
                        options={[
                          { id: 'fooocus', label: 'Fooocus', icon: '🖼',
@@ -302,10 +267,6 @@ export default function Sidebar({
         </>
       )}
 
-      {/* Three switches as one band across the rail, spaced rather than
-          ruled: the live one is the raised ground, and the band ends where
-          its own padding ends. The 2px rule that used to close it off is
-          gone with the hairlines inside it. */}
       <Seg block className="mb-1">
         <Tip className="flex-1" text="Run the whole build as one agent">
           <SegOpt block on={agentMode}
@@ -371,17 +332,6 @@ export default function Sidebar({
           const asking = confirming === name
           const busyHere = removing === name
           return (
-            // A row, not a button — the delete control lives inside it and a
-            // <button> inside a <button> is invalid HTML that React will not
-            // render as written.
-            //
-            // The open one is marked by a 3px accent edge on the left and a
-            // filled ground, not by tinted text: the list has to stay a
-            // Keep the active settings row visible.
-            // A rule under every row turned the list into a table. Space
-            // separates them now, the name carries a little more weight, and
-            // the meta line drops the monospace — the numerals still get it,
-            // where they are worth aligning.
             <div key={name}
                  className={cn('group grid w-full grid-cols-[26px_1fr_auto]',
                    'items-center gap-2.5 rounded-[14px] border-l-[3px]',
@@ -425,10 +375,6 @@ export default function Sidebar({
                 <span className="flex shrink-0 items-center gap-1.5">
                   <DeployTag deployed={p.deployed} />
                   {p.unfinished ? <Badge tone="bad">{p.unfinished}</Badge> : null}
-                  {/* Only on hover, and it asks before it acts. This is the one
-                      control in the studio that destroys work that cannot be
-                      got back, so it does not sit where a mis-click can find
-                      it and it never fires on the first press. */}
                   <Tip text={`Delete ${name} from disk`}>
                     <button onClick={() => setConfirming(name)}
                             className="shrink-0 p-0.5 text-muted2 opacity-0
@@ -449,8 +395,6 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Five equal cells divided by rules — the rail's bottom edge, drawn
-          strong, and the tools sitting in it rather than on it. */}
       <footer className="flex items-stretch border-t-2 border-line2">
         <input ref={folderRef} type="file" hidden
                webkitdirectory="" directory="" multiple
@@ -483,9 +427,6 @@ function DeployTag({ deployed }) {
   return (
     <Tip text={gone ? 'Deployed, then deleted'
                     : `Deployed${where ? ` to ${where}` : ''}`}>
-      {/* Where the work has been sent to is the one label in the rail that
-          gets a solid accent fill — it is the only fact here about somewhere
-          other than this machine. */}
       <Tag tone={gone ? 'mute' : 'solid'}>{gone ? 'gone' : (where || 'deployed')}</Tag>
     </Tip>
   )

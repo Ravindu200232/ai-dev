@@ -2,13 +2,7 @@
 
 import { Badge, Empty, Table, Tag, TR, TH, TD } from '../ui'
 
-/**
- * Every API handler that has a test, and any route the probe found broken.
- *
- * Built from the manifest and the runtime record rather than guessed from the
- * file tree: a route that exists on disk and 500s is the interesting case, and
- * the file tree cannot tell you that.
- */
+/** API handlers with tests or probe failures. */
 export default function Routes({ qa }) {
   const runtime = qa?.report?.runtime || []
   const manifest = qa?.manifest || {}
@@ -17,7 +11,7 @@ export default function Routes({ qa }) {
     .map(m => m?.target || '')
     .filter(t => t.startsWith('app/api/')))].sort()
 
-  // A runtime error line names its route; pair them up so a broken one shows.
+  // Match runtime errors to their routes.
   const broken = {}
   for (const line of runtime) {
     const m = /Route (\/\S*)/.exec(String(line))

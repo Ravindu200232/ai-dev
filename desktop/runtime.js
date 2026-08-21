@@ -3,16 +3,9 @@
 const { spawn } = require('node:child_process')
 const net = require('node:net')
 
-/**
- * The two questions the shell has to answer before it can start anything:
- * which python works here, and is something already listening.
- *
- * Checking for the rest of the toolchain is the installer's job now, so none
- * of it lives here. What remains is what changes between one launch and the
- * next — a port that is free this time and taken the next, a python that moved.
- */
+/** Runtime discovery and process helpers. */
 
-/** Run a command and return {ok, out}. Never throws — a missing binary is an answer. */
+/** Run a command without throwing for a missing binary. */
 function run(cmd, args, { timeout = 15000, env } = {}) {
   return new Promise((resolve) => {
     let done = false
@@ -36,7 +29,7 @@ function run(cmd, args, { timeout = 15000, env } = {}) {
   })
 }
 
-/** Is something listening? A running studio is adopted rather than fought with. */
+/** Check whether a port already has a listener. */
 function portOpen(port, host = '127.0.0.1', timeout = 1200) {
   return new Promise((resolve) => {
     const s = new net.Socket()
@@ -49,13 +42,7 @@ function portOpen(port, host = '127.0.0.1', timeout = 1200) {
   })
 }
 
-/**
- * The python command that actually works here, or null.
- *
- * `py -3` is tried first because the launcher is what a Windows install
- * registers, and a bare `python` can be the Microsoft Store stub that exits
- * without ever running anything.
- */
+/** The python command that actually works here, or null. */
 async function pythonCommand() {
   const configured = String(process.env.AGENTFORGE_PYTHON || '').trim()
   if (configured) {
@@ -85,7 +72,7 @@ async function listenerPid(port) {
   return Number(String(r.out).split(/\s+/)[0] || 0) || 0
 }
 
-/** How a process was started, so it can be identified before it is killed. */
+/** Read the command that started a process. */
 async function commandOf(pid) {
   if (!pid) return ''
   if (process.platform === 'win32') {
@@ -107,22 +94,7 @@ function killTree(pid) {
   return Promise.resolve()
 }
 
-/**
- * Take back a port this app left occupied.
- *
- * A previous run that was killed rather than closed leaves its backend and its
- * Next server holding these ports. Adopting whatever answers looked like the
- * polite thing to do and was not: the survivor is serving the code that
- * shipped with the *previous* version, so an upgrade appeared to change
- * nothing at all. Reclaiming means the app that is running is always the app
- * that was installed.
- *
- * `marker` is a path that only this app's processes have on their command
- * line, so a dev server somebody else is running on 3000 is left alone — it is
- * not ours to kill, and the caller falls back to reporting the clash.
- *
- * @returns {Promise<'free'|'reclaimed'|'foreign'>}
- */
+/** Take back a port this app left occupied. */
 async function reclaimPort(port, marker) {
   const pid = await listenerPid(port)
   if (!pid) return 'free'

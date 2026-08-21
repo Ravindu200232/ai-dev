@@ -19,7 +19,7 @@ import SrsResult from '@/components/srs/SrsResult'
 import DeployPanel from '@/components/deploy/DeployPanel'
 import EditAttach from '@/components/EditAttach'
 import { useEditAttachments } from '@/lib/use-edit-attachments'
-import { Badge, Button, Input, Modal } from '@/components/ui'
+import { Badge, Button, Modal } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 
@@ -45,20 +45,7 @@ async function retry(fn, times, waitMs) {
   throw last
 }
 
-/**
- * The question a picker edit stopped on, with its answers as buttons.
- *
- * It was already being said — as log lines, in a panel that truncates every
- * one of them at the width of a sidebar, with nothing in it to press. What
- * arrived on screen was a spinner reading "Waiting for you" above three cut
- * sentences, and the instruction to retype a sixty-character sentence with a
- * suffix on it.
- *
- * `answerQuestion` re-sends the edit that was asked about, so the element the
- * preview has already forgotten does not have to be found and clicked again.
- * If that message is gone — a reload since — the answer goes into the ask box
- * instead, which is where the log lines were telling them to type it anyway.
- */
+/** Show a paused picker question and its answers. */
 function ScopeQuestion({ onType }) {
   const question = useStore(s => s.question)
   if (!question) return null
@@ -78,11 +65,6 @@ function ScopeQuestion({ onType }) {
         </p>
       )}
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {/* The server sends the narrow answer first and the wide one second,
-            and the label comes from that position rather than from reading the
-            sentence — the instruction is pasted into both and may contain
-            either word itself. The full sentence is the title, so what is
-            actually being sent is one hover away. */}
         {(question.options || []).map((option, i) => (
           <button key={option} title={option}
                   onClick={() => { if (!answerQuestion(option)) onType(option) }}
@@ -126,10 +108,7 @@ export default function Studio() {
     .then(r => setProjects(Array.isArray(r) ? r : (r.projects || [])))
     .catch(() => { })
 
-  // The socket cannot call refreshProjects — it lives out here with the state
-  // it fills — so it bumps a number instead and this watches it. A build makes
-  // a project on its first few seconds and a cancel takes one away, and the
-  // sidebar should show both without anybody reloading the page.
+  // The socket cannot call refreshProjects.
   const projectsStamp = useStore(s => s.projectsStamp)
   useEffect(() => {
     if (projectsStamp) refreshProjects()
@@ -146,11 +125,7 @@ export default function Studio() {
 
       const cur = useStore.getState().models
       if (cur.agent) return
-      // No model chosen in this browser yet. The backend keeps a saved
-      // default (Settings → agent_model) and falls back to it when a build
-      // arrives with no model — so the picker should show THAT, not whatever
-      // Ollama happens to list first. Listing first is not a recommendation:
-      // it put the dearest cloud model in the box on every fresh browser.
+      // No model chosen in this browser yet.
       const known = new Set([...c.cloud, ...(c.local || [])].map(m => m.id))
       api.settings().then(s => {
         const saved = String(s?.agent_model || '').trim()
@@ -164,18 +139,7 @@ export default function Studio() {
     }).catch(() => { })
   }, [])
 
-  // A run brings the workspace up. It does NOT choose a tab.
-  //
-  // This used to switch to Code on the first file of every run — every build,
-  // every edit, every repair — so whatever you were reading was taken away
-  // from you the moment the model started writing, and the only way back was
-  // to click the tab you were already on. It is the studio deciding it knows
-  // better than the person watching, several times an hour.
-  //
-  // There is less than nothing to gain from it now: the preview holds the
-  // build overlay with the log feed and the file being written already, so
-  // Preview during a run shows the same progress Code would, over the pane
-  // that was asked for. Code is one click away for anyone who wants it.
+  // A run brings the workspace up.
   useEffect(() => {
     if (liveFile) setScreen('workspace')
   }, [liveFile])
@@ -187,15 +151,6 @@ export default function Studio() {
     setScreen('workspace')
 
     // Busy from the click, not from the first file.
-    //
-    // `api.open` returns as soon as the server has STARTED the thread that
-    // installs dependencies and boots the dev server; the app is not on screen
-    // for another few seconds to a minute. Until now nothing said so, and the
-    // preview went on showing the project that had just been closed — the last
-    // one's pages, under this one's name, live enough to click around in.
-    //
-    // `_open_project` ends with `edone`, which is what clears this. The
-    // overlay covers the frame until then.
     st.setBusy(true)
     st.setOpening(true)
     st.setProgress(`Opening ${name}…`, 0)
@@ -324,8 +279,6 @@ export default function Studio() {
       st.addLog('WARN', `Could not reword the request (${e.message}) — sending it as typed`)
     }
 
-    // Feature and bug updates always wait for explicit approval, even when
-    // the tuner decides the user's wording is already precise.
     setPendingAsk({ payload, shown: v, typed: full, tuned })
   }
   return (
@@ -444,23 +397,8 @@ export default function Studio() {
         ) : (
           <div className="flex min-h-0 flex-1 bg-bg/40">
             <div className="relative flex min-w-0 flex-1 flex-col">
-              {/* The ask box used to sit here, above the preview, on every
-                  tab — including Code and Testing, where there is nothing to
-                  ask about. It lives in the preview's own drawer now, beside
-                  the console and the terminal, and opens as a composer. */}
               <ScopeQuestion onType={setAsk} />
 
-              {/* Keyed on the project, every one of them.
-
-                  These panels each hold a project's worth of state in local
-                  `useState` — the deploy payload and its monitor snapshot, the
-                  SRS document, which sub-tab is open, the preview's own
-                  history trail — and none of it is reachable from `reset()`.
-                  Switching projects while one was open left the panel showing
-                  the project that had just been closed: another app's
-                  deployment being monitored under this app's name. A key is
-                  what says "this is a different one now", and React throws the
-                  whole component away and builds it again. */}
               <PreviewPane key={`preview-${project}`} hidden={view !== 'preview'} />
               <CodePane hidden={view !== 'code'} />
               {view === 'testing' && <TestingResult key={`testing-${project}`} />}

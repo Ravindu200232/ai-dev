@@ -31,8 +31,6 @@ export default function DeployProgress({ run }) {
         {run.message}
       </p>
 
-      {/* Every stage is a ruled row, and the one being worked carries the
-          accent edge. Nothing is dimmed away. */}
       <ol className="mt-4 border-t-2 border-line2">
         {rows.map(r => (
           <li key={r.id}

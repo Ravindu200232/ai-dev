@@ -127,7 +127,7 @@ def get_local_host() -> str:
 
 
 
-# A busy daemon is not a bad answer. These are the shapes it comes back in.
+        # A busy daemon can return any of these shapes.
 TRANSIENT_STATUS = {429, 500, 502, 503, 504, 529}
 TRANSIENT_TEXT = re.compile(
     r"overload|temporarily|try again|too many requests|unavailable|"
@@ -197,9 +197,6 @@ class OllamaClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
             return CLOUD_HOST, headers
         return self.host, headers
-
-    def describes_cloud(self, model: str) -> bool:
-        return is_cloud_model(model)
 
     @staticmethod
     def _rejected_think(status: int, text: str) -> bool:
@@ -365,9 +362,6 @@ class OllamaClient:
             if k.endswith("context_length") and isinstance(v, int):
                 return v
         return 0
-
-    def supports_tools(self, model: str) -> bool:
-        return "tools" in ((self.show(model) or {}).get("capabilities") or [])
 
     def _entry(self, model_id: str, cloud: bool, probe: bool = True) -> dict:
         ctx = self.model_context(model_id) if probe else 0

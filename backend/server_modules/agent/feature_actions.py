@@ -195,9 +195,7 @@ def _feature_tests(arch, proj_dir: Path, spec, model: str, qa_model: str, *,
 UNDO_DIR = LOGS_DIR / "undo"
 
 
-# A file the edit created has no "before" to copy, so undoing it means
-# deleting it. Without this list they were simply left behind and the
-# project came back half-reverted.
+        # Undo a newly created file by deleting it.
 CREATED_MANIFEST = "__created__.json"
 
 
@@ -245,8 +243,7 @@ def restore_snapshot(proj_name: str, stamp: str = "") -> dict:
         dest.write_text(fp.read_text(encoding="utf-8"), encoding="utf-8")
         restored.append(rel)
 
-    # Files the edit added did not exist before, so putting the project back
-    # means taking them away again.
+    # Remove files created by the reverted edit.
     try:
         for rel in json.loads((src / CREATED_MANIFEST).read_text(encoding="utf-8")):
             rel = str(rel or "").lstrip("/").replace("\\", "/")
@@ -265,7 +262,7 @@ def restore_snapshot(proj_name: str, stamp: str = "") -> dict:
 
 
 def _one_line(arch, system: str, ask: str, timeout: int = 120) -> str:
-    """One line of prose from the model, with whatever it wrapped it in removed."""
+    """Clean one line of model-written prose."""
     r = ollama.chat(arch.model, [{"role": "system", "content": system},
                                  {"role": "user", "content": ask[:2400]}],
                     options={"temperature": 0.7}, timeout=timeout)
@@ -471,13 +468,7 @@ explanation, no markdown. One sentence, two at most, under 60 words.\
 
 
 def project_facts(proj_name: str, route: str = "") -> dict:
-    """What this app actually is, read off disk before a request is tuned.
-
-    The tuner used to see the typed words and the clicked element and nothing
-    else, so "add an admin button" became a link to /admin in an app that has
-    no /admin and no sign-in. Four turns and a rolled-back build later it was
-    still not there. These are the facts that would have said so at the start.
-    """
+    """Read the current app context from disk."""
     out = {"routes": [], "has_auth": False, "roles": [], "collections": [],
             "page": "", "ok": False}
     try:

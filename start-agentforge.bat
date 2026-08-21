@@ -2,8 +2,6 @@
 setlocal EnableExtensions
 
 rem AgentForge one-click setup and launcher.
-rem The first run downloads only missing runtimes and dependencies.
-rem Installed items are checked and reused; later runs open the app directly.
 
 cd /d "%~dp0"
 
@@ -24,7 +22,7 @@ if errorlevel 1 goto :failed
 call :ensure_python
 if errorlevel 1 goto :failed
 
-rem Give Electron and all backend children the exact runtimes selected above.
+rem Pass the selected runtimes to Electron and the backend.
 set "PATH=%NODE_HOME%;%PYTHON_HOME%;%PYTHON_HOME%\Scripts;%PATH%"
 set "AGENTFORGE_NODE=%NODE_EXE%"
 set "AGENTFORGE_NPM=%NPM_CMD%"
@@ -198,8 +196,7 @@ if "%NPM_RESULT%"=="0" (
 :install_npm_packages
 echo       Installing %PACKAGE_NAME% packages. First run can take a few minutes...
 pushd "%PACKAGE_DIR%"
-rem npm install is incremental: packages already present are reused while npm ci
-rem would delete node_modules and reinstall everything.
+rem npm install is incremental.
 call "%NPM_CMD%" install --no-audit --no-fund
 set "NPM_RESULT=%ERRORLEVEL%"
 popd

@@ -152,24 +152,6 @@ def _snake_value(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(text).lower()).strip("_") or "item"
 
 
-def _palette_options(s: dict) -> list:
-    preferred = _pack(s).get("palette_name")
-    labels = {
-        "business": "Corporate blue",
-        "mint": "Fresh mint",
-        "navy": "Deep navy & gold",
-        "gold": "Black & gold",
-        "indigo": "Modern indigo",
-    }
-    opts = [
-        {"label": labels[k], "value": k, "hint": v["primary"]}
-        for k, v in catalog.PALETTES.items()
-    ]
-
-    opts.sort(key=lambda o: o["value"] != preferred)
-    return opts
-
-
 def _domain_tables(s: dict) -> list[dict]:
     return _pack(s).get("domain_tables") or []
 
@@ -297,5 +279,4 @@ def _app_type_options(s: dict) -> list:
     chosen["hint"] = reason
     chosen["suggested"] = True
     return [chosen] + ordered
-
 

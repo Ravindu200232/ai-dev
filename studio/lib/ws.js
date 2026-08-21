@@ -5,9 +5,7 @@ import { API, HTTP_FALLBACK } from './api'
 
 const STEP_ALIAS = { plan: 'build', generate: 'build' }
 
-// What each outgoing message is, in the terms the overlay presents. Anything
-// not listed is a build — that is the message a fresh project sends, and it is
-// the right thing to fall back to.
+// What each outgoing message is, in the terms the overlay presents.
 const WORK_KIND = {
   build: 'build', agent_build: 'build',
   update: 'repair', agent_update: 'repair', agent_resume: 'build',
@@ -45,12 +43,7 @@ function resetStreamQueue() {
 }
 
 
-/**
- * Re-send the last edit with a new instruction — how a question gets answered.
- *
- * False when there is nothing to re-send (a reload since it was asked), which
- * is the caller's cue to put the answer in the ask box instead of dropping it.
- */
+/** Resend the last edit with an answer or instruction. */
 export function answerQuestion(prompt) {
   const base = lastEdit
   useStore.setState({ question: null })
@@ -61,7 +54,7 @@ export function answerQuestion(prompt) {
   return true
 }
 
-export function wsUrl() {
+function wsUrl() {
   const host = (typeof location !== 'undefined' && location.hostname) || 'localhost'
   return `ws://${host}:7825`
 }
@@ -71,20 +64,6 @@ export function connect() {
   const s = useStore.getState()
 
   // Close whatever is already open FIRST.
-  //
-  // A second `connect()` did not replace the feed, it added one: the old
-  // socket stayed open with its own `onmessage` still bound, so the server's
-  // one broadcast arrived two, three, four times and every log line was
-  // printed once per socket. That is what "Adopting the MongoDB" three
-  // times in a row is — one run, three listeners, not three runs.
-  //
-  // Two ways it happens. `next dev` replaces this module on a hot reload while
-  // the page keeps running, which resets `sock` to null and orphans the live
-  // socket; and any second mount calls `connect()` again. Neither is exotic
-  // and both leak a listener that lives until the tab is closed.
-  //
-  // `onclose` is cleared before closing, or this close schedules the very
-  // reconnect it is trying to avoid.
   if (sock) {
     try {
       sock.onclose = null
@@ -103,9 +82,7 @@ export function connect() {
     return
   }
   const mine = sock
-  // Every handler checks it is still the current socket before it speaks. A
-  // socket that has been replaced must not report the connection down, and
-  // must not feed the store — it is not the one anybody is listening to.
+  // Every handler checks it is still the current socket before it speaks.
   sock.onopen = () => {
     if (mine === sock) useStore.getState().setStatus('live', 'ready')
   }
@@ -132,12 +109,6 @@ export function send(obj) {
   if (obj && obj.type) {
     useStore.getState().setWorkKind(WORK_KIND[obj.type] || 'build')
   }
-  // Kept so a question about the message just sent can be answered by sending
-  // it again with a different instruction. The scope question — "that file is
-  // on five routes, which did you mean?" — is asked about an element the
-  // preview has already forgotten: `submit` clears `picked` the moment it
-  // sends. Without the message itself there is nothing left to re-aim, and the
-  // only way back is to find the element on the page and click it again.
   if (obj && obj.prompt !== undefined) {
     lastEdit = obj
     useStore.setState({ question: null })
@@ -164,8 +135,6 @@ function handle(m) {
   switch (m.type) {
     case 'log':          s.addLog(m.level, m.text); break
 
-    // The project directory exists from here on, so the sidebar can show it
-    // while it is still being written rather than only once it is finished.
     case 'project':      s.bumpProjects(); break
 
     case 'step':         s.setStep(STEP_ALIAS[m.step] || m.step, m.status); break
@@ -208,27 +177,19 @@ function handle(m) {
       break
     }
 
-    // Nothing is being written once the run is over, so no stream may still be
-    // open — an agent that announced a file and then never ended it would
-    // otherwise leave the code pane showing an empty live buffer forever.
+  // Close every stream when the run ends.
     case 'done':
       s.setBusy(false)
       s.setWorkKind('')
       s.testDone()
       resetStreamQueue()
       useStore.setState({ liveFile: null, liveBuf: '' })
-      // The stored QA report is now stale, and it is cached until the project
-      // changes — `TestingResult` and `DeployPanel` both skip the fetch while
-      // `qaReport.project` still matches. A run that just merged new results
-      // into `vitest.json` would go on showing the copy read before it. Drop
-      // it and let the tab read the file again.
+  // Invalidate the cached QA report after project changes.
       s.setQaReport(null)
       if (m.project) useStore.setState({ project: m.project })
       s.bumpProjects()
       break
-    // Cancelled is not an error and must not read like one: the run stopped
-    // because it was asked to, and the project it was making is gone, so the
-    // pane that was showing it has nothing left to show.
+    // Cancelled is not an error and must not read like one.
     case 'cancelled':
       s.setBusy(false)
       s.setWorkKind('')
@@ -250,9 +211,7 @@ function handle(m) {
       s.addLog('ERROR', m.text || 'failed')
       break
 
-    // A question the run stopped on. It went out as log lines too, but the log
-    // panel truncates every one of them and there is nothing in it to press —
-    // so it is held here for something that can render the choice.
+    // Question that paused the run.
     case 'ask':
       useStore.setState({ question: {
         kind: m.kind || 'scope', file: m.file || '', route: m.route || '',
@@ -279,5 +238,3 @@ function handle(m) {
     default: break
   }
 }
-
-export { KEYS }

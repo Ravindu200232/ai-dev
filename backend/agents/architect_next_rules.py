@@ -1,4 +1,4 @@
-"""Next auth/root-layout verification, generated linting and component checks."""
+"""Next.js auth, layout, lint, and component checks."""
 from .architect_common import *
 
 
@@ -116,14 +116,7 @@ class ArchitectNextRulesMixin:
             export const metadata = {{ title: {json.dumps(title)} }}
 
             export default function RootLayout({{ children }}) {{
-              // suppressHydrationWarning is on <html> and <body> because
-              // extensions — Grammarly (data-gr-ext-installed), QuillBot
-              // (data-qb-installed), password managers — inject attributes
-              // into exactly these two elements before React hydrates. That
-              // produces a red "tree hydrated but some attributes … didn't
-              // match" overlay on every page for anyone running one, and it
-              // is not a fault in the app. The suppression is one level deep:
-              // real mismatches inside the tree are still reported.
+              // Ignore extension-added attributes at the document root.
               return (
                 <html lang="en" suppressHydrationWarning>
                   <body className="min-h-screen antialiased" suppressHydrationWarning>
@@ -387,13 +380,7 @@ HIDDEN_TYPE_RE = re.compile(r"""type\s*=\s*[\"']?\{?\s*[\"']?(hidden)""", re.I)
 
 
 def unnamed_fields(files: dict) -> list:
-    """Every form control a person could not find by name.
-
-    A box with no `aria-label`, label, `name`, `id`, `placeholder` or
-    `data-testid` can only be reached by its position on the page. The E2E
-    then cannot write a stable step for it, and the run ends up reporting a
-    working app as broken.
-    """
+    """Find form controls without a usable name."""
     out = []
     for rel, body in (files or {}).items():
         if not str(rel).endswith((".jsx", ".tsx", ".js")):
@@ -424,7 +411,7 @@ _LABEL_STOP = {"e", "ev", "event", "val", "v", "x", "row", "item", "data",
 
 
 def _readable(name: str) -> str:
-    """`cleaningStatus` -> `Cleaning status`, `room_price` -> `Room price`."""
+    """Turn a field identifier into a readable label."""
     spaced = re.sub(r"[_-]+", " ", str(name or "").strip())
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", spaced)
     spaced = re.sub(r"\s+", " ", spaced).strip().lower()
@@ -451,13 +438,7 @@ def field_label(attrs: str) -> str:
 
 
 def name_unnamed_fields(body: str) -> tuple:
-    """Give every anonymous form control an `aria-label`. Returns (body, notes).
-
-    A box with nothing but a className cannot be named by a test, so the E2E
-    reports a working app as broken. The name it gets here is the one the
-    code already uses for the value it holds, which is what a person reading
-    the page would call it too.
-    """
+    """Add labels to unnamed form controls."""
     text = str(body or "")
     notes, out, last = [], [], 0
     for m in FIELD_TAG_RE.finditer(text):

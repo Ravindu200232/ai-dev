@@ -64,7 +64,8 @@ class GeneratorRuntimeMixin:
             WORKDIR /app
             COPY --from=deps /app/node_modules ./node_modules
             COPY . .
-            # Parseable placeholders: the real values are injected at runtime from Secrets Manager.
+            # Runtime values come from Secrets Manager.
+            # These placeholders only keep the build parseable.
             {build_env}
             ENV NEXT_TELEMETRY_DISABLED=1
             RUN {build}
@@ -84,7 +85,7 @@ class GeneratorRuntimeMixin:
              && adduser  --system --uid 1001 nextjs
 
             COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
-            # These two are why this is not a single COPY: the standalone tree does not contain them, and the server.
+            # Copy assets missing from the standalone tree.
             COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
             COPY --from=build --chown=nextjs:nodejs /app/public ./public
 

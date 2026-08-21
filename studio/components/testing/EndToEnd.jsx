@@ -15,9 +15,6 @@ export default function EndToEnd({ qa }) {
 
   return (
     <div>
-      {/* A rate, not a light switch. One failure out of five is a very
-          different result from five out of five, and "failing" said the
-          same word for both. */}
       <div className="mb-[18px] border-b-2 border-line2 pb-3">
         <div className="flex flex-wrap items-center gap-3">
           <Tag tone={summary.tone === 'muted' ? 'mute' : summary.tone}>{summary.label}</Tag>
@@ -63,9 +60,6 @@ export default function EndToEnd({ qa }) {
         </ul>
       )}
 
-      {/* Every journey, not only the ones that broke. A panel that lists three
-          failures and nothing else cannot tell "three of three failed" from
-          "three of nine failed", and the run already records each one. */}
       {journeys.length > 0 && (
         <div className="mt-[18px]">
           <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide

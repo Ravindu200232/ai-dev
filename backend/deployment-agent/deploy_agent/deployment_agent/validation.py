@@ -2,34 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable
 
 from .environment import EnvironmentContractResolver
 from .models import DeploymentTarget, EnvironmentContract, GateStatus, ValidationGate
-from .security import SECRET_VALUE_PATTERNS, redact_text
-
-
-MANDATORY_GATE_IDS = (
-    "project_discovery",
-    "package_lock",
-    "environment_contract",
-    "source_compatibility",
-    "dependency_install",
-    "application_build",
-    "quality_scripts",
-    "provider_artifacts",
-    "secret_boundary",
-    "local_runtime",
-    "repository_authentication",
-    "provider_authentication",
-    "provider_preflight",
-    "exact_commit",
-    "provider_success",
-    "live_health",
-    "homepage",
-    "auth_configuration",
-    "cicd_commit_match",
-)
+from .security import redact_text
 
 
 def gate(
@@ -48,14 +24,6 @@ def gate(
     )
 
 
-def mandatory_gates_pass(gates: Iterable[ValidationGate | dict]) -> bool:
-    values: dict[str, tuple[bool, str]] = {}
-    for item in gates:
-        if isinstance(item, ValidationGate):
-            values[item.id] = (item.required, item.status.value)
-        else:
-            values[str(item.get("id", ""))] = (bool(item.get("required", True)), str(item.get("status", "pending")))
-    return all(gate_id in values and (not values[gate_id][0] or values[gate_id][1] == GateStatus.PASSED.value) for gate_id in MANDATORY_GATE_IDS)
 
 
 class SemanticValidator:
@@ -98,33 +66,6 @@ class SemanticValidator:
             GateStatus.PASSED,
             f"{target.value} artifacts match the production environment contract",
         )
-
-    @staticmethod
-    def secret_boundary(staged_root: Path, paths: Iterable[str]) -> ValidationGate:
-        violations: list[str] = []
-        for relative in paths:
-            path = staged_root / relative
-            if not path.is_file():
-                continue
-            try:
-                content = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            if relative.endswith(".env.example"):
-                continue
-            for pattern in SECRET_VALUE_PATTERNS:
-                match = pattern.search(content)
-                if match and "AWS_SECRETS_MANAGER_ARN" not in match.group(0) and "deployment_agent_build" not in match.group(0):
-                    violations.append(relative)
-                    break
-        if violations:
-            return gate(
-                "secret_boundary",
-                GateStatus.FAILED,
-                "Potential secret values were found in generated files",
-                {"files": sorted(set(violations))},
-            )
-        return gate("secret_boundary", GateStatus.PASSED, "No secret values are present in generated artifacts")
 
     @staticmethod
     def _validate_vercel_environment(contract: EnvironmentContract, staged_root: Path) -> None:

@@ -221,7 +221,7 @@ class E2EStepsMixin:
             if loc is None or self._count(loc) == 0:
                 if st.verb == "WAIT_FOR" and self._recover_page_identity(page, st):
                     return None
-                # A control cannot match on a page we were bounced off of.
+            # A control cannot match after navigation leaves its page.
                 bounce = self._auth_bounce(
                     page, getattr(self, "_intended_route", "") or "")
                 if bounce:

@@ -41,7 +41,6 @@ class UltraE2EConvergenceTests(unittest.TestCase):
         failure = SimpleNamespace(name="CLICK :: button role /confirm payment/i", message="nothing matched button role /confirm payment/i")
         violations = validate_repair_invariants(
             before, after, ["app/checkout/page.jsx"], "APP_FIX",
-            {"root": "required payment control is missing", "hypothesis": "checkout omitted the control"},
             failure=failure, journey={"role": "guest"})
         self.assertTrue(any("authentication/login" in v for v in violations))
 
@@ -51,7 +50,7 @@ class UltraE2EConvergenceTests(unittest.TestCase):
         failure = SimpleNamespace(name="FILL :: field=promoCode :: SAVE10", message="nothing matched field 'promoCode'")
         violations = validate_repair_invariants(
             before, after, ["app/checkout/page.jsx"], "APP_FIX",
-            {"root": "promo code field is inaccessible"}, failure=failure)
+            failure=failure)
         self.assertTrue(any("does not match" in v for v in violations))
 
     def test_semantically_correct_accessibility_repair_is_allowed(self):
@@ -60,7 +59,7 @@ class UltraE2EConvergenceTests(unittest.TestCase):
         failure = SimpleNamespace(name="FILL :: field=promoCode :: SAVE10", message="nothing matched field 'promoCode'")
         violations = validate_repair_invariants(
             before, after, ["app/checkout/page.jsx"], "APP_FIX",
-            {"root": "promo code field is inaccessible"}, failure=failure)
+            failure=failure)
         self.assertEqual(violations, [])
 
     def test_checkpoint_auth_failure_is_deterministic_auth_fix(self):

@@ -18,8 +18,7 @@ class NoLoginPromptTests(unittest.TestCase):
 
     def test_no_rule_tells_a_login_less_app_to_sign_in(self):
         prompt = system_prompt([])
-        # The selector grammar still documents field=email/password — that is
-        # a menu, not an instruction. What must be gone is the instruction.
+        # Selector examples are not login instructions.
         self.assertNotIn("sign in, reach the page", prompt)
         self.assertNotIn("Roles this app really has", prompt)
         self.assertIn("Never write a sign-in step", prompt)

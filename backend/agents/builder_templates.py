@@ -325,7 +325,7 @@ class BuilderTemplateMixin:
 
             if hm.start() == export_start:
                 continue
-            block, end_pos = brace_extract(code, hm.start())
+            block, _ = brace_extract(code, hm.start())
             if block and len(block) > 30:
                 helpers_code.append((fn_name, block))
                 seen_helpers.add(fn_name)

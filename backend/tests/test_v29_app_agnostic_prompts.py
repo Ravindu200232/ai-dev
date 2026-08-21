@@ -1,4 +1,4 @@
-"""Every prompt must speak the app's own language, never somebody's hotel."""
+"""Every prompt must use the app's own language."""
 import re
 import tempfile
 import unittest
@@ -10,7 +10,7 @@ from agents.architect_turns import ArchitectTurnMixin
 from qa_agent.e2e_grounding import E2EGroundingMixin
 from qa_agent.flows import FIELD_CSS
 
-# Words that belong to one industry and must never be baked into a prompt.
+# Industry terms that must not be baked into prompts.
 DOMAIN = re.compile(
     r"(?i)(?<!-)\b(hotels?|bookings?|reservations?|guests?|nightly|"
     r"restaurants?|cafes?|bistro|dishes?|cuisine|"
@@ -19,8 +19,6 @@ DOMAIN = re.compile(
     r"flights?|passengers?|movies?|cinemas?|gyms?|trainers?|"
     r"landlords?|tenants?|pets?|dogs?|vets?|shops?|products?|carts?)\b")
 
-# `room`/`suite`/`library` also mean space, test suite and code library, so
-# they are only a domain word when they are not one of those.
 AMBIGUOUS = re.compile(
     r"(?i)(?<!clean-)\brooms?\b(?! *\(\))|"
     r"(?<!router )(?<!testing-)(?<!a )(?<!no )\blibrar(?:y|ies)\b")
@@ -49,7 +47,7 @@ def architect_for(idea, plan=None):
     a._vocab_cache = None
     a._app_noun_cache = None
     a.stack = "next"
-    a.project_dir = Path(tempfile.gettempdir())
+    a.project_dir = Path(tempfile.gettempdir(), "agentforge-v29-tests")
     a.cb = None
     return a
 
@@ -74,7 +72,7 @@ class VocabularyTests(unittest.TestCase):
     def test_an_app_that_says_nothing_gets_neutral_nouns(self):
         v = derive("", {})
         self.assertEqual((v.things, v.children, v.actor),
-                         ("items", "orders", "customer"))
+                         ("items", "entries", "user"))
 
     def test_plurals_survive_the_awkward_words(self):
         self.assertEqual(plural("class"), "classes")
@@ -89,9 +87,7 @@ class VocabularyTests(unittest.TestCase):
         self.assertEqual(out, "books and orders for the reader; {other} stays")
 
 
-# Code-shaped context: identifiers, paths, JSON, quoted names. A domain word
-# here is a template the model will copy. The same word inside a one-off prose
-# anecdote is an illustration, and those are what make a prompt concrete.
+# Code-shaped context: identifiers, paths, JSON, quoted names.
 CODE_CONTEXT = re.compile(r"`[^`\n]{1,120}`|\"[^\"\n]{1,80}\"|'[^'\n]{1,80}'"
                           r"|(?:app|components|lib)/[\w./\[\]-]+")
 
@@ -141,6 +137,55 @@ class PromptNeutralityTests(unittest.TestCase):
 
 
 class AgentDeHardcodingTests(unittest.TestCase):
+    def test_global_lessons_drop_project_specific_fixes(self):
+        from agents.lessons import prompt_block, record
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "lessons.json")
+            entries = [
+                ("MISSING_PLANNED_DATA",
+                 "read rooms, then call app/api/bookings/route.js"),
+                ("CUSTOM_PROJECT_FIX", "render the hotel's rooms"),
+            ]
+            record("one", entries, path)
+            record("two", entries, path)
+            block = prompt_block(path)
+
+        self.assertIn("Wire each planned read", block)
+        self.assertNotRegex(block, r"(?i)hotel|rooms|bookings")
+        self.assertNotIn("CUSTOM_PROJECT_FIX", block)
+
+    def test_transport_ids_are_detected_by_origin_not_domain_name(self):
+        from agents.analyzer_ui import AnalyzerUIMixin
+
+        class Probe(AnalyzerUIMixin):
+            def plan_text(self):
+                return "## Data Model\n- `parent_ref`: ObjectId\n"
+
+            def code_files(self):
+                return {
+                    "app/api/items/route.js": """
+const refValue = searchParams.get('ref')
+const row = await col.findOne({ parent_ref: refValue })
+"""
+                }
+
+        findings = Probe().mongo_id_type_findings()
+        self.assertEqual([f.code for f in findings], ["MONGO_ID_TYPE"])
+
+    def test_generic_checks_name_no_hotel_fields(self):
+        files = [
+            "agents/analyzer_ui.py",
+            "agents/architect_next_builder_prompt_b.py",
+            "qa_agent/author_common.py",
+            "qa_agent/flows.py",
+            "server_modules/agent/images.py",
+        ]
+        text = "\n".join(Path(rel).read_text(encoding="utf-8") for rel in files)
+        leaked = re.findall(
+            r"(?i)roomId|room_type|guestCount|nightlyRate|BookingForm", text)
+        self.assertEqual(leaked, [])
+
     def test_short_domain_words_survive_the_capability_stopword_filter(self):
         arch = architect_for("clinic app: patients book appointments with doctors")
         self.assertIn("doctors", arch._app_nouns())
@@ -176,7 +221,7 @@ class AgentDeHardcodingTests(unittest.TestCase):
 
 
 class NoSingleAppCarriesThePromptTests(unittest.TestCase):
-    """The hotel was replaced once already — the shop must not take over."""
+    """No industry may take over shared prompts."""
 
     FILES = PROMPT_FILES + [
         "agents/architect_stack_rules.py", "qa_agent/e2e_common.py",
@@ -237,10 +282,6 @@ class RefinerIsShapeNotIndustryTests(unittest.TestCase):
         self.assertIn(normalise_type("restaurant"), SECTION_MAP)
 
 
-# A detector has to name trades to detect them, so the rule for the folder as
-# a whole is balance, not silence: a file either names no trade at all, or it
-# names several from different industries — which is what a list, rather than
-# a bias, looks like.
 FAMILIES = {
     "hospitality": r"hotels?|bookings?|reservations?|guests?|restaurants?|"
                    r"cafes?|bistro|dish(?:es)?|cuisine|concierge",

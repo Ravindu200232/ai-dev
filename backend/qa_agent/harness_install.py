@@ -1,4 +1,4 @@
-"""Auth/navigation/request mocks plus dependency installation and cache cleanup."""
+"""Test mocks, dependency setup, and cache cleanup."""
 from .harness_common import *
 
 
@@ -15,22 +15,7 @@ class HarnessInstallMixin:
             export const auth = { api: { getSession: vi.fn(async () => (
               current ? { user: current } : null)) } }
 
-            /**
-             * The same reader under the other names apps give it.
-             *
-             * AgentForge's scaffold exports `getSessionUser` from `@/lib/auth`,
-             * but a generated app often wraps it — `lib/session.js` exporting
-             * `getCurrentUser` — and the test then mocks THAT module with this
-             * helper. Without these aliases the import resolves to `undefined`,
-             * calling it throws, the route's own try/catch turns that into a
-             * 500, and every case in the file fails as "expected 500 to be
-             * 401". Measured on one build: 32 of 46 failures, all of them this,
-             * across twelve route files.
-             *
-             * Aliases rather than a rule the model must remember, because the
-             * cost of being wrong is a whole file of tests that cannot pass and
-             * a failure message that names the wrong problem.
-             */
+            /** Common aliases for the same session reader. */
             export const getCurrentUser = getSessionUser
             export const getUser = getSessionUser
             export const currentUser = getSessionUser
@@ -38,16 +23,7 @@ class HarnessInstallMixin:
             export default { getSessionUser, getCurrentUser, getUser,
                              currentUser, requireUser, auth }
 
-            /**
-             * Who is signed in for the next call. `null` means nobody.
-             *
-             * Shaped like the real thing: Better Auth's session user is
-             * `{ id, email, name, role, … }` where **id is a string** and there
-             * is no `_id`. Measured against a running app. A test that sets
-             * `_id` is testing a user that cannot exist, and it fails against
-             * correct code — so the id is normalised here rather than left to
-             * each generated test to get right.
-             */
+            /** Set the next session user with a string `id`. */
             export function __setUser(user) {
               if (!user) { current = null; return }
               const id = String(user.id ?? user._id ?? '')
@@ -58,16 +34,8 @@ class HarnessInstallMixin:
 
     def _nav_mock(self):
         return textwrap.dedent("""\
-            // Written by AgentForge. Stands in for next/navigation, whose hooks
-            // throw outside a Next render.
-            //
-            // Every generated test used to build this itself, and the shape is
-            // easy to get wrong in a way that reads like an app bug. The one
-            // measured: `vi.hoisted(() => ({ mockPathname: '/' }))` and then
-            // `mocks.mockPathname.value = '/items'` — five cases in one file
-            // died with "Cannot create property 'value' on string '/'". The
-            // pathname has to be a mutable module value, not a string handed
-            // out at mock time, which is exactly what a shared helper is for.
+            // Next.js navigation hooks for tests outside a Next render.
+            // Keep navigation state mutable between test steps.
             import { vi } from 'vitest'
 
             let path = '/'
@@ -81,26 +49,7 @@ class HarnessInstallMixin:
             export const refresh = vi.fn()
             export const prefetch = vi.fn()
 
-            /*
-             * `redirect` and `notFound` are spies AND they throw, because the
-             * real ones do. Both halves matter:
-             *
-             *   • A plain function cannot be asserted on —
-             *     `expect(redirect).toHaveBeenCalledWith('/login')` dies with
-             *     "[Function redirect] is not a spy or a call to a spy".
-             *   • Next's redirect() throws to abort the render, and guard code
-             *     is written assuming it never returns. A mock that returns
-             *     normally lets the next line run against the state the guard
-             *     just rejected, so `if (!user) redirect('/login')` falls
-             *     through to `user.role` and the test reports
-             *     "Cannot read properties of null" — which reads as a missing
-             *     null check in correct code.
-             *
-             * So: assert the throw, then assert the target.
-             *
-             *   await expect(requireStaff()).rejects.toThrow('NEXT_REDIRECT')
-             *   expect(redirect).toHaveBeenCalledWith('/login')
-             */
+            /* Match Next.js redirects: record the call, then throw. */
             export const redirect = vi.fn((to) => {
               throw new Error('NEXT_REDIRECT:' + to)
             })
@@ -115,23 +64,7 @@ class HarnessInstallMixin:
             export function useParams()       { return routeParams }
             export function useSearchParams() { return new URLSearchParams(search) }
 
-            /**
-             * Point the mocked router at a route.
-             *
-             *   __setPath('/items')
-             *   __setPath('/orders/abc', { params: { id: 'abc' } })
-             *   __setPath('/items', { query: 'kind=new' })
-             *   __setPath('/items?kind=new')        // same as the line above
-             *
-             * A query written into the path is split off rather than left in
-             * `usePathname()`. Next never puts one there, so a component doing
-             * the ordinary `router.push(`${pathname}?${params}`)` would build
-             * `/items?kind=new?sort=new` — two `?`, a URL no router can read
-             * — and the test would look like it had found a bug in code that
-             * is correct. Measured: a filter component failed exactly that way
-             * and survived every repair round, with the test carrying a
-             * comment asserting this splitting already happened.
-             */
+            /** Set route, params, and query while keeping pathname clean. */
             export function __setPath(next, { params = {}, query = '' } = {}) {
               const raw = next ?? '/'
               const cut = raw.indexOf('?')
@@ -164,40 +97,17 @@ class HarnessInstallMixin:
               return { status: res.status, json, res }
             }
 
-            /**
-             * The second argument Next gives every route handler.
-             *
-             * Next calls `POST(request, { params })` — always, and `params` is
-             * a PROMISE since Next 15, which is why every handler awaits it.
-             * Passing only the request makes a dynamic route die on
-             * `Cannot destructure property 'params' of 'undefined'`, which
-             * reads like an application bug and is not one. Measured.
-             */
+            /** Build Next.js route context with async params. */
             function context(params) {
               return { params: Promise.resolve(params ?? {}) }
             }
 
-            /**
-             * Call a route handler with a form body — for a handler that
-             * reads `request.formData()`, which is what a route behind a
-             * plain <form action="/api/…"> does.
-             *
-             * Takes a FormData or a plain object.
-             */
+            /** Call a form route with FormData or a plain object. */
             export async function postForm(handler, body, { url = 'http://localhost:5173/api/x',
                                                             method = 'POST',
                                                             headers = {},
                                                             params = {} } = {}) {
-              // URLSearchParams, not FormData. Building a Request with a
-              // FormData body does not set a Content-Type under jsdom, and
-              // `request.formData()` then throws
-              //   Content-Type was not one of "multipart/form-data" or
-              //   "application/x-www-form-urlencoded"
-              // which the handler's own try/catch turns into a 500 — the
-              // failure reads as the route crashing and the route is fine.
-              // Measured against a real generated route. Urlencoded is the
-              // other type `formData()` accepts, it carries no boundary, and
-              // every field a generated form posts is a string anyway.
+              // URL encoding gives jsdom a valid form content type.
               const fields = new URLSearchParams()
               const entries = body instanceof FormData
                 ? [...body.entries()]
@@ -217,13 +127,7 @@ class HarnessInstallMixin:
                                                             method = 'POST',
                                                             headers = {},
                                                             params = {} } = {}) {
-              // A FormData handed to the JSON helper is the author reaching
-              // for the only name they knew. Stringifying it yields "{}", the
-              // handler's `request.formData()` throws on a JSON body, its own
-              // try/catch turns that into a 500, and the whole thing reads as
-              // the route crashing. Measured: two cases in one file, nine
-              // repair rounds, and none of them could pass — the route was
-              // never wrong. Nobody passes a FormData here wanting "{}".
+              // Route FormData through the matching request helper.
               if (body instanceof FormData) {
                 return postForm(handler, body, { url, method, headers, params })
               }
@@ -241,18 +145,7 @@ class HarnessInstallMixin:
               return read(await handler(new Request(url), context(params)))
             }
 
-            /*
-             * PATCH, PUT and DELETE by name.
-             *
-             * `postJson` has always taken a `method` option, but nothing in
-             * front of the test author said so, and an author writing a test
-             * for a route that exports PATCH reaches for `patchJson` — which
-             * did not exist, so four cases in one file died with
-             * "patchJson is not a function" before a single assertion ran.
-             * The need is real: a route with a PATCH handler has to be
-             * callable. Cheaper to provide the name than to teach every
-             * author not to want it.
-             */
+            /* Named JSON helpers for PATCH, PUT, and DELETE routes. */
             export const patchJson  = (handler, body, opts = {}) =>
               postJson(handler, body, { ...opts, method: 'PATCH' })
 

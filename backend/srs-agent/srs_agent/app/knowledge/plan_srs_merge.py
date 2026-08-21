@@ -6,7 +6,7 @@ import copy
 from .plan_srs_base import _rtm, _sentence, _snake, _table_name, _title
 
 def merge_pack_planned(skeleton: dict, pack: dict, plan: dict) -> dict:
-    """Overlay the LLM's enrichment, refusing anything the plan does not contain."""
+    """Merge model enrichment without expanding the plan."""
     doc = copy.deepcopy(skeleton)["srs_document"]
     pack = pack or {}
     plan = plan or {}
