@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AgentForge</title>
+<style>
+  /* What the window shows between the desktop icon being clicked and the
+     Studio answering on :3000. The backend and the dev server take the better
+     part of a minute to come up on a cold start, and a blank window for that
+     long reads as a crash.
+
+     It asks nothing and offers nothing to press. Everything that once needed
+     a decision is settled by the installer before this file is ever seen. */
+  :root {
+    --bg: #eef3fb; --ink: #11161f; --muted: #5b6478;
+    --muted2: #8b93a5; --accent: #5d6afb; --bad: #d64545;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: linear-gradient(180deg, #f8faff 0%, #eef3fb 100%);
+    color: var(--ink);
+    font: 400 13px/1.55 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: grid; place-items: center;
+    user-select: none;
+  }
+  .stage { width: min(520px, 86vw); text-align: center; }
+
+  .mark {
+    width: 60px; height: 60px; margin: 0 auto 22px; border-radius: 19px;
+    background: var(--accent); display: grid; place-items: center;
+    box-shadow: 0 16px 38px rgba(93,106,251,.30);
+  }
+  .mark span {
+    width: 21px; height: 21px; border-radius: 50%;
+    border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff;
+    animation: spin 850ms linear infinite;
+  }
+  .mark.bad { background: var(--bad); box-shadow: 0 16px 38px rgba(214,69,69,.28); }
+  .mark.bad span { animation: none; border: 0; width: auto; height: auto;
+                   font-size: 26px; color: #fff; line-height: 1; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  h1 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -.025em; }
+  .step { margin-top: 8px; color: var(--muted); min-height: 20px; }
+
+  .bar { margin: 24px auto 0; height: 4px; width: 100%; border-radius: 99px;
+         background: rgba(17,22,31,.07); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 6%; border-radius: 99px;
+           background: linear-gradient(90deg, #6875ff, #8f79ff);
+           transition: width .6s ease; }
+
+  .toggle { margin-top: 18px; background: none; border: 0; cursor: pointer;
+            color: var(--muted2); font: inherit; font-size: 11.5px; }
+  .toggle:hover { color: var(--ink); }
+
+  #log {
+    display: none; margin: 12px 0 0; padding: 13px 15px; text-align: left;
+    max-height: 190px; overflow-y: auto; border-radius: 13px;
+    background: #0d1119; color: #b7c0d2; user-select: text;
+    font: 400 10.5px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  #log.on { display: block; }
+
+  #retry { display: none; margin-top: 18px; font: inherit; font-weight: 600;
+           font-size: 12px; cursor: pointer; border-radius: 11px;
+           padding: 8px 18px; border: 0; background: var(--accent); color: #fff; }
+  #retry.on { display: inline-block; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="mark" id="mark"><span></span></div>
+    <h1 id="title">Starting AgentForge</h1>
+    <p class="step" id="step">Waking the backend…</p>
+    <div class="bar"><i id="bar"></i></div>
+    <button class="toggle" id="toggle">Show details</button>
+    <pre id="log"></pre>
+    <button id="retry">Try again</button>
+  </div>
+
+<script>
+const api = window.agentforge
+const $ = id => document.getElementById(id)
+const $mark = $('mark'), $title = $('title'), $step = $('step')
+const $bar = $('bar'), $log = $('log'), $toggle = $('toggle'), $retry = $('retry')
+
+let open = false
+$toggle.onclick = () => {
+  open = !open
+  $log.classList.toggle('on', open)
+  $toggle.textContent = open ? 'Hide details' : 'Show details'
+}
+
+api.onLog(line => {
+  const atEnd = $log.scrollTop + $log.clientHeight >= $log.scrollHeight - 20
+  $log.textContent += ($log.textContent ? '\n' : '') + line
+  if (atEnd) $log.scrollTop = $log.scrollHeight
+})
+
+api.onStep(({ text, pct }) => {
+  if (text) $step.textContent = text
+  if (typeof pct === 'number') $bar.style.width = Math.max(6, Math.min(100, pct)) + '%'
+})
+
+function fail(why) {
+  $mark.classList.add('bad')
+  $mark.innerHTML = '<span>!</span>'
+  $title.textContent = 'AgentForge did not start'
+  $step.textContent = why
+  $retry.classList.add('on')
+  if (!open) $toggle.click()
+}
+
+async function boot() {
+  $mark.classList.remove('bad')
+  $mark.innerHTML = '<span></span>'
+  $title.textContent = 'Starting AgentForge'
+  $retry.classList.remove('on')
+  const res = await api.launch()
+  if (!res.ok) fail(res.note || 'The Studio did not answer on port 3000.')
+}
+
+$retry.onclick = boot
+boot()
+</script>
+</body>
+</html>

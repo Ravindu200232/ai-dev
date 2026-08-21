@@ -1,0 +1,26 @@
+# Web service
+fastapi
+uvicorn
+python-multipart
+sse-starlette
+
+# Validation and settings
+pydantic
+pydantic-settings
+
+# HTTP and workflow
+httpx
+langgraph
+langchain-core
+
+# MongoDB
+motor
+pymongo
+
+# Documents and media
+reportlab
+pypdf
+pillow
+pytesseract
+faster-whisper
+pymupdf

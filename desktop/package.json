@@ -1,0 +1,14 @@
+{
+  "name": "agentforge-desktop",
+  "productName": "AgentForge",
+  "version": "2.0.0",
+  "private": true,
+  "description": "AgentForge Studio in a window, run from this folder",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
