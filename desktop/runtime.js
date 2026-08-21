@@ -57,6 +57,12 @@ function portOpen(port, host = '127.0.0.1', timeout = 1200) {
  * without ever running anything.
  */
 async function pythonCommand() {
+  const configured = String(process.env.AGENTFORGE_PYTHON || '').trim()
+  if (configured) {
+    const r = await run(configured, ['--version'], { timeout: 8000 })
+    if (r.ok && /python\s+3\./i.test(r.out)) return { cmd: configured, prefix: [] }
+  }
+
   for (const [cmd, args] of [['py', ['-3']], ['python', []], ['python3', []]]) {
     const r = await run(cmd, [...args, '--version'], { timeout: 8000 })
     if (r.ok && /python\s+3\./i.test(r.out)) return { cmd, prefix: args }
