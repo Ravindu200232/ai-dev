@@ -7,6 +7,7 @@ import logging
 from ..llm import LLMRepairFailed, LLMUnavailable, get_llm
 from ..services.events import bus
 from .customer_context import customer_context
+from .language import LanguageConversionError, is_english, output_language_instruction
 from .plan_merge import _merge
 from .plan_offline import (
     _answers_digest, _domain_library, _what_nobody_asked, _what_we_worked_out,
@@ -21,6 +22,7 @@ async def generate_plan(*, project: dict, session: dict, brief: str = "",
                         coverage: dict | None = None) -> dict:
     """Build an enriched plan, falling back to its skeleton."""
     pid = project.get("id", "")
+    selected_language = project.get("language", "English")
     skeleton = build_offline_plan(project=project, session=session, brief=brief)
 
     pack = session.get("pack") or {}
@@ -32,9 +34,11 @@ async def generate_plan(*, project: dict, session: dict, brief: str = "",
         f"APP TYPE: {pack.get('app_label', 'unknown')} ({pack.get('archetype', '')})",
         f"BUSINESS DOMAIN: {pack.get('domain_label', 'general')}",
     ]
-    if project.get("language"):
-
-        parts.append(f"WRITE THE PLAN IN: {project['language']}")
+    language_rule = output_language_instruction(
+        selected_language, artifact="approved plan",
+    )
+    if language_rule:
+        parts.append(language_rule)
     parts.append("")
 
     for block in (_what_we_worked_out(project), _domain_library(pack)):
@@ -100,14 +104,38 @@ async def generate_plan(*, project: dict, session: dict, brief: str = "",
                        level="success", progress=90)
         return merged
     except LLMUnavailable as exc:
+        if not is_english(selected_language):
+            await bus.error(pid, "PlanGeneratorAgent",
+                            f"The selected SRS model could not produce the plan in "
+                            f"{selected_language}.")
+            raise LanguageConversionError(
+                f"The selected SRS model could not produce the plan in "
+                f"{selected_language}. Check that the selected model is available and try again."
+            ) from exc
         await bus.emit(pid, "PlanGeneratorAgent",
                        f"LLM not used ({str(exc)[:140]}) — using the plan built "
                        "from your answers.", level="warn", progress=90)
     except LLMRepairFailed as exc:
+        if not is_english(selected_language):
+            await bus.error(pid, "PlanGeneratorAgent",
+                            f"The selected SRS model returned an invalid "
+                            f"{selected_language} plan.")
+            raise LanguageConversionError(
+                f"The selected SRS model could not return a valid plan in "
+                f"{selected_language}. Try again with the selected model."
+            ) from exc
         await bus.error(pid, "PlanGeneratorAgent",
                         f"LLM plan didn't validate after retries; kept the plan "
                         f"built from your answers. ({exc.label})")
     except Exception as exc:  # noqa: BLE001
+        if not is_english(selected_language):
+            await bus.error(pid, "PlanGeneratorAgent",
+                            f"The selected SRS model could not produce the plan in "
+                            f"{selected_language}: {exc}")
+            raise LanguageConversionError(
+                f"The selected SRS model could not produce the plan in "
+                f"{selected_language}. Try again with the selected model."
+            ) from exc
         await bus.error(pid, "PlanGeneratorAgent",
                         f"Plan generation error: {exc}; kept the plan built from "
                         "your answers.")

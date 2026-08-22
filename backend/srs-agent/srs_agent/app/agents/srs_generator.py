@@ -11,6 +11,12 @@ from ..schemas.srs import summarize_srs, validate_srs
 from ..generators.standards import apply_international_profile
 from ..services.events import bus
 from .state import AgentState
+from .language import (
+    LanguageConversionError,
+    ensure_english_builder_prompt,
+    is_english,
+    output_language_instruction,
+)
 
 _SYS = (
     "You are a senior requirements engineer. Given a non-technical user's app "
@@ -140,6 +146,7 @@ def _norm(name: str) -> str:
 async def generate_srs_node(state: AgentState) -> AgentState:
     pid = state["project_id"]
     project = state.get("project", {})
+    selected_language = project.get("language", state.get("language", "English"))
     brief = state.get("brief", "")
     questions = state.get("questions", [])
     answers = state.get("answers", [])
@@ -179,7 +186,11 @@ async def generate_srs_node(state: AgentState) -> AgentState:
             + (("This app has NO login and NO user accounts. Say nothing about "
                 "users, roles, permissions or admins.\n\n") if plan and not auth else "")
             + f"USER ANSWERS:\n{digest}\n\n"
-            "Now produce the enrichment JSON described in the system message, "
+            + output_language_instruction(
+                selected_language,
+                artifact="software requirements specification",
+            )
+            + "Now produce the enrichment JSON described in the system message, "
             "tailored precisely to this idea."
         )
         pack = await llm.complete_json(
@@ -195,14 +206,38 @@ async def generate_srs_node(state: AgentState) -> AgentState:
                        f"LLM enrichment merged: {len(doc['database_design']['tables'])} tables, "
                        f"{len(doc['functional_requirements'])} FR.", level="success", progress=60)
     except LLMUnavailable as exc:
+        if not is_english(selected_language):
+            await bus.error(pid, "SrsJsonGeneratorAgent",
+                            f"The selected SRS model could not produce the SRS in "
+                            f"{selected_language}.")
+            raise LanguageConversionError(
+                f"The selected SRS model could not produce the SRS in "
+                f"{selected_language}. Check that the selected model is available and try again."
+            ) from exc
         await bus.emit(pid, "SrsJsonGeneratorAgent",
                        f"LLM not used ({str(exc)[:140]}) — using the deterministic domain SRS.",
                        level="warn", progress=60)
     except LLMRepairFailed as exc:
+        if not is_english(selected_language):
+            await bus.error(pid, "SrsJsonGeneratorAgent",
+                            f"The selected SRS model returned an invalid "
+                            f"{selected_language} SRS.")
+            raise LanguageConversionError(
+                f"The selected SRS model could not return a valid SRS in "
+                f"{selected_language}. Try again with the selected model."
+            ) from exc
         await bus.error(pid, "SrsJsonGeneratorAgent",
                         f"LLM enrichment didn't validate after retries; kept deterministic SRS. ({exc.label})",
                         data={"raw_preview": (exc.raw or "")[:500]})
     except Exception as exc:  # noqa: BLE001
+        if not is_english(selected_language):
+            await bus.error(pid, "SrsJsonGeneratorAgent",
+                            f"The selected SRS model could not produce the SRS in "
+                            f"{selected_language}: {exc}")
+            raise LanguageConversionError(
+                f"The selected SRS model could not produce the SRS in "
+                f"{selected_language}. Try again with the selected model."
+            ) from exc
         await bus.error(pid, "SrsJsonGeneratorAgent", f"SRS enrichment error: {exc}; kept deterministic SRS.")
 
     apply_international_profile(srs)
@@ -210,7 +245,12 @@ async def generate_srs_node(state: AgentState) -> AgentState:
     if plan:
         srs["srs_document"]["approved_plan_markdown"] = str(state.get("plan_markdown") or "")
         attach_handoff(srs, plan, pack_profile, auth=auth)
-        handoff = srs["srs_document"]["builder_handoff"]
+        handoff = await ensure_english_builder_prompt(
+            srs["srs_document"]["builder_handoff"],
+            selected_language,
+            project_id=pid,
+        )
+        srs["srs_document"]["builder_handoff"] = handoff
         testing = handoff.get("testing_contract") or {}
         await bus.emit(pid, "SrsJsonGeneratorAgent",
                        f"Builder handoff ready: {len(handoff['requirements'])} requirements, "

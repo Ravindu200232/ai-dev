@@ -10,6 +10,7 @@ from ..knowledge import topics
 from ..llm import LLMRepairFailed, LLMUnavailable, get_llm
 from ..services.events import bus
 from .customer_context import customer_context
+from .language import language_name, localize_question_payload, output_language_instruction
 
 log = logging.getLogger("agentforge.interview")
 
@@ -24,7 +25,8 @@ Return ONLY a JSON object:
   "options": [{"label": "short answer", "value": "machine_value", "hint": "optional 3-5 words"}],
   "recommended": "machine_value of a low-risk default, or null",
   "known": ["answer values already stated by the customer"],
-  "known_quote": "their exact words that support the known answer"
+  "known_quote": "their exact words that support the known answer",
+  "placeholder": "short input hint, or an empty string"
 }
 
 Interview standard:
@@ -151,9 +153,34 @@ def _topic_brief(topic: topics.Topic, item: dict, session: dict) -> str:
         lines.append(f"This question is specifically about: {subject}")
     suggested = _suggested_options(topic, item, session)
     if suggested:
-        labels = [str(o.get("label", o)) for o in suggested][:12]
-        lines.append(f"Reasonable options to draw from: {', '.join(labels)}")
+        lines.append("Allowed options (preserve every `value` exactly; localize only "
+                     "label and hint): "
+                     + json.dumps(suggested[:12], ensure_ascii=False))
+    if topic.fixed:
+        lines.append(f"Required question meaning (express it naturally): {topic.fixed}")
     return "\n".join(lines)
+
+
+def _locked_option_labels(defaults: list, proposed: list) -> list:
+    """Use localized labels from the model without changing machine values."""
+    by_value = {
+        json.dumps(o.get("value"), ensure_ascii=False, sort_keys=True): o
+        for o in (proposed or []) if isinstance(o, dict) and o.get("label")
+    }
+    out = []
+    for original in defaults or []:
+        if not isinstance(original, dict):
+            out.append(original)
+            continue
+        key = json.dumps(original.get("value"), ensure_ascii=False, sort_keys=True)
+        translated = by_value.get(key) or {}
+        out.append({
+            **original,
+            "label": str(translated.get("label") or original.get("label") or ""),
+            **({"hint": str(translated.get("hint"))}
+               if translated.get("hint") else {}),
+        })
+    return out
 
 
 async def ask(session: dict) -> dict | None:
@@ -168,18 +195,25 @@ async def ask(session: dict) -> dict | None:
     index = len([k for k in session.get("asked", [])
                  if not topics.is_clarification(k)]) + 1
     pid = session.get("project_id", "")
+    language = session.get("language", "English")
 
     if topic.key == "app_type":
-        return _question(item, topic, index, total,
-                         question="Which description best matches what you want people to use this product for?",
-                         options=(_suggested_options(topic, item, session)
-                                  or catalog.app_type_options()),
-                         recommended=session.get("guessed_app_type"))
+        payload = _question(
+            item, topic, index, total,
+            question="Which description best matches what you want people to use this product for?",
+            options=(_suggested_options(topic, item, session)
+                     or catalog.app_type_options()),
+            recommended=session.get("guessed_app_type"),
+        )
+        return await localize_question_payload(payload, language, project_id=pid)
 
     if topic.fixed:
-        return _question(item, topic, index, total,
-                         question=topic.fixed,
-                         options=list(topic.fallback_options))
+        payload = _question(
+            item, topic, index, total,
+            question=topic.fixed,
+            options=list(topic.fallback_options),
+        )
+        return await localize_question_payload(payload, language, project_id=pid)
 
     pack = session.get("pack") or {}
     user_msg = f"""{customer_context(session=session)}
@@ -200,7 +234,9 @@ fill in "known" — never make them tell you something twice."""
     data: dict | None = None
     try:
         data = await get_llm().complete_json(
-            system=SYSTEM, user=user_msg,
+            system=SYSTEM + output_language_instruction(
+                language, artifact="requirements interview question"),
+            user=user_msg,
             label=f"interview:{topic.key}",
             trace_sink=(lambda p: bus.trace(pid, p)) if pid else None,
         )
@@ -213,27 +249,38 @@ fill in "known" — never make them tell you something twice."""
     default_options = suggested or topic.fallback_options
 
     if not isinstance(data, dict) or not data.get("question"):
-        return _question(item, topic, index, total,
-                         question=_fallback_question(topic, item),
-                         options=default_options)
+        fallback = _question(
+            item, topic, index, total,
+            question=_fallback_question(topic, item),
+            options=default_options,
+            recommended=(session.get("guessed_app_type")
+                         if topic.key == "app_type" else None),
+        )
+        return await localize_question_payload(
+            fallback, language, project_id=pid,
+        )
 
     if topic.options_locked:
-        options = default_options
+        options = _locked_option_labels(default_options, data.get("options") or [])
     else:
         options = [o for o in (data.get("options") or [])
                    if isinstance(o, dict) and o.get("label")]
         if not options and topic.kind in ("single", "multi", "yes_no"):
             options = default_options
 
-    return _question(
+    question = _question(
         item, topic, index, total,
         question=str(data["question"]),
         options=options,
-        recommended=data.get("recommended"),
+        recommended=(data.get("recommended") or
+                     (session.get("guessed_app_type") if topic.key == "app_type" else None)),
         prefill=_known_values(data.get("known"), options, topic),
         prefill_note=str(data.get("known_quote") or "").strip()[:240],
         why_needed=str(data.get("why_needed") or "").strip(),
+        placeholder=str(data.get("placeholder") or topic.placeholder or "").strip(),
     )
+    question["output_language"] = language_name(language)
+    return question
 
 
 def _known_values(known, options: list, topic: topics.Topic) -> list:
@@ -264,7 +311,8 @@ def _known_values(known, options: list, topic: topics.Topic) -> list:
 
 
 def _question(item, topic, index, total, question, options,
-              recommended=None, prefill=None, prefill_note="", why_needed=""):
+              recommended=None, prefill=None, prefill_note="", why_needed="",
+              placeholder=None):
     """One question, in both shapes at once."""
     options = options or []
     return {
@@ -286,7 +334,7 @@ def _question(item, topic, index, total, question, options,
         "total": max(total, index),
         "options": options,
         "recommended": recommended,
-        "placeholder": topic.placeholder,
+        "placeholder": topic.placeholder if placeholder is None else placeholder,
 
         "optional": topic.optional,
         "multiline": topic.multiline,

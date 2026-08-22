@@ -5,7 +5,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from .agents.language import LanguageConversionError
 from .config import settings
 from .db import close_store, connect_store
 from .llm import get_llm
@@ -47,6 +49,11 @@ app.add_middleware(
 for r in (projects.router, analyze.router, interview.router, plan.router,
           srs.router, customize.router, downloads.router, events.router):
     app.include_router(r)
+
+
+@app.exception_handler(LanguageConversionError)
+async def language_conversion_error(_, exc: LanguageConversionError):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 @app.get("/")

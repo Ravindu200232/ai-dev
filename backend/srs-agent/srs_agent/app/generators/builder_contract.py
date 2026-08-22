@@ -426,7 +426,18 @@ def refresh_handoff(handoff: dict, plan: dict, srs_document: dict) -> dict:
             (srs_document or {}).get("system_category") or "Web application"}
     fresh = build_handoff(plan=plan, srs_document=srs_document,
                           pack=pack, auth=bool(auth))
-    return {**(handoff or {}), **fresh}
+    merged = {**(handoff or {}), **fresh}
+    # A localized SRS stores a separately translated English Builder prompt.
+    # Refresh the structured contract, but do not overwrite that approved prompt
+    # with localized plan/SRS prose when the handoff endpoint is read.
+    if ((handoff or {}).get("prompt_language") == "English"
+            and (handoff or {}).get("prompt")):
+        merged["prompt"] = handoff["prompt"]
+        merged["prompt_language"] = "English"
+        merged["source_document_language"] = handoff.get(
+            "source_document_language", "English",
+        )
+    return merged
 
 
 def rerender_prompt(handoff: dict, plan: dict, srs_document: dict) -> str:

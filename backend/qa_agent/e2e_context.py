@@ -554,7 +554,7 @@ class E2EContextMixin:
         return bool(re.fullmatch(rx, path))
 
     def runtime_evidence(self, journey: dict = None, limit: int = 4) -> str:
-        """Read-only DOM map, including a real concrete dynamic record page."""
+        """Read-only DOM map plus one isolated Playwright MCP planner snapshot."""
         journey = journey or {}
         role = str(journey.get("role") or "").strip().lower()
         routes = self._journey_routes(journey, limit=limit)
@@ -575,6 +575,8 @@ class E2EContextMixin:
                 return ""
             dynamic_blocks = []
             found_dynamic = set()
+            mcp_storage_state = None
+            acc = {}
             try:
                 with sync_playwright() as pw:
                     browser = pw.chromium.launch(headless=True)
@@ -589,6 +591,11 @@ class E2EContextMixin:
                         pass
                     acc = self.account_for(role) if role else {}
                     signed = self._sign_in(page, acc) if acc else True
+                    if signed:
+                        try:
+                            mcp_storage_state = ctx.storage_state()
+                        except Exception:
+                            mcp_storage_state = None
                     for url in routes:
                         if acc and url == "/login":
                             continue
@@ -645,6 +652,21 @@ class E2EContextMixin:
             if need_dynamic:
                 self._runtime_dynamic_cache[dyn_key] = "\n\n".join(dynamic_blocks)[:9000]
 
+            # The normal Python browser map remains authoritative and fast.
+            # MCP contributes one accessibility-tree witness to the planner,
+            # using the exact role session that was just established above.
+            probe = getattr(self, "playwright_mcp_evidence", None)
+            probe_route = next(
+                (u for u in routes if not (acc and u == "/login")), "")
+            exact_session_ready = not acc or mcp_storage_state is not None
+            if callable(probe) and probe_route and exact_session_ready:
+                mcp = probe(probe_route, storage_state=mcp_storage_state,
+                            purpose="planner")
+                if mcp:
+                    current = self._runtime_route_cache.get((role, probe_route), "")
+                    self._runtime_route_cache[(role, probe_route)] = (
+                        current + "\n\n" + mcp).strip()
+
         blocks = [self._runtime_route_cache.get((role, u), "") for u in routes]
         dyn = self._runtime_dynamic_cache.get(dyn_key, "")
         if dyn:
@@ -658,6 +680,9 @@ class E2EContextMixin:
         self._runtime_evidence_cache.clear()
         self._runtime_route_cache.clear()
         self._runtime_dynamic_cache.clear()
+        invalidate_mcp = getattr(self, "invalidate_playwright_mcp_evidence", None)
+        if callable(invalidate_mcp):
+            invalidate_mcp()
         self.forget_warmed_routes()
 
     def forget_warmed_routes(self):

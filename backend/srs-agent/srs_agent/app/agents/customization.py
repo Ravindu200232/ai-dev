@@ -11,6 +11,7 @@ from ..schemas.srs import validate_srs
 from ..generators.standards import apply_international_profile
 from ..services.events import bus
 from .customer_context import customer_context
+from .language import LanguageConversionError, is_english, output_language_instruction
 from .state import AgentState
 
 
@@ -299,6 +300,7 @@ async def customize_node(state: AgentState) -> AgentState:
     pid = state["project_id"]
     prompt = state.get("customization_prompt", "")
     srs = state.get("srs", {})
+    selected_language = (state.get("project") or {}).get("language", "English")
     await bus.log(pid, "CustomizationAgent", f"Applying edit: “{prompt}”", progress=15)
 
     new_srs, diff = None, []
@@ -309,8 +311,12 @@ async def customize_node(state: AgentState) -> AgentState:
                                  session=state.get("session"),
                                  project=state.get("project"))
         preamble = f"{words}\n\n" if words else ""
+        language_rule = output_language_instruction(
+            selected_language,
+            artifact="customized software requirements specification",
+        )
         data = await llm.complete_json(
-            system=_SYS,
+            system=_SYS + language_rule,
             user=f"{preamble}CURRENT SRS:\n{view}\n\nUSER EDIT REQUEST:\n{prompt}",
 
             validator=lambda d: validate_srs(merge_edit(srs, d.get("srs_document"), prompt)),
@@ -324,18 +330,37 @@ async def customize_node(state: AgentState) -> AgentState:
                            f"LLM applied edit and validated: {', '.join(sorted(patch))}.",
                            level="success", progress=45)
         else:
-
+            if not is_english(selected_language):
+                raise RuntimeError(
+                    f"the selected SRS model returned no usable {selected_language} edit"
+                )
             await bus.emit(pid, "CustomizationAgent",
                            "LLM changed no section; using deterministic customizer.",
                            level="warn", progress=45)
             new_srs, diff = apply_customization(srs, prompt)
     except (LLMUnavailable, LLMRepairFailed) as exc:
+        if not is_english(selected_language):
+            await bus.error(pid, "CustomizationAgent",
+                            f"The selected SRS model could not apply the edit in "
+                            f"{selected_language}: {exc}")
+            raise LanguageConversionError(
+                f"The selected SRS model could not apply the edit in "
+                f"{selected_language}. Check that the selected model is available and try again."
+            ) from exc
         await bus.emit(pid, "CustomizationAgent",
                        "Using deterministic customizer." if isinstance(exc, LLMUnavailable)
                        else "LLM edit failed validation; using deterministic customizer.",
                        level="warn", progress=45)
         new_srs, diff = apply_customization(srs, prompt)
     except Exception as exc:  # noqa: BLE001
+        if not is_english(selected_language):
+            await bus.error(pid, "CustomizationAgent",
+                            f"The selected SRS model could not apply the edit in "
+                            f"{selected_language}: {exc}")
+            raise LanguageConversionError(
+                f"The selected SRS model could not apply the edit in "
+                f"{selected_language}. Try again with the selected model."
+            ) from exc
         await bus.error(pid, "CustomizationAgent", f"Customization error: {exc}; using deterministic editor.")
         new_srs, diff = apply_customization(srs, prompt)
 

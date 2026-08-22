@@ -6,7 +6,7 @@ async function req(path, opts) {
   const text = await r.text()
   let data = null
   try { data = text ? JSON.parse(text) : null } catch { data = { raw: text } }
-  if (!r.ok) throw new Error((data && data.error) || `HTTP ${r.status}`)
+  if (!r.ok) throw new Error((data && (data.error || data.detail)) || `HTTP ${r.status}`)
   return data
 }
 

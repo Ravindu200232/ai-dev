@@ -1,7 +1,7 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { ArrowRight, Loader2, PencilLine, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowRight, Languages, Loader2, PencilLine, Sparkles } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { send } from '@/lib/ws'
 import { api } from '@/lib/api'
@@ -14,6 +14,7 @@ import ThemePicker from './ThemePicker'
 import Interview from './srs/Interview'
 import PlanReview from './srs/PlanReview'
 import SrsReview from './srs/SrsReview'
+import { displaySrsLanguages, SRS_LANGUAGES } from '@/lib/languages'
 
 
 const EXAMPLES = [
@@ -50,11 +51,15 @@ export default function Home({ onStarted }) {
   const [logoFor, setLogoFor] = useState(null)
   const [themeFor, setThemeFor] = useState(null)
   const [srsError, setSrsError] = useState('')
+  const [srsLanguage, setSrsLanguage] = useState('en')
+  const [languageOptions, setLanguageOptions] = useState(SRS_LANGUAGES)
   const box = useRef(null)
   const attach = useAttachments()
   const builderModel = models.builder || models.agent
   const plannerModel = models.planner || models.agent || builderModel
   const designModel = models.design || models.agent || builderModel
+
+  useEffect(() => { setLanguageOptions(displaySrsLanguages()) }, [])
 
   function begin(p, srs = '') {
     if (!p) return
@@ -103,7 +108,10 @@ export default function Home({ onStarted }) {
       await api.saveSettings({ srs_model: models.srs || plannerModel || '' })
         .catch(() => { })
   // Attachments need a project and a written idea.
-      const created = await api.srs('/projects', { idea: idea || 'See the attached files.' })
+      const created = await api.srs('/projects', {
+        idea: idea || 'See the attached files.',
+        language: languageOptions.find(item => item.code === srsLanguage)?.name || srsLanguage,
+      })
       const id = created.project.id
 
       if (files) {
@@ -225,6 +233,27 @@ export default function Home({ onStarted }) {
                       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit()
                     }}
                     className="min-h-[148px] w-full resize-none bg-transparent p-5 text-[15px] leading-[1.6] text-ink caret-accent outline-none placeholder:text-muted2" />
+
+          <div className="mx-4 mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-line/70 bg-white/45 px-3.5 py-3 dark:bg-white/[.025]">
+            <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
+              <Languages className="size-4" />
+            </span>
+            <label htmlFor="srs-language" className="min-w-[210px] flex-1">
+              <span className="block font-display text-[11.5px] font-semibold text-ink">
+                1. Choose the SRS language
+              </span>
+              <span className="block text-[10.5px] leading-relaxed text-muted2">
+                Interview, plan and SRS content use this language. The Builder handoff stays in English.
+              </span>
+            </label>
+            <select id="srs-language" value={srsLanguage}
+                    onChange={event => setSrsLanguage(event.target.value)}
+                    className="ml-11 h-9 w-full max-w-none rounded-xl border border-line bg-white px-3 text-[11.5px] font-medium text-ink outline-none transition focus:border-accent dark:bg-white/[.06] sm:ml-0 sm:w-auto sm:max-w-[230px]">
+              {languageOptions.map(language => (
+                <option key={language.code} value={language.code}>{language.name}</option>
+              ))}
+            </select>
+          </div>
           <AttachList attach={attach} className="mx-4 mb-2" />
 
           <div className="flex items-stretch border-t border-line/70 bg-white/28 dark:bg-white/[.018]">

@@ -89,6 +89,10 @@ def run_qa_e2e_stage(arch, proj_dir: Path, qa, analyzer, *, build_ok: bool,
         _e2e_pass_with_warnings(
             out, fallback, 1, "the E2E coordinator stopped after its bounded attempt")
         out["flows"] = fallback
+    finally:
+        close_mcp = getattr(agent, "close_playwright_mcp", None)
+        if callable(close_mcp):
+            close_mcp()
     ephase({"phase": -17, "title": "End-to-end flow", "status": "done"})
     return out
 

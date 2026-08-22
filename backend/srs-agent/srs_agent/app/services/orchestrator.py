@@ -5,6 +5,11 @@ import copy
 import re
 
 from ..agents import clarify, interview, plan_generator
+from ..agents.language import (
+    ensure_english_builder_prompt,
+    language_name,
+    localize_question_payload,
+)
 from ..agents.coverage_auditor import compute_coverage
 from ..agents.customer_context import customer_context
 from ..extraction.brief import build_brief
@@ -89,7 +94,7 @@ def _fallback_analysis(state: dict) -> dict:
     return {
         **state, "classification": classification, "questions": [],
         "needs_clarification": nonsense, "clarification_reason": reason,
-        "language": detect_language(brief),
+        "language": state.get("language") or detect_language(brief),
         "project": {**state.get("project", {}),
                     "complexity": _complexity(key, brief), "suggested_stack": _stack(key)},
     }
@@ -133,7 +138,9 @@ async def analyze(project_id: str) -> dict:
     }
     await repo.update_project(project_id, update)
 
-    session = _new_interview_session(project_id, brief, classification)
+    session = _new_interview_session(
+        project_id, brief, classification, language=update["language"] or "English",
+    )
     question = await interview.ask(session)
     _remember(session, question)
     await repo.save_question_session(session)
@@ -145,7 +152,8 @@ async def analyze(project_id: str) -> dict:
 
 
 def _new_interview_session(project_id: str, brief: str,
-                           classification: dict | None = None) -> dict:
+                           classification: dict | None = None,
+                           language: str = "English") -> dict:
 
     guessed, confidence = app_types.guess_app_type(brief)
     why = ""
@@ -158,7 +166,8 @@ def _new_interview_session(project_id: str, brief: str,
             why = str(classification.get("build_category_why") or "")
     return {
         "id": repo.new_id("qs_"), "project_id": project_id, "mode": "interview",
-        "raw_idea": brief, "guessed_app_type": guessed,
+        "raw_idea": brief, "language": language or "English",
+        "guessed_app_type": guessed,
 
         "guessed_app_type_confidence": round(float(confidence or 0.0), 2),
         "guessed_app_type_why": why,
@@ -228,7 +237,7 @@ async def _sources_by_id(project_id: str, ids: list[str] | None) -> list[dict]:
 async def _next_question(session: dict) -> dict | None:
     pending = clarify.pending(session)
     if pending:
-        return _remember(session, clarify.question(pending))
+        return _remember(session, await clarify.question(pending))
     return _remember(session, await interview.ask(session))
 
 
@@ -242,6 +251,18 @@ async def interview_state(project_id: str) -> dict:
     if question is None and not session.get("complete"):
         question = await _next_question(session)
         await repo.save_question_session(session)
+    elif question:
+        selected_language = language_name(session.get("language", "English"))
+        if question.get("output_language") != selected_language:
+            question = await localize_question_payload(
+                question, selected_language, project_id=project_id,
+            )
+            session["current"] = question
+            session["questions"] = [
+                question if row.get("id") == question.get("id") else row
+                for row in session.get("questions", [])
+            ]
+            await repo.save_question_session(session)
 
     return {
         "question": question,
@@ -288,6 +309,7 @@ async def interview_answer(project_id: str, key: str, value=None, text: str = ""
                 existing=_confirmed_typed(session),
                 options=question.get("options"),
                 project_id=project_id, context=words,
+                language=project.get("language", "English"),
             )
             session.setdefault("clarifications", {})[key] = st
             if clarify.is_ready(st):
@@ -461,6 +483,11 @@ async def customize(project_id: str, prompt: str) -> dict:
     if plan:
         pack = (await repo.get_question_session(project_id) or {}).get("pack") or {}
         attach_handoff(srs, plan, pack, auth=_auth_on(pack, plan))
+        document = srs.get("srs_document") or {}
+        document["builder_handoff"] = await ensure_english_builder_prompt(
+            document.get("builder_handoff") or {},
+            project.get("language", "English"), project_id=project_id,
+        )
 
     storage.save_srs_json(project_id, srs, version)
 

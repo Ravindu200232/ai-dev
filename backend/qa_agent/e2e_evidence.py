@@ -67,7 +67,7 @@ class E2EEvidenceMixin:
         target = str(ev.get("target") or "").strip()
 
         lines = ["## E2E incident tools"]
-        lines.append("browser=Playwright DOM/URL/console")
+        lines.append("browser=direct Playwright DOM/URL/console + isolated Playwright MCP snapshot")
         lines.append("network=API request content-type/body + response status/body transcript")
         lines.append("auth=get-session response + cookie names")
         lines.append("source=owning page + local imports + referenced API routes")
@@ -156,6 +156,17 @@ class E2EEvidenceMixin:
         dom = str(ev.get("dom") or "")
         if dom:
             lines.append("\n## DOM at failure\n" + dom[:7000])
+
+        # Give the healer an independent accessibility snapshot and the MCP
+        # console/network view.  The captured storage state belongs to this
+        # exact failed role and the sidecar is destroyed after this probe.
+        mcp_probe = getattr(self, "playwright_mcp_evidence", None)
+        route = str(ev.get("route") or "").strip()
+        if callable(mcp_probe) and route.startswith("/"):
+            mcp = mcp_probe(route, storage_state=ev.get("storage_state"),
+                            purpose="healer")
+            if mcp:
+                lines.append("\n## Independent Playwright MCP evidence\n" + mcp)
 
         # Source graph tool: owner plus direct @/ local imports.
         if target:

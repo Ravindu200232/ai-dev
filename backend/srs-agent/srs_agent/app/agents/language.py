@@ -7,6 +7,10 @@ import re
 from ..llm import get_llm
 
 
+class LanguageConversionError(RuntimeError):
+    """The selected SRS model could not honour the output-language contract."""
+
+
 def language_name(value: object) -> str:
     """Return the selected language, with English as the safe default."""
     text = " ".join(str(value or "").split()).strip()
@@ -40,16 +44,19 @@ def output_language_instruction(value: object, *, artifact: str) -> str:
 
 
 def _question_translation_validator(source: dict):
-    expected = [str(o.get("value")) for o in (source.get("options") or [])
-                if isinstance(o, dict)]
+    expected_count = len(source.get("options") or [])
 
     def validate(data: dict) -> None:
         if not isinstance(data, dict) or not str(data.get("question") or "").strip():
             raise ValueError("return a translated question object")
-        actual = [str(o.get("value")) for o in (data.get("options") or [])
-                  if isinstance(o, dict)]
-        if actual != expected:
-            raise ValueError("option values and option order must remain unchanged")
+        options = data.get("options") or []
+        if not isinstance(options, list) or len(options) != expected_count:
+            raise ValueError("return exactly the supplied number of options")
+        for index, option in enumerate(options):
+            if (not isinstance(option, dict)
+                    or option.get("index") != index
+                    or not str(option.get("label") or "").strip()):
+                raise ValueError("return every option once, in index order")
 
     return validate
 
@@ -57,24 +64,29 @@ def _question_translation_validator(source: dict):
 async def localize_question_payload(payload: dict, language: object, *,
                                     project_id: str = "") -> dict:
     """Translate a fixed clarification payload without changing its machine values."""
-    if is_english(language) or not payload:
+    if not payload:
         return payload
+    selected_language = language_name(language)
+    if is_english(selected_language):
+        return {**payload, "output_language": selected_language}
     source = {
         "question": payload.get("question", ""),
         "why_needed": payload.get("why_needed", ""),
         "placeholder": payload.get("placeholder", ""),
         "options": [
-            {"label": o.get("label", ""), "value": o.get("value"),
+            {"index": index, "label": o.get("label", ""),
              "hint": o.get("hint", "")}
-            for o in (payload.get("options") or []) if isinstance(o, dict)
+            for index, o in enumerate(payload.get("options") or [])
+            if isinstance(o, dict)
         ],
     }
     system = (
         "You translate one software-requirements interview question. Return ONLY a JSON "
-        "object with question, why_needed, placeholder and options. Translate only the "
-        "customer-visible text. Preserve every option value exactly, including its type and "
-        "order. Do not add or remove options."
-        + output_language_instruction(language, artifact="interview question")
+        "object with question, why_needed, placeholder and options. Each returned option "
+        "must contain only index, label and hint. Copy every numeric index exactly and in "
+        "the same order. Translate only the customer-visible text. Do not answer the "
+        "question, explain the translation, add options or remove options."
+        + output_language_instruction(selected_language, artifact="interview question")
     )
     try:
         translated = await get_llm().complete_json(
@@ -83,10 +95,23 @@ async def localize_question_payload(payload: dict, language: object, *,
             validator=_question_translation_validator(source),
             label="question_language",
         )
-    except Exception:  # A language helper must never block the interview.
-        return payload
+    except Exception as exc:
+        raise LanguageConversionError(
+            f"The selected SRS model could not return the interview in "
+            f"{selected_language}. Check that the selected model is available and try again."
+        ) from exc
 
-    options = translated.get("options") or []
+    localized_options = translated.get("options") or []
+    options = []
+    for original, localized in zip(payload.get("options") or [], localized_options):
+        merged = {
+            **original,
+            "label": str(localized.get("label") or original.get("label") or ""),
+        }
+        hint = str(localized.get("hint") or original.get("hint") or "")
+        if hint or "hint" in original:
+            merged["hint"] = hint
+        options.append(merged)
     return {
         **payload,
         "question": str(translated.get("question") or payload.get("question") or ""),
@@ -94,6 +119,7 @@ async def localize_question_payload(payload: dict, language: object, *,
         "placeholder": str(translated.get("placeholder") or payload.get("placeholder") or ""),
         "options": options,
         "suggested_options": [str(o.get("label", "")) for o in options],
+        "output_language": selected_language,
     }
 
 
@@ -142,13 +168,16 @@ async def ensure_english_builder_prompt(handoff: dict, source_language: object,
         translated = str(data.get("prompt") or "").strip()
         if translated:
             handoff["prompt"] = translated + "\n"
-    except Exception:
-        # The original contract is safer than a partial or structurally altered translation.
-        handoff["prompt_language"] = language
+    except Exception as exc:
+        raise LanguageConversionError(
+            "The selected SRS model could not prepare the required English Builder "
+            "handoff. Check that the selected model is available and try again."
+        ) from exc
     return handoff
 
 
 __all__ = [
     "ensure_english_builder_prompt", "is_english", "language_name",
+    "LanguageConversionError",
     "localize_question_payload", "output_language_instruction",
 ]

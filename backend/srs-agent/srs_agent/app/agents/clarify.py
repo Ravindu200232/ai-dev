@@ -7,6 +7,7 @@ import re
 
 from ..llm import LLMRepairFailed, LLMUnavailable, get_llm
 from ..services.events import bus
+from .language import localize_question_payload, output_language_instruction
 
 log = logging.getLogger("agentforge.clarify")
 
@@ -68,7 +69,7 @@ or what problem it solves. It does not need detail, only a real reason. \
 add a reason they did not give."""
 
 
-_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
+_WORD = re.compile(r"[^\W\d_]+(?:['’\-][^\W\d_]+)*", re.UNICODE)
 
 
 _FILLER = {"yes", "no", "ok", "okay", "none", "n/a", "na", "idk", "dunno",
@@ -106,12 +107,14 @@ def needs_clarification(text: str, options=None) -> bool:
 
 async def start(question_id: str, raw: str, *, topic: str = "", question: str = "",
                 existing=None, options=None, project_id: str = "",
-                context: str = "") -> dict:
+                context: str = "", language: str = "English") -> dict:
     """Open a clarification for one typed answer."""
     state = {
         "question_id": question_id,
         "topic": topic or question_id.split(":", 1)[0],
         "question": question,
+        "project_id": project_id,
+        "language": language or "English",
 
         "raw": str(raw or "").strip(),
         "status": CONFIRMED,
@@ -134,14 +137,14 @@ async def start(question_id: str, raw: str, *, topic: str = "", question: str = 
         "meaning_confirmed": False,
         "purpose_confirmed": False,
     })
-    return await _interpret_into(state, existing, project_id, context)
+    return await _interpret_into(state, existing, project_id, context, language)
 
 
 async def _interpret_into(state: dict, existing=None, project_id: str = "",
-                          context: str = "") -> dict:
+                          context: str = "", language: str = "English") -> dict:
     """Ask the model what the text might mean, and fold the reading in."""
     data = await _interpret(state["raw"], state.get("question", ""), existing,
-                            project_id, context)
+                            project_id, context, language)
 
     duplicate = str(data.get("duplicate_of") or "").strip()
     if duplicate and _matches_existing(duplicate, existing):
@@ -183,7 +186,8 @@ async def _interpret_into(state: dict, existing=None, project_id: str = "",
 
 
 async def _interpret(raw: str, question: str, existing=None,
-                     project_id: str = "", context: str = "") -> dict:
+                     project_id: str = "", context: str = "",
+                     language: str = "English") -> dict:
     known = [str(e) for e in (existing or []) if str(e).strip()][:20]
 
     preamble = f"{context}\n\n" if context else ""
@@ -199,7 +203,9 @@ Interpret their answer now, in the context of the app they are describing."""
 
     try:
         data = await get_llm().complete_json(
-            system=SYSTEM, user=user, label="clarify_meaning",
+            system=SYSTEM + output_language_instruction(
+                language, artifact="clarification response"),
+            user=user, label="clarify_meaning",
             trace_sink=(lambda p: bus.trace(project_id, p)) if project_id else None,
         )
     except (LLMUnavailable, LLMRepairFailed) as exc:
@@ -231,7 +237,7 @@ def _clean_suggestions(raw_suggestions, meaning) -> list[dict]:
     return out
 
 
-def question(state: dict) -> dict | None:
+async def question(state: dict) -> dict | None:
     """The question payload for whichever step this state is waiting on."""
     status = state.get("status")
     if status not in OPEN_STATUSES and status != REJECTED:
@@ -267,25 +273,41 @@ def question(state: dict) -> dict | None:
                         "value": KEEP_ORIGINAL})
         options.append({"label": "Let me type it another way",
                         "value": TYPE_ANOTHER})
-        return _shape(base, "single",
-                      f"You wrote “{state['raw']}”. Which of these did you mean?",
-                      options)
+        payload = _shape(base, "single",
+                         f"You wrote “{state['raw']}”. Which of these did you mean?",
+                         options)
+        return await localize_question_payload(
+            payload, state.get("language", "English"),
+            project_id=state.get("project_id", ""),
+        )
 
     if status == REJECTED:
-        return _shape(base, "text",
-                      f"We could not tell what “{state['raw']}” should do in your "
-                      "app. Could you say it another way?",
-                      [], placeholder="What should it do?")
+        payload = _shape(base, "text",
+                         f"We could not tell what “{state['raw']}” should do in your "
+                         "app. Could you say it another way?",
+                         [], placeholder="What should it do?")
+        return await localize_question_payload(
+            payload, state.get("language", "English"),
+            project_id=state.get("project_id", ""),
+        )
 
     if status == NEEDS_PURPOSE:
-        return _shape(base, "text", f"What is “{state['meaning']}” for?", [],
-                      placeholder="Who uses it, or what problem it solves")
+        payload = _shape(base, "text", f"What is “{state['meaning']}” for?", [],
+                         placeholder="Who uses it, or what problem it solves")
+        return await localize_question_payload(
+            payload, state.get("language", "English"),
+            project_id=state.get("project_id", ""),
+        )
 
-    return _shape(base, "yes_no",
-                  f"So: {state['meaning']} — {state['purpose']}. "
-                  "Have we got that right?",
-                  [{"label": "Yes, that's right", "value": True},
-                   {"label": "No, let me explain again", "value": False}])
+    payload = _shape(base, "yes_no",
+                     f"So: {state['meaning']} — {state['purpose']}. "
+                     "Have we got that right?",
+                     [{"label": "Yes, that's right", "value": True},
+                      {"label": "No, let me explain again", "value": False}])
+    return await localize_question_payload(
+        payload, state.get("language", "English"),
+        project_id=state.get("project_id", ""),
+    )
 
 
 _ANSWER_TYPE = {"single": "single_choice", "text": "free_text", "yes_no": "yes_no"}
@@ -382,7 +404,9 @@ async def _retry_meaning(state, typed, existing, project_id, context=""):
 
     probe = dict(state)
     probe["raw"] = typed
-    result = await _interpret_into(probe, existing, project_id, context)
+    result = await _interpret_into(
+        probe, existing, project_id, context, state.get("language", "English"),
+    )
 
     for field in ("status", "attempts", "suggestions", "duplicate_of",
                   "meaning", "meaning_confirmed", "purpose_confirmed"):
@@ -399,7 +423,10 @@ async def _answer_purpose(state, typed, project_id, context=""):
         return state
 
     state["attempts"] += 1
-    verdict = await _check_purpose(state["meaning"], typed, project_id, context)
+    verdict = await _check_purpose(
+        state["meaning"], typed, project_id, context,
+        state.get("language", "English"),
+    )
 
     if not verdict.get("sufficient") and state["attempts"] < MAX_ATTEMPTS:
         state["history"].append({"stage": "purpose", "missing":
@@ -415,11 +442,12 @@ async def _answer_purpose(state, typed, project_id, context=""):
 
 
 async def _check_purpose(meaning: str, purpose: str, project_id: str,
-                         context: str = "") -> dict:
+                         context: str = "", language: str = "English") -> dict:
     preamble = f"{context}\n\n" if context else ""
     try:
         data = await get_llm().complete_json(
-            system=PURPOSE_SYSTEM,
+            system=PURPOSE_SYSTEM + output_language_instruction(
+                language, artifact="clarification response"),
             user=f"{preamble}They want: {meaning}\nTheir reason: \"\"\"{purpose}\"\"\"",
             label="clarify_purpose",
             trace_sink=(lambda p: bus.trace(project_id, p)) if project_id else None,
