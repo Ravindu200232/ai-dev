@@ -1,9 +1,11 @@
 """Large cloud plans converge without lossy ledgers or full rewrite loops."""
+import inspect
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
 from agents.builder.orchestration.agent import ArchitectAgent
+from agents.planner.execution import ArchitectPlanningMixin
 
 
 class WorkflowCoverageCapacityTests(unittest.TestCase):
@@ -200,9 +202,169 @@ class PlannerBudgetTests(unittest.TestCase):
         self.assertIn("reserve enough space to close", prompt)
 
     def test_repair_turns_drop_discarded_drafts_from_context(self):
-        source = Path("agents/planner/execution.py").read_text(encoding="utf-8")
-        self.assertGreaterEqual(source.count("messages = messages[:2] + ["), 4)
+        source = "\n".join(
+            Path(path).read_text(encoding="utf-8")
+            for path in ("agents/planner/execution.py",
+                         "agents/planner/capability_recovery.py")
+        )
+        self.assertGreaterEqual(source.count("messages[:2] + ["), 4)
         self.assertNotIn("messages += [", source)
+
+
+POS_CORE_FEATURES = [
+    "Authentication & RBAC: Secure sign-in for Store Managers and Cashiers; no public registration.",
+    "Sale Terminal (POS): Barcode-based product searching, cart management, automatic tax/discount calculation, and payment processing (Cash/Card).",
+    "Bill Issuance: Generation and printing of bills in Sinhala.",
+    "Stock Management: Multi-warehouse inventory tracking, low-stock alerts based on reorder levels, and Goods Received Notes (GRN) entry.",
+    "Customer Credit: Maintenance of customer profiles and current credit balances.",
+]
+
+
+class SixRoundCapabilityConvergenceTests(unittest.TestCase):
+    def _agent(self):
+        agent = ArchitectAgent.__new__(ArchitectAgent)
+        agent._known_fr = set()
+        agent._app_noun_cache = set()
+        agent._source_core_features = list(POS_CORE_FEATURES)
+        agent._automatic_plan_repairs = []
+        agent._log = Mock()
+        return agent
+
+    def test_semantic_equivalents_do_not_create_false_core_gaps(self):
+        agent = self._agent()
+        plan = {
+            "phases": [{"id": 1, "title": "identity and inventory",
+                        "files": [{"path": "app/login/page.jsx"},
+                                  {"path": "app/inventory/page.jsx"}]}],
+            "capabilities": [
+                {"id": "CAP-001", "who": "cashier",
+                 "requirement": "cashier logs in and receives role-based access",
+                 "proof": "unauthorized areas are denied",
+                 "files": ["app/login/page.jsx"], "e2e": False},
+                {"id": "CAP-002", "who": "manager",
+                 "requirement": "manager tracks warehouse inventory and reorder alerts",
+                 "proof": "inventory counts and receiving records persist",
+                 "files": ["app/inventory/page.jsx"], "e2e": False},
+            ], "workflows": [],
+        }
+
+        missing, _unwalked, _unmapped = agent._capability_gaps(plan, "")
+
+        self.assertNotIn(POS_CORE_FEATURES[0], missing)
+        self.assertNotIn(POS_CORE_FEATURES[3], missing)
+
+    def test_controller_places_every_pos_requirement_as_real_build_work(self):
+        agent = self._agent()
+        plan = {
+            "phases": [{"id": 1, "title": "shell",
+                        "files": [{"path": "app/page.jsx", "purpose": "home"}]}],
+            "demo_accounts": [
+                {"email": "manager@example.com", "password": "Demo123!", "role": "store manager"},
+                {"email": "cashier@example.com", "password": "Demo123!", "role": "cashier"},
+            ],
+            "capabilities": [], "workflows": [], "source_requirements": [],
+        }
+        agent.plan = plan
+
+        repaired = agent._repair_missing_capabilities(plan, POS_CORE_FEATURES)
+        agent._repair_capability_map(plan)
+
+        self.assertEqual(repaired, len(POS_CORE_FEATURES))
+        self.assertEqual(agent._capability_gaps(plan, ""), ([], [], []))
+        planned = {f["path"] for phase in plan["phases"] for f in phase["files"]}
+        self.assertTrue(all(set(cap["files"]) <= planned
+                            for cap in plan["capabilities"]))
+        self.assertEqual(len(plan["capabilities"]), len(POS_CORE_FEATURES))
+        self.assertTrue(all(cap["e2e"] for cap in plan["capabilities"]))
+        self.assertTrue(all(workflow["steps"] for workflow in plan["workflows"]))
+        self.assertIn("store manager", {cap["who"] for cap in plan["capabilities"]})
+
+    def test_capability_with_no_files_gets_a_real_task_instead_of_refusal(self):
+        agent = self._agent()
+        requirement = POS_CORE_FEATURES[4]
+        plan = {
+            "phases": [{"id": 1, "title": "shell",
+                        "files": [{"path": "app/page.jsx", "purpose": "home"}]}],
+            "capabilities": [{"id": "CAP-001", "who": "cashier",
+                              "requirement": requirement,
+                              "proof": "credit balance persists",
+                              "files": [], "e2e": True}],
+            "workflows": [], "source_requirements": [],
+        }
+        agent.plan = plan
+
+        repaired = agent._repair_capability_map(plan)
+
+        self.assertGreaterEqual(repaired, 2)  # workflow plus file/task ownership
+        self.assertTrue(plan["capabilities"][0]["files"])
+        self.assertEqual(agent._capability_gaps(plan, ""),
+                         (POS_CORE_FEATURES[:4], [], []))
+
+    def test_original_core_ledger_survives_lossy_replan_markdown(self):
+        agent = self._agent()
+        plan = {"phases": [{"id": 1, "files": [{"path": "app/page.jsx"}]}],
+                "capabilities": [], "workflows": []}
+
+        missing, _unwalked, _unmapped = agent._capability_gaps(
+            plan, "## Core Features\n- A different sentence")
+
+        for requirement in POS_CORE_FEATURES:
+            self.assertIn(requirement, missing)
+
+    def test_sign_in_grammar_variants_share_the_identity_capability(self):
+        agent = self._agent()
+
+        for phrase in ("cashier signs in", "manager logs in", "secure sign-in"):
+            self.assertIn("identity", agent._capability_words(phrase))
+
+    def test_recovery_budget_is_six_and_old_terminal_refusal_is_gone(self):
+        source = inspect.getsource(ArchitectPlanningMixin)
+
+        self.assertEqual(ArchitectPlanningMixin.CAPABILITY_REPLAN_ROUNDS, 6)
+        self.assertNotIn("capability replan did not improve the map", source)
+        self.assertNotIn("Refusing to build an incomplete plan", source)
+
+    def test_repeated_no_progress_answer_is_auto_repaired_and_build_continues(self):
+        feature = POS_CORE_FEATURES[3]
+        brief = "## Core Features\n- " + feature
+        raw = brief + """
+```json
+{
+  "tasks": [{
+    "id": 1, "title": "Shell", "goal": "working shell",
+    "files": [{"path": "app/page.jsx", "kind": "server", "purpose": "home"}]
+  }],
+  "capabilities": [],
+  "workflows": []
+}
+```
+"""
+        agent = self._agent()
+        calls = []
+
+        def stream(_messages, sink, **_kwargs):
+            calls.append(1)
+            sink(raw)
+
+        agent._stream = stream
+        agent._planner_sys = lambda: "planner"
+        agent._design_md = lambda: "design"
+        agent.write_file = Mock()
+        agent.write_own = Mock()
+        agent._save_plan_json = Mock()
+        agent.start_conversation = Mock()
+        agent.save_convo = Mock()
+        agent._fire = Mock()
+        agent._log = Mock()
+        agent.planner_model = "planner-cloud"
+        agent.planner_is_cloud = True
+
+        ok = agent.make_plan(brief, requirement_source=brief)
+
+        self.assertTrue(ok)
+        self.assertLessEqual(len(calls), 1 + agent.CAPABILITY_REPLAN_ROUNDS)
+        self.assertEqual(agent._capability_gaps(agent.plan, raw), ([], [], []))
+        self.assertIn("Automatic completeness repairs", agent.plan_md)
 
 
 if __name__ == "__main__":

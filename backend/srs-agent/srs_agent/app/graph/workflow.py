@@ -7,6 +7,7 @@ from ..agents.coverage_auditor import audit_node
 from ..agents.customization import customize_node
 from ..agents.diagram_generator import diagram_node
 from ..agents.domain_classifier import classify_node
+from ..agents.english_plan import english_plan_node
 from ..agents.intake import intake_node
 from ..agents.pdf_generator import generate_pdf
 from ..agents.srs_generator import generate_srs_node
@@ -43,10 +44,12 @@ def _build_analysis():
 def _build_generation():
     g = StateGraph(AgentState)
     g.add_node("audit", audit_node)
+    g.add_node("english_plan", english_plan_node)
     g.add_node("generate", generate_srs_node)
     g.add_node("render_diagrams", diagram_node)
     g.add_edge(START, "audit")
-    g.add_edge("audit", "generate")
+    g.add_edge("audit", "english_plan")
+    g.add_edge("english_plan", "generate")
     g.add_edge("generate", "render_diagrams")
     g.add_edge("render_diagrams", END)
     return g.compile()

@@ -240,10 +240,10 @@ export default function Home({ onStarted }) {
             </span>
             <label htmlFor="srs-language" className="min-w-[210px] flex-1">
               <span className="block font-display text-[11.5px] font-semibold text-ink">
-                1. Choose the SRS language
+                1. Choose the interview language
               </span>
               <span className="block text-[10.5px] leading-relaxed text-muted2">
-                Interview, plan and SRS content use this language. The Builder handoff stays in English.
+                Interview and plan use this language. SRS, Builder handoff, PDF and diagrams stay in English.
               </span>
             </label>
             <select id="srs-language" value={srsLanguage}

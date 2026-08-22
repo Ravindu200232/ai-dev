@@ -300,7 +300,7 @@ async def customize_node(state: AgentState) -> AgentState:
     pid = state["project_id"]
     prompt = state.get("customization_prompt", "")
     srs = state.get("srs", {})
-    selected_language = (state.get("project") or {}).get("language", "English")
+    selected_language = "English"
     await bus.log(pid, "CustomizationAgent", f"Applying edit: “{prompt}”", progress=15)
 
     new_srs, diff = None, []
@@ -314,7 +314,7 @@ async def customize_node(state: AgentState) -> AgentState:
         language_rule = output_language_instruction(
             selected_language,
             artifact="customized software requirements specification",
-        )
+        ) + ("\nOUTPUT LANGUAGE: Return every customer-visible changed SRS value in English.\n")
         data = await llm.complete_json(
             system=_SYS + language_rule,
             user=f"{preamble}CURRENT SRS:\n{view}\n\nUSER EDIT REQUEST:\n{prompt}",
@@ -366,6 +366,7 @@ async def customize_node(state: AgentState) -> AgentState:
 
     document = new_srs.get("srs_document")
     if isinstance(document, dict):
+        document["document_language"] = "English"
         document["effective_plan"] = plan_srs.effective_plan(document)
         apply_international_profile(new_srs)
 

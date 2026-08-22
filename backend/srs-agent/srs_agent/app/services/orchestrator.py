@@ -5,11 +5,7 @@ import copy
 import re
 
 from ..agents import clarify, interview, plan_generator
-from ..agents.language import (
-    ensure_english_builder_prompt,
-    language_name,
-    localize_question_payload,
-)
+from ..agents.language import language_name, localize_question_payload
 from ..agents.coverage_auditor import compute_coverage
 from ..agents.customer_context import customer_context
 from ..extraction.brief import build_brief
@@ -468,9 +464,13 @@ async def customize(project_id: str, prompt: str) -> dict:
     if not latest:
         raise ValueError("no SRS to customize yet; generate first")
 
+    plan_doc = await plan_approval.approved_plan(project_id) or await repo.latest_plan(project_id)
     state = {"project_id": project_id, "project": project, "srs": latest["srs"],
              "brief": await _brief_for(project),
              "session": await repo.get_question_session(project_id) or {},
+             "language": project.get("language", "English"),
+             "plan": (plan_doc or {}).get("plan"),
+             "plan_markdown": (plan_doc or {}).get("markdown", ""),
              "customization_prompt": prompt}
     result = await run_customization(state)
     srs = result["srs"]
@@ -478,16 +478,14 @@ async def customize(project_id: str, prompt: str) -> dict:
     version = _bump_minor(latest["version"])
     srs["srs_document"]["version"] = version
 
-    plan_doc = await plan_approval.approved_plan(project_id) or await repo.latest_plan(project_id)
-    plan = (plan_doc or {}).get("plan") or {}
+    document = srs.get("srs_document") or {}
+    plan = document.get("approved_plan") or document.get("effective_plan") or {}
     if plan:
-        pack = (await repo.get_question_session(project_id) or {}).get("pack") or {}
+        pack = (state.get("session") or {}).get("pack") or {}
         attach_handoff(srs, plan, pack, auth=_auth_on(pack, plan))
-        document = srs.get("srs_document") or {}
-        document["builder_handoff"] = await ensure_english_builder_prompt(
-            document.get("builder_handoff") or {},
-            project.get("language", "English"), project_id=project_id,
-        )
+        handoff = document.get("builder_handoff") or {}
+        handoff["source_document_language"] = "English"
+        handoff["prompt_language"] = "English"
 
     storage.save_srs_json(project_id, srs, version)
 

@@ -13,8 +13,6 @@ from ..generators.diagrams import (
 )
 from ..llm import LLMRepairFailed, LLMUnavailable, get_llm
 from ..services.events import bus
-from .customer_context import customer_context
-from .language import output_language_instruction
 from .state import AgentState
 
 _SYS = (
@@ -76,11 +74,9 @@ async def _llm_diagrams(pid: str, srs: dict, context: str = "") -> dict[str, str
     user = (
         (f"{context}\n\n" if context else "")
         + _srs_context(doc)
-        + output_language_instruction(
-            doc.get("document_language", "English"), artifact="diagram labels",
-        )
         + "\nProduce only the 3 supplemental Mermaid diagrams (system_context, component, "
-        "deployment) as specified. Label everything in the customer's own words "
+        "deployment) as specified. Every diagram title, label and annotation must be "
+        "in English. Label everything using the approved requirements "
         "and do not add infrastructure or services that the SRS does not require."
     )
     data = await llm.complete_json(
@@ -97,7 +93,7 @@ async def _llm_diagrams(pid: str, srs: dict, context: str = "") -> dict[str, str
 async def diagram_node(state: AgentState) -> AgentState:
     pid = state["project_id"]
     srs = state.get("srs", {})
-    await bus.log(pid, "DiagramGeneratorAgent", "Generating diagrams from the SRS…", progress=80)
+    await bus.log(pid, "DiagramGeneratorAgent", "Generating English diagrams from the SRS…", progress=80)
 
     faults: list[str] = []
     diagrams = build_diagrams(srs, on_error=faults.append)
@@ -108,10 +104,7 @@ async def diagram_node(state: AgentState) -> AgentState:
 
     try:
         await bus.emit(pid, "DiagramGeneratorAgent", "Asking the LLM to enrich editable Mermaid sources (native layout stays fixed)…", progress=84)
-        llm_map = await _llm_diagrams(
-            pid, srs, customer_context(brief=state.get("brief", ""),
-                                       session=state.get("session"),
-                                       project=state.get("project")))
+        llm_map = await _llm_diagrams(pid, srs)
         improved = 0
         for d in diagrams:
             if d["kind"] in STANDARD_DIAGRAM_KINDS:

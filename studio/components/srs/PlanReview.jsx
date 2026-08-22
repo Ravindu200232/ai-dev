@@ -25,6 +25,7 @@ export default function PlanReview({ projectId, onGenerated, onCancel }) {
 
   async function generate(text) {
     setPhase(text ? 'revising' : 'loading')
+    setWaited(0)
     setError('')
     try {
       setState(await api.srs(`/projects/${projectId}/plan`, { revision: text || '' }))
@@ -57,7 +58,7 @@ export default function PlanReview({ projectId, onGenerated, onCancel }) {
   }, [projectId])
 
   useEffect(() => {
-    if (phase !== 'generating') return
+    if (!['loading', 'revising', 'generating'].includes(phase)) return
     const id = setInterval(() => setWaited(v => v + 1), 1000)
     return () => clearInterval(id)
   }, [phase])
@@ -84,7 +85,7 @@ export default function PlanReview({ projectId, onGenerated, onCancel }) {
     }
   }
 
-  if (phase === 'loading' && !state) return <Waiting sub="Turning the interview into a clear plan you can approve.">Writing the plan…</Waiting>
+  if (phase === 'loading' && !state) return <Waiting sub={`Turning the interview into a clear plan you can approve — ${waited}s so far.`}>Writing the plan…</Waiting>
   if (phase === 'generating') return <Waiting sub={`Writing the specification and diagrams — ${waited}s so far.`}>Building the SRS…</Waiting>
 
   const body = state?.plan || {}

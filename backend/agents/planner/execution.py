@@ -1,11 +1,71 @@
 """Requirement extraction, capability-gap detection and plan generation."""
 from agents.builder.orchestration.common import *
+from agents.planner.capability_recovery import CapabilityRecoveryMixin
 
 
-class ArchitectPlanningMixin:
+class ArchitectPlanningMixin(CapabilityRecoveryMixin):
     PLANNER_TIMEOUT = 300
     REPLAN_TIMEOUT = 180
     PLANNER_OUTPUT_TOKENS = 16_000
+    CAPABILITY_REPLAN_ROUNDS = 6
+
+    _CAPABILITY_STOP = {
+        "with", "from", "that", "this", "into", "their", "every", "using",
+        "allows", "ability", "engine", "management", "system", "feature",
+        "users", "user", "interface", "instant", "instantly",
+        "administrative", "secure", "automatic", "current", "maintenance",
+        "generation", "processing", "based",
+    }
+    # Product briefs and plans often use different words for the same job.
+    # Collapse those words before the mechanical completeness comparison.
+    _CAPABILITY_ALIASES = {
+        "authentication": "identity", "authenticate": "identity",
+        "auth": "identity", "login": "identity", "signin": "identity",
+        "admin": "admin", "administrator": "admin",
+        "administrators": "admin", "moderator": "admin",
+        "rbac": "authorization", "role": "authorization",
+        "roles": "authorization", "permission": "authorization",
+        "permissions": "authorization", "access": "authorization",
+        "sale": "sales", "sales": "sales", "pos": "sales",
+        "checkout": "sales", "terminal": "sales",
+        "barcode": "barcode", "scan": "barcode", "scanner": "barcode",
+        "cart": "cart", "basket": "cart",
+        "tax": "totals", "discount": "totals", "total": "totals",
+        "totals": "totals", "calculation": "totals", "calculate": "totals",
+        "payment": "payment", "payments": "payment", "paid": "payment",
+        "pay": "payment", "cash": "payment", "card": "payment",
+        "bill": "billing", "bills": "billing", "billing": "billing",
+        "invoice": "billing", "invoices": "billing", "receipt": "billing",
+        "receipts": "billing", "issuance": "billing", "printing": "print",
+        "printed": "print", "print": "print",
+        "stock": "inventory", "inventory": "inventory",
+        "warehouse": "warehouse", "warehouses": "warehouse",
+        "reorder": "reorder", "lowstock": "reorder", "alert": "reorder",
+        "alerts": "reorder", "grn": "receiving", "goods": "receiving",
+        "received": "receiving", "receiving": "receiving",
+        "customer": "customer", "customers": "customer",
+        "client": "customer", "clients": "customer", "profile": "profile",
+        "profiles": "profile", "credit": "credit", "balance": "credit",
+        "balances": "credit", "debt": "credit",
+        "price": "pricing", "prices": "pricing", "pricing": "pricing",
+        "rate": "pricing", "rates": "pricing", "cost": "pricing",
+        "costs": "pricing", "fee": "pricing", "fees": "pricing",
+        "available": "availability", "availability": "availability",
+        "vacancy": "availability", "vacancies": "availability",
+        "approve": "approval", "approved": "approval",
+        "approval": "approval", "confirm": "approval",
+        "confirmed": "approval", "accept": "approval",
+    }
+    _INERT_PLAN_RE = re.compile(
+        r"\bplaceholder\s+(?:page|screen|section|component|content|"
+        r"implementation|only)\b"
+        r"|\b(?:for\s+now|initially)\s+a\s+placeholder\b"
+        r"|\bdisabled\s+for\s+now\b"
+        r"|\bdisabled\s+until\s+[\w\s]{0,40}?\b(?:is|are)\s+"
+        r"(?:built|implemented|added|ready|done)\b"
+        r"|\b(?:coming\s+soon|under\s+construction|todo|"
+        r"not\s+implemented|future\s+work|"
+        r"stub(?:bed)?\s+(?:button|action|control|page))\b", re.I)
 
     def _planning_output_limit(self):
         """Cloud answers need a ceiling; preserve local-model behavior."""
@@ -138,70 +198,60 @@ class ArchitectPlanningMixin:
         self._app_noun_cache = out
         return out
 
+    def _capability_words(self, text: str) -> set:
+        """Semantic terms used by both gap detection and deterministic repair."""
+        normalized = str(text or "").lower()
+        normalized = re.sub(r"\b(?:signs?|logs?)\s*[- ]\s*in\b",
+                            " signin ", normalized)
+        normalized = re.sub(r"\blow\s*[- ]\s*stock\b", " lowstock ", normalized)
+        raw = re.findall(r"[a-z0-9]+", normalized)
+        short_ok = set(self._CAPABILITY_ALIASES) | self._app_nouns()
+        out = set()
+        for word in raw:
+            if word in self._CAPABILITY_STOP:
+                continue
+            if len(word) < 5 and word not in short_ok:
+                continue
+            if word.endswith("ies") and len(word) > 4:
+                word = word[:-3] + "y"
+            elif word.endswith("ing") and len(word) > 5:
+                word = word[:-3]
+                if word.endswith(word[-1:] * 2):
+                    word = word[:-1]
+            elif word.endswith("ed") and len(word) > 4:
+                word = word[:-2]
+            elif word.endswith("es") and len(word) > 4:
+                word = word[:-1] if word[-3] in "sgcz" else word[:-2]
+            elif word.endswith("s") and len(word) > 4:
+                word = word[:-1]
+            out.add(self._CAPABILITY_ALIASES.get(word, word))
+        return out
+
     def _capability_gaps(self, plan: dict, markdown: str) -> tuple:
         """(core features with no capability, e2e capabilities with no workflow)."""
-        features = self._core_features(markdown)
+        # Replan prose is allowed to improve, but it cannot erase a Core
+        # Feature from the authoritative brief. Keep that original ledger in
+        # every later comparison.
+        source_features = list(getattr(self, "_source_core_features", None) or [])
+        features = list(dict.fromkeys(source_features + self._core_features(markdown)))
         caps = [c for c in (plan or {}).get("capabilities") or [] if isinstance(c, dict)]
-        stop = {"with","from","that","this","into","their","every","using","allows",
-                "ability","engine","management","system","feature","users","user",
-                "interface","instant","instantly","administrative"}
-        # Wording varies even when the capability is identical.
-        aliases = {
-            "price": "pricing", "prices": "pricing", "pricing": "pricing",
-            "rate": "pricing", "rates": "pricing", "cost": "pricing",
-            "costs": "pricing", "fee": "pricing", "fees": "pricing",
-            "admin": "admin", "administrator": "admin",
-            "administrators": "admin", "moderator": "admin",
-            "payment": "payment", "payments": "payment", "paid": "payment",
-            "pay": "payment", "checkout": "payment", "invoice": "payment",
-            "available": "availability", "availability": "availability",
-            "vacancy": "availability", "vacancies": "availability",
-            "approve": "approval", "approved": "approval",
-            "approval": "approval", "confirm": "approval",
-            "confirmed": "approval", "accept": "approval",
-        }
-        def words(text):
-            # Short words are kept when the app itself leans on them.
-            raw = re.findall(r"[a-z0-9]+", (text or "").lower())
-            short_ok = aliases.keys() | self._app_nouns()
-            return {w for w in raw
-                    if w not in stop and (len(w) >= 5 or w in short_ok)}
-        def stemmed_words(text):
-            raw = words(text)
-            out = set()
-            for w in raw:
-                if w in aliases:
-                    out.add(aliases[w]); continue
-                z = w
-                if z.endswith("ies") and len(z) > 4:
-                    z = z[:-3] + "y"
-                elif z.endswith("ing") and len(z) > 5:
-                    z = z[:-3]
-                    if z.endswith(z[-1:] * 2):
-                        z = z[:-1]
-                elif z.endswith("ed") and len(z) > 4:
-                    z = z[:-2]
-                elif z.endswith("es") and len(z) > 4:
-                    z = z[:-1] if z[-3] in "sgcz" else z[:-2]
-                elif z.endswith("s") and len(z) > 4:
-                    z = z[:-1]
-                out.add(aliases.get(z, z))
-            return out
-
-        cap_words = [stemmed_words(str(c.get("requirement") or "") + " " +
-                                   str(c.get("proof") or "") + " " +
-                                   str(c.get("who") or "")) for c in caps]
+        cap_words = [self._capability_words(str(c.get("requirement") or "") + " " +
+                                            str(c.get("proof") or "") + " " +
+                                            str(c.get("who") or "")) for c in caps]
         missing_features = []
         for feat in features:
-            fw = stemmed_words(feat)
+            fw = self._capability_words(feat)
             if not fw:
                 continue
-            if not any(len(fw & cw) >= 1 for cw in cap_words):
+            label = str(feat).split(":", 1)[0]
+            anchors = self._capability_words(label)
+            if not any((anchors & cw) or len(fw & cw) >= min(2, len(fw))
+                       for cw in cap_words):
                 missing_features.append(feat)
 
         # Independent source ledger for free-form ideas.
         for req in (plan or {}).get("source_requirements") or []:
-            rw = stemmed_words(str(req))
+            rw = self._capability_words(str(req))
             if not rw:
                 continue
             need = 1 if len(rw) == 1 else 2
@@ -237,16 +287,6 @@ class ArchitectPlanningMixin:
                     f"or point the capability at a file a task does build")
 
         # A plan can look complete on paper while explicitly scheduling
-        inert_rx = re.compile(
-            r"\bplaceholder\s+(?:page|screen|section|component|content|"
-            r"implementation|only)\b"
-            r"|\b(?:for\s+now|initially)\s+a\s+placeholder\b"
-            r"|\bdisabled\s+for\s+now\b"
-            r"|\bdisabled\s+until\s+[\w\s]{0,40}?\b(?:is|are)\s+"
-            r"(?:built|implemented|added|ready|done)\b"
-            r"|\b(?:coming\s+soon|under\s+construction|todo|"
-            r"not\s+implemented|future\s+work|"
-            r"stub(?:bed)?\s+(?:button|action|control|page))\b", re.I)
         for ph in (plan or {}).get("phases") or []:
             if not isinstance(ph, dict):
                 continue
@@ -261,7 +301,7 @@ class ArchitectPlanningMixin:
                         return " ".join(_spec_text(v) for v in x)
                     return str(x or "")
                 blob = _spec_text(f)
-                hit = inert_rx.search(blob)
+                hit = self._INERT_PLAN_RE.search(blob)
                 if hit:
                     path = str(f.get("path") or "unknown")
                     unmapped.append("INERT-PLAN:" + path)
@@ -519,15 +559,39 @@ class ArchitectPlanningMixin:
                         head = head.split("?", 1)[0].rstrip("/") or "/"
                         if head in route_file and route_file[head] not in found:
                             found.append(route_file[head])
+                if not found:
+                    requirement = str(c.get("requirement") or cid)
+                    candidates = self._requirement_file_candidates(plan, requirement)
+                    found = (self._enrich_requirement_files(candidates, requirement)
+                             if candidates else
+                             self._add_requirement_phase(plan, requirement))
                 if found:
                     c["files"] = found[:6]
+                    planned.update(found)
                     fixed += 1
                     self._log("INFO", f"   🧩 {cid} had no files — pinned to the "
-                                      f"page(s) its workflow walks: "
+                                      f"real task file(s) that implement it: "
                                       f"{', '.join(found[:3])}")
                 continue
 
             missing = [f for f in files if f not in planned]
+            invalid = [path for path in missing if not re.match(
+                r"^(?:app|components|lib)/[\w./\[\]-]+\.(?:jsx|js)$", path)]
+            if invalid:
+                requirement = str(c.get("requirement") or cid)
+                candidates = self._requirement_file_candidates(plan, requirement)
+                replacements = (self._enrich_requirement_files(candidates, requirement)
+                                if candidates else
+                                self._add_requirement_phase(plan, requirement))
+                kept = [path for path in files if path not in invalid]
+                c["files"] = list(dict.fromkeys(kept + replacements))[:10]
+                planned.update(replacements)
+                files = list(c["files"])
+                missing = [f for f in files if f not in planned]
+                fixed += 1
+                self._log("INFO", f"   🧩 {cid} named non-buildable file(s) "
+                                  f"{', '.join(invalid[:3])} — replaced them "
+                                  "with planned application files")
             for path in missing:
                 if not re.match(r"^(?:app|components|lib)/[\w./\[\]-]+\.(?:jsx|js)$", path):
                     continue                      # Not a file this stack builds
@@ -543,6 +607,13 @@ class ArchitectPlanningMixin:
                                   f"built it — added to "
                                   f"\"{str(task.get('title') or 'the last task')[:40]}\"")
         return fixed
+    def _stream_capability_replan(self, messages: list, on_delta,
+                                  temperature: float) -> None:
+        """Run one bounded planner-only recovery turn with thinking disabled."""
+        self._stream(messages, on_delta, temperature=temperature,
+                     model=self.planner_model, timeout=self.REPLAN_TIMEOUT,
+                     max_output_tokens=self._planning_output_limit(),
+                     reasoning=False)
 
     def make_plan(self, user_prompt: str, requirement_source: str = "") -> bool:
         self._log("INFO", "🧭 Planning — writing plan.md")
@@ -557,6 +628,8 @@ class ArchitectPlanningMixin:
         self._app_noun_cache = None
         self._known_fr = set(re.findall(r"\bFR-\d+\b", requirement_source))
         self._fr_text = self._requirement_text_map(requirement_source)
+        self._source_core_features = self._core_features(requirement_source)
+        self._automatic_plan_repairs = []
         source_reqs = [] if self._known_fr else self._source_requirements(requirement_source)
         source_hint = ""
         if source_reqs:
@@ -779,60 +852,15 @@ class ArchitectPlanningMixin:
         if repaired_map:
             self._log("INFO", f"   ✅ repaired {repaired_map} mechanical "
                               "capability/workflow edge(s) without rewriting the plan")
-        cap_missing, cap_unwalked, cap_unmapped = self._capability_gaps(self.plan, raw)
-        if cap_missing or cap_unwalked or cap_unmapped:
-            why = []
-            if cap_missing:
-                why.append("source/Core requirements with no machine capability: " + "; ".join(cap_missing))
-            if cap_unwalked:
-                why.append("e2e capabilities no workflow covers: " + ", ".join(cap_unwalked))
-            if cap_unmapped:
-                why.append("capabilities with missing/unplanned files or inert placeholder work: " + ", ".join(cap_unmapped))
-            self._log("WARN", "   ⚠ plan completeness gap — " + " | ".join(why)[:500])
-            detail = list(getattr(self, "_last_gap_details", None) or [])
-            spelled = ("\n\nEXACTLY what is wrong, one line each:\n"
-                       + "\n".join(f"  • {d}" for d in detail)) if detail else ""
-            messages = messages[:2] + [
-                {"role": "assistant", "content": raw},
-                {"role": "user", "content":
-                    "The plan is not complete enough to build. " + "\n".join(why) +
-                    spelled +
-                    "\n\nRewrite the WHOLE plan. Keep the routes/design that are already right, "
-                    "but add/fix `capabilities`, their exact `files`, and workflow `covers`. "
-                    "A capability's `files` must be paths some task's `files` list also "
-                    "contains, character for character — that agreement is checked "
-                    "mechanically, so a near-miss like `app/items/page.jsx` against "
-                    "`app/items/[id]/page.jsx` fails. "
-                    "Every Core Features bullet and every meaningful verb in the original idea "
-                    "must have an observable proof. Anything a person can do gets e2e=true and "
-                    "must be covered by a workflow that actually performs it. Do not satisfy a "
-                    "feature with decorative inputs or a dead button. Emit markdown + JSON again."},
-            ]
-            buf5 = []
-            try:
-                self._stream(messages, buf5.append, temperature=0.55,
-                             model=self.planner_model,
-                             timeout=self.REPLAN_TIMEOUT,
-                             max_output_tokens=self._planning_output_limit(),
-                             reasoning=False)
-                again_raw = "".join(buf5)
-                again = self._extract_plan_json(again_raw)
-                if again.get("phases"):
-                    again["source_requirements"] = source_reqs
-                gaps = self._capability_gaps(again, again_raw) if again.get("phases") else (cap_missing, cap_unwalked, cap_unmapped)
-                if again.get("phases") and sum(map(len, gaps)) < (len(cap_missing)+len(cap_unwalked)+len(cap_unmapped)):
-                    self.plan, raw = again, again_raw
-                    self._log("INFO", "   ✅ replanned with a capability proof map")
-                else:
-                    self._log("WARN", "   ⚠ capability replan did not improve the map")
-            except Exception as e:
-                self._log("WARN", f"   ⚠ capability replan failed: {e}")
+        raw = self._converge_capability_map(messages, raw, source_reqs)
 
         final_cap_gaps = self._capability_gaps(self.plan, raw)
         if any(final_cap_gaps):
-            # Two model passes have now been spent.
-            if self._repair_capability_map(self.plan):
-                final_cap_gaps = self._capability_gaps(self.plan, raw)
+            # One final controller pass after the six-round convergence budget.
+            self._repair_missing_capabilities(self.plan, final_cap_gaps[0])
+            self._repair_capability_map(self.plan)
+            self._repair_inert_plan(self.plan)
+            final_cap_gaps = self._capability_gaps(self.plan, raw)
 
         # `missing_features` holds two different kinds of thing
         source_only = [g for g in final_cap_gaps[0] if str(g).startswith("SOURCE:")]
@@ -851,17 +879,25 @@ class ArchitectPlanningMixin:
             if final_cap_gaps[0]: pieces.append("unmapped source/Core requirements: " + "; ".join(final_cap_gaps[0][:5]))
             if final_cap_gaps[1]: pieces.append("unwalked capabilities: " + ", ".join(final_cap_gaps[1][:8]))
             if final_cap_gaps[2]: pieces.append("capabilities without planned files / inert plan work: " + ", ".join(final_cap_gaps[2][:8]))
-            self._log("ERROR", "   ❌ Refusing to build an incomplete plan — " + " | ".join(pieces))
+            self._log("ERROR", "   ❌ Planner recovery could not produce a "
+                               "buildable capability map — " + " | ".join(pieces))
             for d in (getattr(self, "_last_gap_details", None) or [])[:6]:
                 self._log("ERROR", f"      • {d}")
-            self._log("ERROR", "      Re-run with a brief that names these "
-                               "screens, or simplify the feature the planner "
-                               "could not pin to a file.")
+            self._log("ERROR", f"      The planner and controller exhausted "
+                               f"{self.CAPABILITY_REPLAN_ROUNDS} bounded repair "
+                               "rounds; the exact remaining evidence is above.")
             self._fire("on_phase", {"phase": 0, "title": "Planning", "status": "error",
                                     "reason": "capability map incomplete"})
             return False
 
         self.plan_md = re.sub(r"```json.*?```", "", raw, flags=re.S).strip()
+        repairs = list(getattr(self, "_automatic_plan_repairs", None) or [])
+        if repairs:
+            rows = ["## Automatic completeness repairs", ""]
+            for item in repairs:
+                rows.append(f"- **{item['capability']}** — {item['requirement']}")
+                rows.append("  - Files: " + ", ".join(f"`{p}`" for p in item["files"]))
+            self.plan_md = (self.plan_md + "\n\n" + "\n".join(rows)).strip()
         self._fire("on_file_end", "plan.md", self.plan_md)
         self.write_file("plan.md", self.plan_md)
 

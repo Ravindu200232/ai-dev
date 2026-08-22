@@ -11,12 +11,7 @@ from ..schemas.srs import summarize_srs, validate_srs
 from ..generators.standards import apply_international_profile
 from ..services.events import bus
 from .state import AgentState
-from .language import (
-    LanguageConversionError,
-    ensure_english_builder_prompt,
-    is_english,
-    output_language_instruction,
-)
+from .language import LanguageConversionError, is_english
 
 _SYS = (
     "You are a senior requirements engineer. Given a non-technical user's app "
@@ -146,7 +141,10 @@ def _norm(name: str) -> str:
 async def generate_srs_node(state: AgentState) -> AgentState:
     pid = state["project_id"]
     project = state.get("project", {})
-    selected_language = project.get("language", state.get("language", "English"))
+    # The language picker applies to Interview + Planner. Everything after
+    # plan approval is an English implementation artifact.
+    selected_language = "English"
+    srs_project = {**project, "language": "English"}
     brief = state.get("brief", "")
     questions = state.get("questions", [])
     answers = state.get("answers", [])
@@ -159,13 +157,13 @@ async def generate_srs_node(state: AgentState) -> AgentState:
     if plan:
         await bus.log(pid, "SrsJsonGeneratorAgent",
                       "Composing the SRS from the approved plan…", progress=10)
-        skeleton = build_srs_from_plan(project=project, plan=plan, pack=pack_profile,
+        skeleton = build_srs_from_plan(project=srs_project, plan=plan, pack=pack_profile,
                                        session=session, brief=brief)
         validator = _plan_scope_guard(plan, auth)
     else:
         await bus.log(pid, "SrsJsonGeneratorAgent",
                       "No approved plan — composing from the domain template…", progress=10)
-        skeleton = build_offline_srs(project=project, answers=answers,
+        skeleton = build_offline_srs(project=srs_project, answers=answers,
                                      session=session, brief=brief)
         validator = _validate_pack
     try:
@@ -186,10 +184,9 @@ async def generate_srs_node(state: AgentState) -> AgentState:
             + (("This app has NO login and NO user accounts. Say nothing about "
                 "users, roles, permissions or admins.\n\n") if plan and not auth else "")
             + f"USER ANSWERS:\n{digest}\n\n"
-            + output_language_instruction(
-                selected_language,
-                artifact="software requirements specification",
-            )
+            + "\nSRS OUTPUT LANGUAGE (MANDATORY): Write every customer-visible SRS "
+              "heading, description, requirement, workflow step, label and summary in "
+              "English. Preserve machine identifiers in their required format.\n"
             + "Now produce the enrichment JSON described in the system message, "
             "tailored precisely to this idea."
         )
@@ -241,22 +238,20 @@ async def generate_srs_node(state: AgentState) -> AgentState:
         await bus.error(pid, "SrsJsonGeneratorAgent", f"SRS enrichment error: {exc}; kept deterministic SRS.")
 
     apply_international_profile(srs)
+    srs.setdefault("srs_document", {})["document_language"] = "English"
 
     if plan:
         srs["srs_document"]["approved_plan_markdown"] = str(state.get("plan_markdown") or "")
         attach_handoff(srs, plan, pack_profile, auth=auth)
-        handoff = await ensure_english_builder_prompt(
-            srs["srs_document"]["builder_handoff"],
-            selected_language,
-            project_id=pid,
-        )
-        srs["srs_document"]["builder_handoff"] = handoff
+        handoff = srs["srs_document"]["builder_handoff"]
+        handoff["source_document_language"] = "English"
+        handoff["prompt_language"] = "English"
         testing = handoff.get("testing_contract") or {}
         await bus.emit(pid, "SrsJsonGeneratorAgent",
-                       f"Builder handoff ready: {len(handoff['requirements'])} requirements, "
+                       f"Builder handoff ready: {len(handoff.get('requirements') or [])} requirements, "
                        f"{len(testing.get('unit') or [])} unit contracts, "
                        f"{len(testing.get('e2e') or [])} E2E journeys, "
-                       f"{len(handoff['prompt'].split())} words.",
+                       f"{len(str(handoff.get('prompt') or '').split())} words.",
                        level="success", progress=65)
 
     summary = summarize_srs(srs)
