@@ -100,7 +100,7 @@ class PackageNameTests(unittest.TestCase):
     """The change format's own keywords are not dependencies."""
 
     def _spec_for(self, plan_text):
-        from agents.features_planning import FeaturesAgentPlanningMixin
+        from agents.feature.planning import FeaturesAgentPlanningMixin
 
         class Arch:
             PKG_NAME_RE = re.compile(r"^(@[a-z0-9][\w.-]*/)?[a-z0-9][\w.-]*$",
@@ -138,7 +138,7 @@ class SourceRequirementTests(unittest.TestCase):
 
     @staticmethod
     def _reqs(text):
-        from agents.architect_planning import ArchitectPlanningMixin
+        from agents.planner.execution import ArchitectPlanningMixin
         return ArchitectPlanningMixin._source_requirements(text)
 
     def test_a_sentence_that_names_the_app_is_not_a_requirement(self):

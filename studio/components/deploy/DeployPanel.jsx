@@ -164,7 +164,8 @@ export default function DeployPanel({ onSettings }) {
     setError('')
     try {
 
-      await api.saveSettings({ deploy_model: models.deploy || models.agent || '' })
+      await api.saveSettings({ deploy_model: models.deploy || models.planner
+                                            || models.agent || '' })
         .catch(() => { })
       await api.deployStart({ project, target, validate_container: validateBuild })
       addLog('INFO', `Deploying ${project} to ${target === 'vercel' ? 'Vercel' : 'AWS EC2'}`)

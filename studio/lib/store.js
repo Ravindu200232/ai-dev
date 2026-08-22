@@ -15,9 +15,8 @@ const DEFAULTS = {
 // Use the light theme until the browser saves another choice.
   theme: 'light',
 
-  models: { refine: 'llama3.1:8b', build: 'qwen2.5-coder:14b', agent: '', qa: '',
+  models: { planner: '', design: '', builder: '', agent: '', qa: '',
             srs: '', deploy: '', image: 'fooocus' },
-  agentMode: true,
   think: false,
   images: false,
   hist: [],
@@ -26,11 +25,13 @@ const DEFAULTS = {
 
 export const KEYS = {
   theme: 'agentforge-theme', hist: 'agentforge-hist',
-  refine: 'agentforge-rm', build: 'agentforge-bm', agent: 'agentforge-am', qa: 'agentforge-qm',
+  agent: 'agentforge-am',
+  planner: 'agentforge-pm', design: 'agentforge-design-m',
+  builder: 'agentforge-builder-m', qa: 'agentforge-qm',
   srs: 'agentforge-sm', deploy: 'agentforge-dm', image: 'agentforge-im',
 
   srsId: 'agentforge-srs-id', srsPhase: 'agentforge-srs-phase',
-  agentMode: 'agentforge-agent', think: 'agentforge-think', images: 'agentforge-img',
+  think: 'agentforge-think', images: 'agentforge-img',
 }
 
 
@@ -129,21 +130,26 @@ export const useStore = create((set, get) => ({
   hydrate: () => {
     if (!LS) return
     const theme = read(KEYS.theme, DEFAULTS.theme)
+    // Migrate the former single Agent choice into each explicit role. Once a
+    // role is picked it has its own key and no longer follows the legacy one.
+    const legacyAgent = read(KEYS.agent, DEFAULTS.models.agent)
 
     try { document.documentElement.setAttribute('data-theme', theme) } catch { }
     set({
       theme,
       models: {
-        refine: read(KEYS.refine, DEFAULTS.models.refine),
-        build: read(KEYS.build, DEFAULTS.models.build),
-        agent: read(KEYS.agent, DEFAULTS.models.agent),
+        planner: read(KEYS.planner, legacyAgent),
+        design: read(KEYS.design, legacyAgent),
+        builder: read(KEYS.builder, legacyAgent),
+        agent: legacyAgent,
         qa: read(KEYS.qa, DEFAULTS.models.qa),
         srs: read(KEYS.srs, DEFAULTS.models.srs),
         deploy: read(KEYS.deploy, DEFAULTS.models.deploy),
         image: read(KEYS.image, DEFAULTS.models.image),
       },
-      agentMode: read(KEYS.agentMode, '1') === '1',
-      think: read(KEYS.think, '0') === '1',
+      // Fresh installs start with thinking off. A user must opt in with the
+      // shared Builder + QA Think button before either role receives it.
+      think: read(KEYS.think, DEFAULTS.think ? '1' : '0') === '1',
       images: read(KEYS.images, '0') === '1',
       hist: readJSON(KEYS.hist, []),
     })

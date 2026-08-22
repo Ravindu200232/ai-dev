@@ -23,21 +23,28 @@ async def main():
     print(f"  🔌 WebSocket   →  ws://127.0.0.1:{WS_PORT}")
     print(f"  📄 SRS agent   →  http://127.0.0.1:{SRS_PORT}")
     print(f"  🚀 Deploy      →  http://127.0.0.1:{DEPLOY_PORT}")
-    print(f"  🧠 Refine      :  {DEFAULT_REFINE}")
-    print(f"  🏗️  Build       :  {DEFAULT_BUILD}")
+    print(f"  🧭 Planner / 🎨 Design / 🏗️ Builder roles enabled")
     print(f"  📝 Local development mode")
     print(f"{'━'*46}\n")
     async with websockets.serve(ws_handler, bind_host(), WS_PORT):
         await asyncio.Future()
 
 
+def _shutdown_line(text: str) -> None:
+    """Print shutdown progress even after pytest restores a CP1252 stream."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(str(text).encode("ascii", "ignore").decode("ascii"))
+
+
 def shutdown_all():
-    print("\n🛑 Shutting down AgentForge backend...")
+    _shutdown_line("\n🛑 Shutting down AgentForge backend...")
 
     if active_vite.get("proc"):
         try:
             _stop_dev_proc()
-            print("   ✅ Dev server stopped")
+            _shutdown_line("   ✅ Dev server stopped")
         except:
             pass
 
@@ -47,9 +54,8 @@ def shutdown_all():
         pass
 
     try:
-        stop_model(DEFAULT_REFINE)
         stop_model(DEFAULT_BUILD)
-        print("   ✅ Ollama models unloaded")
+        _shutdown_line("   ✅ Ollama models unloaded")
     except:
         pass
 

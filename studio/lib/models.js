@@ -23,12 +23,24 @@ const CURATED = [
     desc: 'Very capable — needs ~40GB.' },
 ]
 
+// Presentation aliases only. Requests always keep the exact Ollama model id.
+const CLOUD_UI_LABELS = {
+  'qwen3.5:397b-cloud': 'Qwen 397B',
+  'minimax-m3:cloud': 'MiniMax M3',
+}
+
+export const modelLabel = (model) =>
+  CLOUD_UI_LABELS[String(model?.id || '').toLowerCase()]
+  || model?.label || model?.id || ''
+
 export const isCloud = (id) => String(id || '').includes('-cloud')
   || String(id || '').endsWith(':cloud')
 
 export function catalogue(payload) {
   const p = payload || {}
-  const cloud = (p.cloud || []).map(m => ({ ...m, cloud: true }))
+  const cloud = (p.cloud || []).map(m => ({
+    ...m, label: modelLabel(m), cloud: true,
+  }))
   const localObjs = (p.local_models || []).map(m =>
     typeof m === 'string' ? { id: m } : m)
   const installed = (p.local || []).map(m => typeof m === 'string' ? m : m.id)

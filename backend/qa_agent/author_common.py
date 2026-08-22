@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from agents.architect import FileStreamParser
+from agents.builder.orchestration.agent import FileStreamParser
 
 from .session import QASession
 

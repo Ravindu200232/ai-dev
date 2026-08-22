@@ -8,7 +8,7 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-ACTIONS = Path("server_modules/agent/feature_actions.py")
+ACTIONS = Path("server_modules/agent/feature/actions.py")
 HANDLER = Path("server_modules/ui/http_handler.py")
 STUDIO = Path("../../studio")
 

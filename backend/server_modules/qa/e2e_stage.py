@@ -17,11 +17,47 @@ def _e2e_detail(failures) -> list:
         })
     return out
 
+
+def _e2e_pass_with_warnings(out: dict, flows: list, total: int,
+                            reason: str = "two-round E2E budget exhausted") -> bool:
+    """Record a bounded E2E result without converting missing proof into a pass."""
+    if not (out.get("failed") or out.get("blocked") or out.get("unwritable")):
+        return False
+
+    issues = list(out.get("test_issues") or [])
+    issues.extend(list(out.get("failures") or []))
+    if not issues:
+        issues.append({
+            "case": "E2E completion warning", "target": "", "kind": "E2E",
+            "message": reason, "stack": "",
+        })
+
+    for flow in flows:
+        if (flow.get("failed") or flow.get("blocked")
+                or flow.get("blocked_upstream") or flow.get("unwritable")
+                or flow.get("ran") is False):
+            flow["soft_pass"] = False
+            flow["status"] = ("blocked" if flow.get("blocked") or
+                              flow.get("blocked_upstream") else "failed")
+            flow["test_issue"] = max(1, int(flow.get("test_issue") or 0))
+
+    out["status"] = "incomplete"
+    out["soft_pass"] = 0
+    out["test_issue"] = len(issues)
+    out["test_issues"] = issues
+    elog("WARN", f"   ❌ E2E INCOMPLETE — {reason}; "
+                 f"{len(issues)} issue(s) remain and are not counted as passes")
+    emit({"type": "test_result", "status": "fail",
+          "msg": "E2E incomplete",
+          "detail": f"{len(issues)} issue(s) remain after the two-round budget; skip/block is not pass"})
+    return True
+
 def run_qa_e2e_stage(arch, proj_dir: Path, qa, analyzer, *, build_ok: bool,
                      db_ok: bool) -> dict:
     """Sign in as a real seeded account and use the app."""
     out = {"ran": False, "flow": "", "passed": 0, "failed": 0, "fixed": 0,
-           "unwritable": 0, "flows": [], "failures": [],
+           "unwritable": 0, "soft_pass": 0, "test_issue": 0,
+           "test_issues": [], "flows": [], "failures": [],
            "stale_after_late_repair": False}
     if not qa or not qa.enabled:
         return out
@@ -41,6 +77,18 @@ def run_qa_e2e_stage(arch, proj_dir: Path, qa, analyzer, *, build_ok: bool,
     except Exception as e:
         elog("WARN", f"   ⚠ End-to-end flow failed: {e}")
         log.exception("qa e2e")
+        out["failed"] = 1
+        out["failures"] = [{
+            "case": "E2E stage coordinator", "target": "", "kind": "CRASH",
+            "message": f"{type(e).__name__}: {e}"[:500], "stack": "",
+        }]
+        fallback = [{
+            "title": "E2E stage", "role": "", "ran": False,
+            "failed": 1, "fixed": 0, "unwritable": 0,
+        }]
+        _e2e_pass_with_warnings(
+            out, fallback, 1, "the E2E coordinator stopped after its bounded attempt")
+        out["flows"] = fallback
     ephase({"phase": -17, "title": "End-to-end flow", "status": "done"})
     return out
 
@@ -53,10 +101,18 @@ def _e2e_rounds(agent, arch, proj_dir, qa, analyzer, out):
     # The journeys are about to open these pages one at a time
     _warm_routes_async(agent)
 
-    journeys = agent.journeys()
+    raw_journeys = agent.journeys()
+    journeys = [
+        {**journey, "_e2e_id": f"e2e-{n}", "_e2e_index": n,
+         "_e2e_total": len(raw_journeys)}
+        for n, journey in enumerate(raw_journeys, start=1)
+    ]
     total = len(journeys)
+    ensure_artifacts = getattr(agent, "ensure_playwright_artifacts", None)
+    if callable(ensure_artifacts):
+        ensure_artifacts(journeys)
     if total > 1:
-        elog("INFO", f"   🎭 {total} journeys to walk: "
+        elog("INFO", f"   🎭 {total} journeys to walk sequentially: "
                      + " · ".join(j["title"] for j in journeys))
 
     flows, all_fail = [], []
@@ -253,6 +309,9 @@ def _e2e_rounds(agent, arch, proj_dir, qa, analyzer, out):
             errors, conclusive = _npm_build_errors(proj_dir, "next")
             if conclusive and not errors:
                 elog("INFO", "   ✅ pre-E2E source restored and build is clean")
+            # The failing candidate was rolled back to the build-green source
+            # that entered this stage, so it must not keep generation red.
+            out["build_after_fix"] = True
             out["fixed"] = 0
             out["failed"] += 1
             out["failures"].append({
@@ -264,8 +323,12 @@ def _e2e_rounds(agent, arch, proj_dir, qa, analyzer, out):
         _forget_warm(agent)
         wait_for_next()
 
+    _e2e_pass_with_warnings(
+        out, flows, total, "ordinary E2E checks still had findings after two repair rounds")
     _e2e_final_clean_room(agent, arch, proj_dir, qa, analyzer,
                           journeys, flows, out)
+    _e2e_pass_with_warnings(
+        out, flows, total, "the final clean-room replay still had findings")
     return out
 
 
@@ -379,6 +442,15 @@ def _e2e_scenario_issue(agent, sc, journey=None) -> str:
     if why:
         return why
     contract = (journey or {}).get("contract") or {}
+    expected_role = str(contract.get("actor") or (journey or {}).get("role")
+                        or getattr(sc, "role", "") or "").strip().lower()
+    if (contract.get("requires_session") or expected_role not in {
+            "", "public", "signed-out", "signed out", "anonymous", "visitor",
+            "none", "nobody", "logged-out", "logged out"}):
+        account_for = getattr(agent, "account_for", None)
+        if callable(account_for) and not account_for(expected_role):
+            return (f"no seeded account exists for the exact required role "
+                    f"{expected_role!r}; another role must never be reused")
     why = scenario_contract_issue(contract, sc, agent._is_business_step)
     if why:
         return why
@@ -497,7 +569,12 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
         agent, arch, analyzer=analyzer, model=QASession.model_for(qa, arch),
         notebook=notebook)
 
-    sc = agent.author(journey=journey)
+    write_plan = getattr(agent, "write_journey_plan", None)
+    if callable(write_plan):
+        write_plan(journey or {})
+    cached = getattr(agent, "cached_scenario", None)
+    sc = cached(journey or {}) if callable(cached) else None
+    sc = sc or agent.author(journey=journey)
     why = _e2e_scenario_issue(agent, sc, journey)
     for attempt in range(1, E2E_AUTHOR_REWRITE_ATTEMPTS + 1):
         if not why:
@@ -522,7 +599,7 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
         emit({"type": "test_result", "status": "skip",
               "msg": f"End-to-end blocked: {title}",
               "detail": out["blocked_why"]})
-        return
+        return out
     if why:
         title = str((journey or {}).get("title") or getattr(sc, "title", "") or "required journey")
         failure = TestFailure(
@@ -554,6 +631,9 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
     out["ran"] = True
     if not failures:
         agent.remember_scenario(journey, sc)
+        remember_generated = getattr(agent, "remember_generated_scenario", None)
+        if callable(remember_generated):
+            remember_generated(journey or {}, sc)
         elog("INFO", "   ✅ the end-to-end flow passed")
         emit({"type": "test_result", "status": "pass",
               "msg": f"End-to-end: {sc.title}",
@@ -806,6 +886,9 @@ def _e2e_one_flow(agent, arch, proj_dir, qa, analyzer, out, journey=None):
             out["blocked_upstream"] = False
             out["blocked_reason"] = ""
             agent.remember_scenario(journey, sc)
+            remember_generated = getattr(agent, "remember_generated_scenario", None)
+            if callable(remember_generated):
+                remember_generated(journey or {}, sc)
             debugger.notebook.record_outcome(diag, progressed=True)
             elog("INFO", f"   ✅ the end-to-end flow passes after agentic round {rnd}")
             emit({"type": "test_result", "status": "pass",

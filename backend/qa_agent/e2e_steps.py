@@ -243,18 +243,42 @@ class E2EStepsMixin:
                 except Exception:
                     loc.select_option(st.value, timeout=STEP_TIMEOUT)
             elif st.verb == "CLICK":
-                auth_click = (self._is_auth_action(st) or
-                              (self._route_from_page(page) == "/login" and
-                               str(getattr(st.selector, "role", "") or "").lower()
-                               == "button"))
+                route_before_click = self._route_from_page(page)
+                auth_kind = self._auth_action_kind(st, loc)
+                login_submit = (auth_kind == "login" and
+                                route_before_click in
+                                ("/login", "/signin", "/sign-in", "/log-in"))
+                expects_logout = bool(
+                    (getattr(self, "_active_journey", {}) or {}).get("logout"))
+                if auth_kind == "logout" and not expects_logout:
+                    return (KIND_SELECTOR,
+                            "the requested login control resolved to logout, "
+                            "but this journey does not include logout")
                 loc.click(timeout=STEP_TIMEOUT)
                 page.wait_for_timeout(350)
-                if (auth_click and
+                if (login_submit and
                         (getattr(self, "_active_journey", {}) or {}).get("role")):
                     if not self._session_alive(page):
                         return (KIND_BEHAVIOR,
                                 "sign-in returned, but no authenticated browser "
                                 "session was established")
+                if auth_kind == "logout":
+                    if self._session_alive(page, timeout_ms=900):
+                        return (KIND_BEHAVIOR,
+                                "logout returned, but the authenticated session "
+                                "was still active")
+                    deadline = time.time() + 3.2
+                    while (time.time() < deadline and
+                           self._route_from_page(page) != "/login"):
+                        page.wait_for_timeout(150)
+                    if self._route_from_page(page) != "/login":
+                        return (KIND_BEHAVIOR,
+                                "logout cleared the session but did not navigate "
+                                "to /login")
+                    # Protected requests racing the logout redirect may now
+                    # correctly answer 401. They prove sign-out rather than an
+                    # authenticated-session failure.
+                    self._expected_signed_out = True
             return None
 
         if st.verb == "EXPECT_TEXT":

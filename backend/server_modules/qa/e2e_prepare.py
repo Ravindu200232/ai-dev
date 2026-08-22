@@ -53,8 +53,7 @@ def _prepare_app_before_journeys(agent, arch, proj_dir, analyzer):
         try:
             agent.invalidate_runtime_evidence()
         except Exception as e:
-            log.debug(f"runtime evidence invalidate: {e}")
-
+            log.debug(f"post-repair E2E evidence reset: {e}")
     return paths, baseline
 def _forget_warm(agent):
     """Every route is cold again after the dev server is restarted."""

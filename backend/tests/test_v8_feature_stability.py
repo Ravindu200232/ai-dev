@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agents.exports import BrokenImport
-from agents.features import FeaturesAgent
-from agents.features_common import FeatureSpec
+from agents.gates.exports import BrokenImport
+from agents.feature.agent import FeaturesAgent
+from agents.feature.common import FeatureSpec
 
 
 class BrokenImportCompatibilityTests(unittest.TestCase):

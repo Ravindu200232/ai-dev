@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 
 import requests
 
-from agents.architect import FileStreamParser
-from agents.tester import overlay_error
+from agents.builder.orchestration.agent import FileStreamParser
+from agents.testing.tester import overlay_error
 
 from .flows import (CLICKABLE_CSS, FIELD_CSS, GRAMMAR, PLAYWRIGHT_CONFIG,
                     Scenario, Selector, field_css, parse_scenario, to_playwright_js)
@@ -22,6 +22,9 @@ TEMPERATURE = 0.3
 
 # One scenario is a few dozen lines.
 CALL_BUDGET = 180
+# Stop verbose cloud models after ample capacity for a 12-step scenario. Thinking
+# is disabled separately; this bounds accidental prose/output generation too.
+AUTHOR_OUTPUT_TOKENS = 1_800
 
 STEP_TIMEOUT = 7_000
 ASSERT_TIMEOUT = 8_000
@@ -60,7 +63,7 @@ RULES THAT DECIDE WHETHER THIS WORKS
     locator instead of paraphrasing it. Prefer an observed `testid=` for icon
     controls and mutation buttons because it survives copy changes. Never
     invent a star glyph, an id, or button wording that the evidence does
-    not show. If a workflow requires an action but the evidence has no usable
+    not show. If the generated code exposes an action but the DOM has no usable
     control, keep the business action in the scenario using its natural
     accessible name so the run exposes an APP defect; do not replace it with an
     unrelated control merely to make the test green.
@@ -71,6 +74,14 @@ RULES THAT DECIDE WHETHER THIS WORKS
   • NEVER click a control and then refer to it again. A submit button becomes
     "Signing in..." the moment it is pressed, so the second lookup finds
     nothing and reports a bug that does not exist.
+  • When the journey signs out, CLICK the observed logout/sign-out control and
+    immediately EXPECT_URL :: /login. Clearing a session without leaving the
+    protected screen is not a complete logout.
+  • After a non-navigation action, when the generated source/live DOM has
+    toast feedback, assert the observed success toast with EXPECT_TEXT before
+    asserting the persisted value or destination. Copy the actual toast wording
+    from evidence; never invent it. A toast alone is not business proof, and an
+    error toast must never be treated as successful completion.
   • Page identity is a URL fact, not a copywriting fact. Prefer EXPECT_URL for
     "I am on the list page for this feature". Do NOT assert a marketing
     slogan or section heading unless the runtime DOM evidence below contains it.

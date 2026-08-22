@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 /** What the wait actually means. */
 function drawingNote(waited) {
   if (waited > 240) return 'the model is taking much longer than usual — it may be busy'
-  if (waited > 150) return 'still drawing — five designs run at the same time'
+  if (waited > 150) return 'still drawing — the design directions run at the same time'
   if (waited > 60) return 'still drawing the full app'
   return 'drawing the pages of each direction'
 }
@@ -55,7 +55,7 @@ export default function ThemePicker({ idea, srsId, model, onPick, onSkip }) {
           </div>
           <div className="min-w-0">
             <p className="text-[18px] font-semibold tracking-[-.025em] text-ink">Choose the visual direction</p>
-            <p className="mt-0.5 text-[11.5px] text-muted">Preview the whole product before the build starts{page ? ` · ${page}` : ''}.</p>
+            <p className="mt-0.5 text-[11.5px] text-muted">Studio-grade directions on one shared product sitemap{page ? ` · ${page}` : ''}.</p>
           </div>
           <span className="flex-1" />
           {state === 'ready' && themes.length > 0 && (
@@ -72,8 +72,8 @@ export default function ThemePicker({ idea, srsId, model, onPick, onSkip }) {
           <div className="grid min-h-[520px] place-items-center px-8 pb-8">
             <div className="max-w-[420px] text-center">
               <span className="mx-auto grid size-14 place-items-center rounded-full bg-accent/10 text-accent"><Loader2 className="size-6 animate-spin" /></span>
-              <p className="mt-5 text-[16px] font-semibold text-ink">Creating five complete directions</p>
-              <p className="mt-2 text-[11.5px] leading-relaxed text-muted">Each direction uses the approved product plan, not a generic template. You can inspect every page before choosing.</p>
+              <p className="mt-5 text-[16px] font-semibold text-ink">Creating studio-grade visual directions</p>
+              <p className="mt-2 text-[11.5px] leading-relaxed text-muted">Every direction uses the same approved sitemap and workflows; only the professional art direction changes.</p>
               {waited > 0 && (
                 <p className="mt-4 text-[10.5px] text-muted2">
                   {Math.round(waited)}s · {drawingNote(waited)}
@@ -135,7 +135,7 @@ export default function ThemePicker({ idea, srsId, model, onPick, onSkip }) {
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-[12.5px] font-semibold text-ink">{t.name}</span>
-                          <span className="mt-0.5 line-clamp-2 block text-[10.5px] leading-relaxed text-muted">{t.blurb || 'A complete visual direction for the app.'}</span>
+                          <span className="mt-0.5 line-clamp-2 block text-[10.5px] leading-relaxed text-muted">{t.blurb || 'A coherent, production-grade visual system for the app.'}</span>
                         </span>
                       </span>
                     </button>
@@ -145,7 +145,7 @@ export default function ThemePicker({ idea, srsId, model, onPick, onSkip }) {
             </div>
 
             <footer className="flex items-center gap-3 bg-white/42 px-7 py-4 backdrop-blur-xl dark:bg-white/[.025]">
-              <p className="text-[10.5px] text-muted">The selected HTML becomes the visual source of truth for colors, typography, spacing and component style.</p>
+              <p className="text-[10.5px] text-muted">All options share the same sitemap. Your selection becomes the source of truth for colour, typography, spacing and components.</p>
               <span className="flex-1" />
               <button onClick={onSkip} className="h-10 rounded-full px-4 text-[11px] font-semibold text-muted transition hover:bg-black/[.045] hover:text-ink dark:hover:bg-white/[.06]">Choose for me</button>
               <button disabled={!picked} onClick={() => onPick({ id: picked.id, html: picked.html, page, dir })}

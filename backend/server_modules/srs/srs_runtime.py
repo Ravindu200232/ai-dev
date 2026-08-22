@@ -444,7 +444,7 @@ def _srs_brief(proj_dir: Path, model: str) -> str:
 
     text = "\n".join(parts)
 
-    from agents.architect import CHARS_PER_TOKEN, HISTORY_BUDGET
+    from agents.builder.orchestration.agent import CHARS_PER_TOKEN, HISTORY_BUDGET
     budget = int(max_context(model) * HISTORY_BUDGET * CHARS_PER_TOKEN / 6)
     if len(text) > budget:
         cut = text.rfind("\n", 0, budget)

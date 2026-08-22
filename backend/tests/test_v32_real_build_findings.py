@@ -1,7 +1,7 @@
 """The three defects behind `nothing matched textbox role /price/i`."""
 import unittest
 
-from agents.architect_next_rules import unnamed_fields
+from agents.builder.workflow.rules import unnamed_fields
 from qa_agent.e2e_common import role_of, same_role_family
 
 # The admin price cell exactly as a real build wrote it.
@@ -92,7 +92,7 @@ class UnnamedFieldTests(unittest.TestCase):
 
     def test_the_builder_is_told_about_the_measured_failure(self):
         from pathlib import Path
-        text = Path("agents/architect_next_builder_prompt_a.py").read_text(encoding="utf-8")
+        text = Path("agents/builder/prompts/part_a.py").read_text(encoding="utf-8")
         self.assertIn("spinbutton", text)
         self.assertIn("data-testid`", text)
 

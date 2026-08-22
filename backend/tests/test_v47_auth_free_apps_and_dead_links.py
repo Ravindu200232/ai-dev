@@ -7,11 +7,11 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
-BUILDER_A = Path("agents/architect_next_builder_prompt_a.py")
-STACK = Path("agents/architect_stack_rules.py")
-SYMBOLS = Path("agents/architect_symbols.py")
+BUILDER_A = Path("agents/builder/prompts/part_a.py")
+STACK = Path("agents/builder/prompts/stack.py")
+SYMBOLS = Path("agents/builder/workflow/symbols.py")
 
 
 def builder_prompt(idea="a portfolio site for one person"):

@@ -191,7 +191,10 @@ function badges(qa) {
     out.bugs = { n: bugs, bad: bugs > 0 }
     const e2e = r.e2e || {}
     const failed = Number(e2e.failed || 0)
-    if (e2e.ran || e2e.flows?.length) out.e2e = { n: failed ? `${failed} fail` : 'pass', bad: failed > 0 }
+    if (e2e.ran || e2e.flows?.length) out.e2e = {
+      n: failed ? `${failed} fail` : e2e.status === 'pass_with_warnings' ? 'pass · warn' : 'pass',
+      bad: failed > 0,
+    }
   }
   if (r?.security) {
     const sec = r.security.findings?.length || 0

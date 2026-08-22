@@ -154,27 +154,16 @@ class DebuggerReasoningMixin:
                    "reviews": "review", "categories": "category"}
         return {aliases.get(x, singular(x)) for x in words}
 
-    def _plan_text_for_goal(self) -> str:
-        plan = getattr(self.arch, "plan", None) or {}
-        goal = _norm(self.notebook.goal)
-        rows = []
-        covers = set()
-        for w in plan.get("workflows") or []:
-            if not isinstance(w, dict):
-                continue
-            name = _norm(w.get("name") or w.get("title") or "")
-            if not goal or goal in name or name in goal:
-                rows.append(json.dumps(w, ensure_ascii=False))
-                covers |= {str(x).upper() for x in (w.get("covers") or [])}
-        if not rows and plan.get("workflows"):
-            # Goal wording can be shortened in the UI.
-            rows.extend(json.dumps(w, ensure_ascii=False) for w in (plan.get("workflows") or []) if isinstance(w, dict))
-        for c in plan.get("capabilities") or []:
-            if not isinstance(c, dict):
-                continue
-            cid = str(c.get("id") or "").upper()
-            if not covers or cid in covers:
-                rows.append(json.dumps(c, ensure_ascii=False))
+    def _code_contract_text_for_goal(self) -> str:
+        """Generated route/form/API facts for the active browser journey."""
+        journey = getattr(self.agent, "_active_journey", None) or {}
+        rows = [json.dumps(journey.get("contract") or {}, ensure_ascii=False)]
+        files = getattr(self.arch, "files", None) or {}
+        for rel in (journey.get("source_files") or
+                    (journey.get("contract") or {}).get("source_files") or []):
+            rel = str(rel or "")
+            if rel in files:
+                rows.append(f"--- {rel} ---\n{str(files.get(rel) or '')[:5000]}")
         return "\n".join(rows)[:14000]
 
     def _selector_source_candidates(self, failure, words: set[str]) -> list[str]:
@@ -249,9 +238,9 @@ class DebuggerReasoningMixin:
         return "\n".join(chosen)[:9000]
 
     @staticmethod
-    def _field_required_by_plan(field_words: set[str], plan_text: str) -> bool:
-        """Conservative requirement check for form-field selectors."""
-        low = str(plan_text or "").lower()
+    def _field_required_by_code(field_words: set[str], code_text: str) -> bool:
+        """Conservative requirement check against generated forms/contracts."""
+        low = str(code_text or "").lower()
         if not field_words:
             return False
         if field_words == {"name"}:
@@ -267,8 +256,8 @@ class DebuggerReasoningMixin:
             return None
         f0 = failures[0]
         channel, words = self._selector_intent(f0)
-        plan_text = self._plan_text_for_goal()
-        plan_words = self._semantic_words(plan_text)
+        code_text = self._code_contract_text_for_goal()
+        code_words = self._semantic_words(code_text)
         dom_part = self._selector_dom_excerpt(packet, channel)
         dom_words = self._semantic_words(dom_part)
         if channel == "field":
@@ -284,21 +273,21 @@ class DebuggerReasoningMixin:
                     "next":"patch one scenario step using the observed control and resume the checkpoint",
                     "confidence":"high", "privileged":[]}
 
-        required = (self._field_required_by_plan(words, plan_text)
-                    if channel == "field" else bool(words and (words & plan_words)))
+        required = (self._field_required_by_code(words, code_text)
+                    if channel == "field" else bool(words and (words & code_words)))
         # Star/rating is a common accessibility trap.
-        if {"star","rating","review"} & words and {"rating","review"} & plan_words:
+        if {"star","rating","review"} & words and {"rating","review"} & code_words:
             required = True
         if required:
-            files = self._selector_source_candidates(f0, words | (words & plan_words))
+            files = self._selector_source_candidates(f0, words | (words & code_words))
             return {"verdict":"APP_FIX",
-                    "root":"the accepted workflow requires this business action, but no semantically equivalent accessible control is present in the failure DOM",
+                    "root":"the generated form/route/API contract exposes this business action, but no semantically equivalent accessible control is present in the failure DOM",
                     "files":files[:3], "test_step":"", "test_patch":"",
                     "hypothesis":"the production UI omitted the required control or rendered it without an accessible functional name",
-                    "next":"inspect the owning component and implement/label the required action without changing the workflow",
+                    "next":"inspect the owning generated component and restore/label the source-backed action",
                     "confidence":"high", "privileged":[]}
         return {"verdict":"TEST_FIX",
-                "root":"the selector/assertion is not backed by the accepted workflow and no matching product requirement was found",
+                "root":"the selector/assertion is not backed by the generated source contract or rendered DOM",
                 "files":[], "test_step":"", "test_patch":"",
                 "hypothesis":"the scenario invented a locator rather than following observed UI evidence",
                 "next":"patch only the failing scenario step from the DOM evidence",

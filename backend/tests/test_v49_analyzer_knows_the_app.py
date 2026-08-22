@@ -2,12 +2,12 @@
 import unittest
 from pathlib import Path
 
-from agents.analyzer_data import AnalyzerDataMixin
-from agents.features_common import FeatureSpec
-from agents.features_planning import FeaturesAgentPlanningMixin
+from agents.gates.analyzer_data import AnalyzerDataMixin
+from agents.feature.common import FeatureSpec
+from agents.feature.planning import FeaturesAgentPlanningMixin
 
-DATA = Path("agents/analyzer_data.py")
-PLANNING = Path("agents/features_planning.py")
+DATA = Path("agents/gates/analyzer_data.py")
+PLANNING = Path("agents/feature/planning.py")
 
 CONTACT_FORM = """
 export default function ContactForm() {

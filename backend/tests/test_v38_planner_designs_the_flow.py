@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
-PLANNER_A = Path("agents/architect_next_planner_prompt_a.py")
+PLANNER_A = Path("agents/planner/prompt_a.py")
 
 
 def prompt_for(idea="a unit converter for length and weight"):
@@ -103,11 +103,11 @@ class TheMinimumsStayConditionalTests(unittest.TestCase):
 class SlotsCannotEatJsxTests(unittest.TestCase):
     """A `{children}` slot silently replaced React's own children prop."""
 
-    FILES = ["agents/architect_next_planner_prompt_a.py",
-             "agents/architect_next_planner_prompt_b.py",
-             "agents/architect_next_builder_prompt_a.py",
-             "agents/architect_next_builder_prompt_b.py",
-             "agents/architect_stack_rules.py"]
+    FILES = ["agents/planner/prompt_a.py",
+             "agents/planner/prompt_b.py",
+             "agents/builder/prompts/part_a.py",
+             "agents/builder/prompts/part_b.py",
+             "agents/builder/prompts/stack.py"]
 
     def test_no_prompt_uses_brace_slots_any_more(self):
         import re
@@ -127,7 +127,7 @@ class SlotsCannotEatJsxTests(unittest.TestCase):
         self.fail("the JSX children prop was renamed away")
 
     def test_the_layout_rule_still_names_the_children_prop(self):
-        body = Path("agents/architect_next_planner_prompt_b.py").read_text(
+        body = Path("agents/planner/prompt_b.py").read_text(
             encoding="utf-8")
         self.assertIn("`<body>` and `{children}`", body)
 

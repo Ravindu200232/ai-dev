@@ -112,7 +112,7 @@ if __name__ == "__main__":
 class OverlappedWorkTests(unittest.TestCase):
     """Work that waits on nothing does not wait its turn."""
 
-    PIPE = Path("server_modules/agent/agent_pipeline.py")
+    PIPE = Path("server_modules/agent/builder/pipeline.py")
 
     def test_performance_starts_before_the_confirmations_not_after(self):
         text = self.PIPE.read_text(encoding="utf-8")

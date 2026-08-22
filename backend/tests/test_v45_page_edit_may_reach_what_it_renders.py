@@ -5,8 +5,8 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-PENCIL = Path("server_modules/agent/pencil_page.py")
-FEATURES = Path("agents/features_apply.py")
+PENCIL = Path("server_modules/agent/pencil/page.py")
+FEATURES = Path("agents/feature/apply.py")
 
 
 def rendered_by(files, roots):

@@ -8,6 +8,7 @@ from .builder_auth import build_auth_contract
 from .builder_features import build_feature_contracts
 from .builder_constants import HANDOFF_VERSION, KINDS
 from .builder_prompt import render_prompt
+from .builder_testing import build_testing_contract
 from .builder_utils import (
     _api_file, _clean, _entity, _field_spec, _kind_for, _normal_route_pattern,
     _page_file, _roles_for_route, _strip_forbidden, _trace_map,
@@ -178,7 +179,8 @@ def build_handoff(*, plan: dict, srs_document: dict, pack: dict | None = None,
         add(_clean(feature), _kind_for(feature), None, source="plan.feature")
 
     if auth:
-        add("Users can sign in and sign out", "feature", "User", source="auth.contract")
+        add("Users can sign in, and signing out immediately redirects to /login",
+            "feature", "User", source="auth.contract")
         if any(re.search(r"sign[ -]?up|register", str(p.get("route") or "") + " " + str(p.get("name") or ""), re.I)
                for p in pages):
             add("Visitors can register the approved default user role with email and password",
@@ -240,6 +242,17 @@ def build_handoff(*, plan: dict, srs_document: dict, pack: dict | None = None,
                 "restricted_functions": [str(x) for x in (row.get("restricted_functions") or [])],
             })
 
+    def workflow_values(row: dict, *keys: str) -> list[str]:
+        values = []
+        for key in keys:
+            raw = row.get(key)
+            raw = [raw] if isinstance(raw, str) else (raw or [])
+            for value in raw:
+                value = _clean(value)
+                if value and value not in values:
+                    values.append(value)
+        return values
+
     # Prefer role-complete journeys from the approved plan.
     roles_of = _roles_for_route(doc)
     workflows = []
@@ -260,6 +273,10 @@ def build_handoff(*, plan: dict, srs_document: dict, pack: dict | None = None,
             "who": who or None,
             "steps": steps,
             "routes": chain,
+            "covers": workflow_values(w, "covers", "requirements"),
+            "preconditions": workflow_values(w, "preconditions", "entry_conditions"),
+            "expected_results": workflow_values(
+                w, "expected_results", "postconditions", "proof"),
             "source": "approved_plan",
         })
     for w in (doc.get("business_workflows") or []):
@@ -267,9 +284,24 @@ def build_handoff(*, plan: dict, srs_document: dict, pack: dict | None = None,
             continue
         name = _clean(w.get("workflow_name") or w.get("name") or "")
         steps = [_clean(s) for s in (w.get("steps") or []) if _clean(s)]
+        who = _clean(w.get("actor") or w.get("role") or w.get("who") or "")
         if name and steps and not any(x["name"].lower() == name.lower() for x in workflows):
-            workflows.append({"name": name, "who": None, "steps": steps,
-                              "routes": [], "source": "srs.business_workflows"})
+            chain = []
+            for step in steps:
+                for route in _routes_for(step, pages, who, roles_of):
+                    if not chain or chain[-1] != route:
+                        chain.append(route)
+            workflows.append({
+                "name": name,
+                "who": who or None,
+                "steps": steps,
+                "routes": chain,
+                "covers": workflow_values(w, "covers", "requirements"),
+                "preconditions": workflow_values(w, "preconditions", "entry_conditions"),
+                "expected_results": workflow_values(
+                    w, "expected_results", "postconditions", "expected_result", "proof"),
+                "source": "srs.business_workflows",
+            })
 
     acceptance = []
     for c in (doc.get("acceptance_criteria") or []):
@@ -324,6 +356,10 @@ def build_handoff(*, plan: dict, srs_document: dict, pack: dict | None = None,
         requirements=requirements, pages=pages, apis=apis, workflows=workflows,
         acceptance=acceptance,
     )
+    testing_contract = build_testing_contract(
+        feature_contracts=feature_contracts, workflows=workflows, pages=pages,
+        apis=apis, validations=validations, auth_contract=auth_contract,
+    )
 
     handoff = {
         "handoff_version": HANDOFF_VERSION,
@@ -339,6 +375,7 @@ def build_handoff(*, plan: dict, srs_document: dict, pack: dict | None = None,
         "source_requirements": [r for r in requirements if r.get("source_id")],
         "capability_seeds": capability_seeds,
         "feature_contracts": feature_contracts,
+        "testing_contract": testing_contract,
         "models": models,
         "relationships": relationships,
         "pages": pages,
@@ -361,10 +398,13 @@ def build_handoff(*, plan: dict, srs_document: dict, pack: dict | None = None,
             "Build the complete approved application; no placeholder pages, TODO features or inert controls.",
             "Every FR/source requirement must become an AgentForge capability with observable proof and exact implementing files.",
             "Every browser-visible capability must be covered by an end-to-end journey; synthesize a journey if the SRS omitted one.",
+            "The Builder must implement every unit-test target and every E2E pre-journey fixture, role account, seed record, route and API before QA starts.",
+            "Each E2E journey starts independently from deterministic seeded state and uses a distinct account for its exact role.",
             "Every promised route must have a real page/handler and every navigation target must resolve; no orphan or dead routes.",
             "Enforce protected routes and role permissions on the server, not only by hiding UI.",
             "For Mongo ObjectId/reference fields, URL/form/session ids arrive as strings: validate and convert before querying, and serialize ObjectIds to strings at browser boundaries.",
             "A mutation is complete only when it persists the data and the next page/state visibly reflects the result.",
+            "Every non-navigation user operation emits an accessible success toast only after confirmed completion and an error toast on failure; toast feedback never replaces durable result proof.",
         ],
     }
     handoff["prompt"] = render_prompt(handoff, plan, auth=auth, srs_document=doc)

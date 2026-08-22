@@ -11,7 +11,8 @@ HTTP_PORT = 7834
 WS_PORT = 7835
 OLLAMA_URL = os.environ.get("DEPLOYMENT_AGENT_OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("DEPLOYMENT_AGENT_MODEL", "gemma4:31b-cloud")
-OLLAMA_THINK = os.environ.get("DEPLOYMENT_AGENT_OLLAMA_THINK", "0").strip().lower() not in {"0", "false", "no", "off"}
+# Thinking is a Builder-only Studio option. Deployment is always off.
+OLLAMA_THINK = False
 
 
 OLLAMA_NUM_PREDICT = int(os.environ.get("DEPLOYMENT_AGENT_OLLAMA_NUM_PREDICT", "4096"))

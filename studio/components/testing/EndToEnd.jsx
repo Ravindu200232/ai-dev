@@ -9,6 +9,7 @@ export default function EndToEnd({ qa }) {
     return <Empty>The end-to-end stage has no record for this project.</Empty>
   }
   const failures = e2e.failures || []
+  const testIssues = e2e.test_issues || []
   // One entry per journey the stage walked, passing ones included.
   const journeys = e2e.flows || []
   const summary = journeySummary(e2e)
@@ -44,6 +45,12 @@ export default function EndToEnd({ qa }) {
             app — run the check again when it is free.
           </p>
         )}
+        {testIssues.length > 0 && (
+          <p className="mt-2 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300">
+            {testIssues.length} E2E issue{testIssues.length === 1 ? '' : 's'} remained
+            {' '}after the bounded two-round repair. Generation continued and the details remain visible below.
+          </p>
+        )}
       </div>
 
       {!e2e.ran && <p className="mb-3 text-[11.5px] text-muted">The stage did not run.</p>}
@@ -54,6 +61,19 @@ export default function EndToEnd({ qa }) {
             <li key={i} className="border-b border-line border-l-[3px] border-l-accent
                                    bg-tint px-3 py-2 text-[11.5px] last:border-b-0">
               <code className="font-mono text-ink">{f.target || f.file}</code>
+              <span className="text-deep"> — {f.case || f.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {testIssues.length > 0 && (
+        <ul className="mt-3 border border-amber-300/70 dark:border-amber-400/20">
+          {testIssues.map((f, i) => (
+            <li key={i} className="border-b border-amber-200/70 border-l-[3px] border-l-amber-500
+                                   bg-amber-50/70 px-3 py-2 text-[11.5px] last:border-b-0
+                                   dark:border-amber-400/10 dark:bg-amber-400/[.06]">
+              <code className="font-mono text-ink">{f.target || f.file || 'E2E harness'}</code>
               <span className="text-deep"> — {f.case || f.message}</span>
             </li>
           ))}

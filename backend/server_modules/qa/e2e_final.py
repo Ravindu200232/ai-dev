@@ -88,11 +88,19 @@ def _e2e_final_clean_room(agent, arch, proj_dir: Path, qa, analyzer,
     """Last gate: fresh DB/server/browser, then the exact accepted journeys."""
     if not E2E_FINAL_CLEAN_ROOM:
         return
+    if out.get("soft_pass"):
+        out["clean_room_skipped"] = True
+        elog("INFO", "   ⚡ warning-only E2E result — skipping duplicate clean-room replay")
+        return
     if out.get("failed"):
         elog("INFO", "   ⏭ final clean-room replay waits for the ordinary E2E gate to become green")
         return
     if any(agent.accepted_scenario(j) is None for j in journeys):
         elog("WARN", "   ⚠ final clean-room replay cannot start — at least one required journey has no green scenario")
+        return
+    if not out.get("fixed"):
+        out["clean_room_skipped"] = True
+        elog("INFO", "   ⚡ first real browser pass is green — skipping duplicate clean-room replay")
         return
 
     elog("INFO", "   🧼 final clean-room E2E — fresh DB/server/browser contexts")

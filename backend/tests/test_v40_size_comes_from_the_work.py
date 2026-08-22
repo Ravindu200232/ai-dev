@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
-PLANNERS = ["agents/architect_next_planner_prompt_a.py",
-            "agents/architect_next_planner_prompt_b.py"]
+PLANNERS = ["agents/planner/prompt_a.py",
+            "agents/planner/prompt_b.py"]
 
 
 def prompt_for(idea="a unit converter for length and weight"):

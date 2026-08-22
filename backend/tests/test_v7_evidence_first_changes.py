@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from agents.features import FeaturesAgent
-from agents.features_common import FeatureSpec
+from agents.feature.agent import FeaturesAgent
+from agents.feature.common import FeatureSpec
 from qa_agent.e2e_progress import extend_round_budget
 
 
@@ -234,7 +234,7 @@ class AdaptivePlanningConvergenceTests(unittest.TestCase):
 
 class StreamProtocolSanitizerTests(unittest.TestCase):
     def test_unterminated_file_path_close_is_not_persisted_as_jsx(self):
-        from agents.architect_core import FileStreamParser
+        from agents.builder.orchestration.core import FileStreamParser
         ended = []
         parser = FileStreamParser(lambda _x: None, lambda _p: None, lambda _x: None,
                                   lambda p, c: ended.append((p, c)))

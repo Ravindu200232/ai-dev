@@ -30,30 +30,28 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 
 sys.path.insert(0, str(Path(__file__).parent / "srs-agent"))
-from agents.refiner  import RefinerAgent
-from agents.builder  import BuilderAgent, set_stream_callback
-from agents.tester   import TesterAgent, set_emit as set_tester_emit
-from agents.analyzer import (AnalyzerAgent, AnalyzerReport, Finding,
-                             REPAIRABLE_MAJOR)
-from agents import nextdocs, themes as themekit, photos
-from agents.architect import ArchitectAgent, FileStreamParser
-from agents.exports import check_named_imports, check_syntax, syntax_messages
-from agents.features import FeaturesAgent, FeatureSpec
-from agents.capture import PENCIL_SYSTEM, capture_region
-from agents.images import ImageAgent
-from agents.seed_keys import family_key, template_keys
-from agents.source_guidance import feature_image_requested
-from agents.picker import (ELEMENT_EDIT_SYSTEM, ElementResolver, describe,
-                           guard_scope, looks_like_addition, looks_like_removal,
-                           looks_like_retext,
-                           routes_rendering)
-from agents.mongo import MONGO, db_name_for
-from agents import cancel
-from agents.bugfixer import BugFixerAgent
-from agents.commands import CommandRunner
-from agents.workspace import WorkspaceTools, TOOL_HELP
-from agents.agent_memory import AgentMemory, memory_for
-from agents.build_cache import already_green, mark_green
+from agents.testing.tester import TesterAgent, set_emit as set_tester_emit
+from agents.gates.agent import (AnalyzerAgent, AnalyzerReport, Finding,
+                                REPAIRABLE_MAJOR)
+from agents.core import nextdocs, cancel
+from agents.picture import themes as themekit, photos
+from agents.builder.orchestration.agent import ArchitectAgent, FileStreamParser
+from agents.gates.exports import check_named_imports, check_syntax, syntax_messages
+from agents.feature.agent import FeaturesAgent, FeatureSpec
+from agents.pencil.capture import PENCIL_SYSTEM, capture_region
+from agents.picture.images import ImageAgent
+from agents.data.seed_keys import family_key, template_keys
+from agents.core.source_guidance import feature_image_requested
+from agents.selection.picker import (ELEMENT_EDIT_SYSTEM, ElementResolver, describe,
+                                     guard_scope, looks_like_addition,
+                                     looks_like_removal, looks_like_retext,
+                                     routes_rendering)
+from agents.data.mongo import MONGO, db_name_for
+from agents.repair.agent import BugFixerAgent
+from agents.core.commands import CommandRunner
+from agents.core.workspace import WorkspaceTools, TOOL_HELP
+from agents.core.agent_memory import AgentMemory, memory_for
+from agents.core.build_cache import already_green, mark_green
 from qa_agent import (E2EAgent, AgenticE2EDebugger, DebugNotebook,
                       FileSnapshot, QASession, TestHarness, TestFailure,
                       UnitTestAuthor, VitestRunner, select_targets)
@@ -65,10 +63,10 @@ from qa_agent.e2e_progress import (
     stop_after_no_progress as _e2e_stop_no_progress,
     MIN_REPAIR_ROUNDS as E2E_MIN_FIX,
 )
-from agents.ollama_client import is_transient, with_retry
-from agents.ollama_client import (OllamaClient, is_cloud_model, max_context,
-                                  get_local_host, load_settings, save_settings,
-                                  set_default_client)
+from agents.core.ollama_client import is_transient, with_retry
+from agents.core.ollama_client import (OllamaClient, is_cloud_model, max_context,
+                                       get_local_host, load_settings, save_settings,
+                                       set_default_client)
 import shutil
 import copy
 
@@ -155,7 +153,6 @@ elif "OneDrive" in str(PROD_DIR):
           "(e.g. C:\\AgentForge\\projects) and restart.")
 LOGS_DIR = BASE_DIR / "logs"
 OLLAMA_URL = get_local_host()
-DEFAULT_REFINE = "llama3.1:8b"
 DEFAULT_BUILD  = "qwen2.5-coder:14b"
 MAX_FIX    = 6
 
@@ -189,8 +186,15 @@ set_default_client(ollama)
 
 
 def default_agent_model() -> str:
-    """Use the saved agent model when none was provided."""
-    saved = str(load_settings().get("agent_model", "")).strip()
+    """Backward-compatible default for code/edit operations."""
+    return default_builder_model()
+
+
+def _default_role_model(role: str) -> str:
+    settings = load_settings()
+    saved = str(settings.get(f"{role}_model", "")).strip()
+    if not saved:
+        saved = str(settings.get("agent_model", "")).strip()
     if saved:
         return saved
     try:
@@ -200,6 +204,18 @@ def default_agent_model() -> str:
     except Exception:
         pass
     return DEFAULT_BUILD
+
+
+def default_planner_model() -> str:
+    return _default_role_model("planner")
+
+
+def default_design_model() -> str:
+    return _default_role_model("design")
+
+
+def default_builder_model() -> str:
+    return _default_role_model("builder")
 
 
 def emit(msg: dict):

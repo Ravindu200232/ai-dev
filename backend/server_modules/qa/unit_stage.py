@@ -194,7 +194,7 @@ def _record_round_one(proj_dir: Path, qa, passed: int, failures: list) -> None:
         log.warning(f"could not append qa history: {e}")
 
     try:
-        from agents import lessons
+        from agents.repair import lessons
         rows = [{"failed": len(failures),
                  "top": [{"class": n, "count": c} for n, c in top[:5]]}]
         lessons.record(proj_dir.name, lessons.from_qa_history(rows))
@@ -253,10 +253,81 @@ def _tests_for_targets(qa, targets) -> list:
                    .lstrip("./") in wanted})
 
 
+def _failure_names_by_file(failures) -> dict:
+    """Comparable failing case names, grouped by their independent test file."""
+    out = {}
+    for failure in failures or []:
+        out.setdefault(failure.test_file, set()).add(failure.name)
+    return out
+
+
+def _round_file_outcomes(previous, current) -> tuple[set, set, set]:
+    """Return improved, regressed and unchanged failing test files.
+
+    Repairs run independently per test file. A new failure in one file must not
+    throw away a successful repair in another file from the same parallel round.
+    """
+    before = _failure_names_by_file(previous)
+    after = _failure_names_by_file(current)
+    improved, regressed, unchanged = set(), set(), set()
+    for path in set(before) | set(after):
+        old, new = before.get(path, set()), after.get(path, set())
+        if new < old:
+            improved.add(path)
+        elif new - old:
+            regressed.add(path)
+        else:
+            unchanged.add(path)
+    return improved, regressed, unchanged
+
+
+def _repair_paths_for_files(failures, test_files) -> set:
+    """Test transactions include the test and its production target."""
+    wanted = set(test_files or [])
+    paths = set(wanted)
+    for failure in failures or []:
+        if failure.test_file in wanted and failure.target:
+            paths.add(failure.target)
+    return paths
+
+
+def _sync_restored_sources(arch, proj_dir: Path, restored) -> None:
+    """Keep the in-memory project map aligned after a byte snapshot rollback."""
+    files = getattr(arch, "files", None)
+    if not isinstance(files, dict):
+        return
+    for rel in restored or []:
+        if not rel.startswith(("app/", "components/", "lib/")):
+            continue
+        fp = proj_dir / rel
+        try:
+            if fp.is_file():
+                files[rel] = fp.read_text(encoding="utf-8", errors="replace")
+            else:
+                files.pop(rel, None)
+        except OSError:
+            continue
+
+
+def _unit_repair_budget(max_repair_rounds=None) -> tuple[int, int]:
+    """Return the starting budget and hard ceiling for this unit-test stage."""
+    if max_repair_rounds is None:
+        return MAX_QA_FIX, QA_ROUND_CEILING
+    try:
+        ceiling = int(max_repair_rounds)
+    except (TypeError, ValueError):
+        ceiling = MAX_QA_FIX
+    ceiling = max(0, min(QA_ROUND_CEILING, ceiling))
+    return min(MAX_QA_FIX, ceiling), ceiling
+
+
 def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
-                      scope=None) -> dict:
+                      scope=None, max_repair_rounds=None) -> dict:
     """Install the runner, run the generated tests, and repair what fails."""
-    out = {"ran": False, "passed": 0, "failed": 0, "fixed": 0, "code_fixes": 0}
+    limit, repair_ceiling = _unit_repair_budget(max_repair_rounds)
+    out = {"ran": False, "passed": 0, "failed": 0, "fixed": 0,
+           "code_fixes": 0, "repair_budget": repair_ceiling,
+           "repair_rounds": 0}
     if not qa or not qa.has_tests():
         return out
     if not build_ok:
@@ -284,7 +355,8 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
     runner = VitestRunner(proj_dir, cmd=qa.cmd, callbacks=_qa_callbacks(),
                           session=qa)
     fixer = BugFixerAgent(arch, proj_dir, callbacks=_qa_callbacks(), session=qa,
-                          model=QASession.model_for(qa, arch))
+                          model=QASession.model_for(qa, arch),
+                          reasoning=QASession.reasoning_for(qa))
     snap = FileSnapshot(proj_dir)
     unit_code_baseline = FileSnapshot(proj_dir)
     unit_code_baseline.capture([p for p in arch.files
@@ -312,8 +384,7 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
                      + (f", leaving {others} untouched" if others else ""))
 
     baseline_cases = set()
-    limit = MAX_QA_FIX
-    for rnd in range(1, QA_ROUND_CEILING + 2):
+    for rnd in range(1, repair_ceiling + 2):
         passed, failures, ok = runner.run(paths=watch)
         if ok and rnd == 1:
             baseline_cases = runner.case_names()
@@ -352,6 +423,46 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
             break
 
         now_cases = {(f.test_file, f.name) for f in failures}
+        if previous is not None and best is not None:
+            improved_files, regressed_files, unchanged_files = \
+                _round_file_outcomes(best, failures)
+
+            if improved_files:
+                # Keep only file transactions that actually reduced their own
+                # red cases. Pointless or regressing parallel writes go back to
+                # the snapshot without sacrificing the useful siblings.
+                discard_files = regressed_files | unchanged_files
+                targets_by_test = {}
+                for failure in list(best) + list(failures):
+                    if failure.target:
+                        targets_by_test.setdefault(
+                            failure.test_file, set()).add(failure.target)
+                discard_targets = set().union(
+                    *(targets_by_test.get(p, set()) for p in discard_files)) \
+                    if discard_files else set()
+                shared = {p for p in improved_files
+                          if targets_by_test.get(p, set()) & discard_targets}
+                if shared:
+                    improved_files -= shared
+                    discard_files |= shared
+
+                if improved_files:
+                    restore_paths = _repair_paths_for_files(
+                        list(best) + list(failures), discard_files)
+                    reverted = snap.restore(restore_paths)
+                    _sync_restored_sources(arch, proj_dir, reverted)
+                    effective = [f for f in failures
+                                 if f.test_file in improved_files]
+                    effective += [f for f in best
+                                  if f.test_file in discard_files]
+                    failures = effective
+                    now_cases = {(f.test_file, f.name) for f in failures}
+                    elog("INFO", f"   ✓ kept {len(improved_files)} improved "
+                                 f"test-file repair(s)"
+                                 + (f"; restored {len(discard_files)} "
+                                    f"non-progress file transaction(s)"
+                                    if discard_files else ""))
+
         worse = (previous is not None
                  and not (now_cases < previous and len(failures) < len(best)))
         if worse:
@@ -362,6 +473,7 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
                    f"did not reduce the failures ({len(best)} → {len(failures)})")
             elog("WARN", f"   ↩ round {rnd - 1} {why} — reverting it")
             reverted = snap.restore()
+            _sync_restored_sources(arch, proj_dir, reverted)
             if reverted:
                 elog("INFO", f"   ↩ restored {len(reverted)} file(s)")
             dead += 1
@@ -401,14 +513,15 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
                 elog("INFO", f"   ↻ trying again ({stalls}/{MAX_QA_STALLS})")
         else:
             stalls = 0
+            dead = 0
             had_baseline = previous is not None
             previous, best = now_cases, failures
 
             snap.forget()
-            if had_baseline and limit < QA_ROUND_CEILING:
+            if had_baseline and limit < repair_ceiling:
                 limit += 1
                 elog("INFO", f"   ↗ that round made progress — round {limit} "
-                             f"is now available (ceiling {QA_ROUND_CEILING})")
+                             f"is now available (ceiling {repair_ceiling})")
 
         ephase({"phase": -16, "title": f"Fixing failing tests (round {rnd})",
                 "status": "active"})
@@ -439,6 +552,7 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
 
         with ThreadPoolExecutor(max_workers=QA_FIX_WORKERS) as pool:
             list(pool.map(repair, groups))
+        out["repair_rounds"] = rnd
 
         watch = sorted({g[0].test_file for g in groups})
         ephase({"phase": -16, "title": f"Fixing failing tests (round {rnd})",
@@ -452,8 +566,14 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
                 elog("WARN", "   ↩ a QA code fix does not parse — reverting "
                              "this round without paying for a full Next build")
                 snap.restore(code_written)
+                _sync_restored_sources(arch, proj_dir, code_written)
                 out["code_fixes"] -= len(code_written)
                 unit_code_touched = out.get("code_fixes", 0) > 0
+
+    retained_code = [p for p in unit_code_baseline.changed()
+                     if p.startswith(("app/", "components/", "lib/"))]
+    unit_code_touched = bool(retained_code)
+    out["code_fixes"] = len(retained_code)
 
     # Every write this stage made went to a file in `watch`
     saw_everything = watch is None
@@ -503,7 +623,8 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
         elog("INFO", "   🔨 unit repair changed app code — one production build to confirm it")
         if not run_build_fix_loop(arch, proj_dir, True, max_rounds=1):
             elog("WARN", "   ↩ unit-stage code changes could not produce a clean build — reverting production code to the pre-unit baseline")
-            unit_code_baseline.restore()
+            restored = unit_code_baseline.restore()
+            _sync_restored_sources(arch, proj_dir, restored)
             run_build_fix_loop(arch, proj_dir, True, max_rounds=1)
             out["code_fixes"] = 0
             out["stale_after_revert"] = True
@@ -521,7 +642,8 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
 from server_modules.qa.e2e_policy import (
     E2E_AUTHOR_REWRITE_ATTEMPTS, E2E_BASE_FIX, E2E_GLOBAL_REPAIR_ATTEMPTS,
     E2E_HARD_FIX, E2E_PROGRESS_BONUS, E2E_RETRY_BLOCKED,
-    E2E_FINAL_CLEAN_ROOM, E2E_FINAL_REPAIR_ATTEMPTS, E2E_FINAL_RESET_DB,
+    E2E_FINAL_CLEAN_ROOM, E2E_FINAL_REPAIR_ATTEMPTS,
+    E2E_FINAL_RESET_DB,
 )
 
 

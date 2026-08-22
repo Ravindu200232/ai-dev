@@ -149,6 +149,7 @@ class UnitAuthorRepairMixin:
             self._frozen_clock(test_src),
             self._clicks_instead_of_submitting(test_src, target_src),
             self._bad_async_assumptions(test_src, target_src),
+            self._missing_dynamic_params(test_src, target_rel),
             self._asserts_styling(test_src),
             self._invented_selectors(test_src, target_rel),
         )

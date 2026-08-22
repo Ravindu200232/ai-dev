@@ -2,8 +2,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 
-from agents.architect_next_rules import ArchitectNextRulesMixin
-from agents.bugfixer import BugFixerAgent
+from agents.builder.workflow.rules import ArchitectNextRulesMixin
+from agents.repair.agent import BugFixerAgent
 from qa_agent.author import UnitTestAuthor
 from qa_agent.spec import TestFailure as Failure
 
@@ -129,7 +129,7 @@ def test_builder_contract_lint_catches_data_and_auth_chrome_before_analyzer_stag
 
 
 def test_builder_prompt_prioritizes_first_write_contracts():
-    from agents.architect_next_builder_prompt_a import PROMPT_PART_A
+    from agents.builder.prompts.part_a import PROMPT_PART_A
 
     assert "FIRST-WRITE ACCEPTANCE GATE" in PROMPT_PART_A
     assert "Never leave a planned data edge for" in PROMPT_PART_A
@@ -137,7 +137,7 @@ def test_builder_prompt_prioritizes_first_write_contracts():
 
 
 def test_plan_normalizer_preserves_first_write_invariants():
-    from agents.architect_plan_normalize import ArchitectPlanNormalizeMixin
+    from agents.planner.normalization import ArchitectPlanNormalizeMixin
 
     class N(ArchitectPlanNormalizeMixin):
         def _infer_kind(self, _path):
@@ -165,7 +165,7 @@ def test_builder_lint_catches_runtime_only_undefined_collection_handle():
 
 
 def test_workflow_action_prefers_explicit_planned_testid():
-    from agents.action_ids import workflow_actions
+    from agents.feature.action_ids import workflow_actions
 
     plan = {
         "phases": [{"files": [{
@@ -182,9 +182,9 @@ def test_workflow_action_prefers_explicit_planned_testid():
 
 
 def test_prompts_include_seed_graph_and_runtime_symbol_closure():
-    from agents.architect_next_builder_prompt_a import PROMPT_PART_A as BUILD_A
-    from agents.architect_next_builder_prompt_b import PROMPT_PART_B as BUILD_B
-    from agents.architect_next_planner_prompt_b import PROMPT_PART_B as PLAN_B
+    from agents.builder.prompts.part_a import PROMPT_PART_A as BUILD_A
+    from agents.builder.prompts.part_b import PROMPT_PART_B as BUILD_B
+    from agents.planner.prompt_b import PROMPT_PART_B as PLAN_B
 
     assert "SYMBOL CLOSURE" in BUILD_A
     assert "SEEDING IS A DEPENDENCY GRAPH" in BUILD_B
@@ -206,7 +206,7 @@ def test_builder_lint_catches_missing_known_runtime_helper_import():
 
 
 def test_exact_runtime_reference_error_becomes_source_backed_repair_spec():
-    from agents.runtime_repair_spec import exact_runtime_repair_spec
+    from agents.repair.runtime_spec import exact_runtime_repair_spec
 
     body = (
         "import { getCollection, serialize } from '@/lib/mongodb'\n"

@@ -33,10 +33,13 @@ def _repair_runtime(arch, proj_dir: Path, qa, analyzer, all_errors: str,
                     focus_paths=None, strict_scope: bool = False,
                     privileged_paths=None, exact_scope: bool = False) -> list:
     """Repair runtime/E2E failures through evidence-first diagnosis."""
+    # User-triggered repairs inherit Builder thinking through the architect;
+    # automatic QA repairs inherit the same UI switch through QASession.
+    reasoning = QASession.reasoning_for(qa) if qa is not None else None
     planner = FeaturesAgent(arch, proj_dir, callbacks=_analyzer_callbacks(),
-                            analyzer=analyzer, model=model)
+                            analyzer=analyzer, model=model, reasoning=reasoning)
     fixer = BugFixerAgent(arch, proj_dir, callbacks=_qa_callbacks(), session=qa,
-                          model=model)
+                          model=model, reasoning=reasoning)
 
     evidence = "\n".join([all_errors or "", dev_errors or ""])
     if focus_paths and exact_scope:
@@ -71,7 +74,7 @@ def _repair_runtime(arch, proj_dir: Path, qa, analyzer, all_errors: str,
     spec = None
     if exact_scope:
         try:
-            from agents.runtime_repair_spec import exact_runtime_repair_spec
+            from agents.repair.runtime_spec import exact_runtime_repair_spec
             spec = exact_runtime_repair_spec(
                 arch, evidence, focus_paths=focus or focus_paths)
             if spec and not spec.is_empty():
@@ -86,7 +89,7 @@ def _repair_runtime(arch, proj_dir: Path, qa, analyzer, all_errors: str,
             spec = planner.plan_repair(all_errors, server_log=dev_errors,
                                        focus_paths=focus or focus_paths)
         except Exception as e:
-            from agents.ollama_client import is_transient
+            from agents.core.ollama_client import is_transient
             elog("WARN", f"   ⚠ Repair planning failed: {e}"
                          + (" — the model was busy, not out of ideas"
                             if is_transient(e) else ""))

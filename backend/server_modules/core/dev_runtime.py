@@ -100,25 +100,6 @@ def ecreds(accounts, source="plan", verified=None):
           "source": source, "verified": verified})
 
 
-_cur_stream = {"name": None, "buf": ""}
-
-def on_token(token: str):
-    if token.startswith("\x00START:"):
-        fname = token[7:]
-        _cur_stream["name"] = fname
-        _cur_stream["buf"]  = ""
-        estream_start(fname)
-    elif token == "\x00END":
-        fname = _cur_stream["name"]
-        content = _cur_stream["buf"]
-        estream_end(fname, content)
-        _cur_stream["name"] = None
-        _cur_stream["buf"]  = ""
-    else:
-        _cur_stream["buf"] += token
-        estream(_cur_stream["name"] or "generating…", token)
-
-
 def ensure_model(model: str) -> bool:
     """Check Ollama tags; pull model if missing."""
 
@@ -542,35 +523,3 @@ def wait_for_dev(stack: str, timeout: int = None) -> bool:
 
 def dev_stderr(stack: str) -> str:
     return next_stderr() if stack == "next" else vite_stderr()
-
-
-class UIBuilder(BuilderAgent):
-    """Thin wrapper — overrides _on_write and _install_deps to emit UI events."""
-
-    def _on_write(self, fname: str, sz: str, content: str):
-        efile(fname, sz, content)
-
-    def _install_deps(self) -> bool:
-        estep("install", "active")
-        eprog("npm install…", 60)
-        elog("INFO", "📦 npm install…")
-        try:
-            r = cancel.run(
-                [NPM_BIN, "install"],
-                cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                timeout=180,
-            )
-            if r.returncode == 0:
-                estep("install", "done")
-                eprog("Dependencies ready", 75)
-                elog("INFO", "   ✅ npm install complete")
-                return True
-            estep("install", "error")
-            elog("ERROR", f"   npm failed: {r.stderr[:200]}")
-            return False
-        except FileNotFoundError:
-            estep("install", "error")
-            elog("ERROR", f"   npm binary not found at: {NPM_BIN}")
-            return False

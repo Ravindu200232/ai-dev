@@ -22,6 +22,7 @@ class QASessionFilesMixin:
             return False
 
         target_src = (self.read_source(target) or "") if target else ""
+        content = normalize_objectid_helpers(content)
         content = add_helper_imports(
             ensure_mocks(drop_redundant_mocks(content), target_src))
         try:

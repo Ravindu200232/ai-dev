@@ -1,6 +1,7 @@
 """E2E agent wrapper built from small mixins."""
 from .e2e_common import *
 from .e2e_context import E2EContextMixin
+from .e2e_artifacts import E2EArtifactsMixin
 from .e2e_loop_guard import E2ELoopGuardMixin
 from .e2e_authoring import E2EAuthoringMixin
 from .e2e_execution import E2EExecutionMixin
@@ -12,7 +13,7 @@ from .e2e_edges import E2EEdgeChecksMixin
 
 
 class E2EAgent(
-    E2EContextMixin, E2ELoopGuardMixin, E2EAuthoringMixin, E2EExecutionMixin,
+    E2EContextMixin, E2EArtifactsMixin, E2ELoopGuardMixin, E2EAuthoringMixin, E2EExecutionMixin,
     E2EEvidenceMixin, E2EStepsMixin, E2ELocatorsMixin, E2EStateMixin,
     E2EEdgeChecksMixin,
 ):

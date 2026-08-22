@@ -16,7 +16,7 @@ export default function Sidebar({
   models: cat, projects, onOpen, onImport, onSettings, onZip, onResume, onDeleted,
 }) {
   const s = useStore()
-  const { models, agentMode, think, images, project, status, statusText, theme } = s
+  const { models, think, images, project, status, statusText, theme } = s
   const folderRef = useRef(null)
   const [q, setQ] = useState('')
   const [fooocus, setFooocus] = useState(null)
@@ -43,19 +43,24 @@ export default function Sidebar({
   function pick(role, id) {
     useStore.setState({ models: { ...models, [role]: id } })
     s.persist(KEYS[role], id)
-    if (role === 'agent' && isCloud(id) && !cat.cloudEnabled) {
+    if (['planner', 'design', 'builder'].includes(role)
+        && isCloud(id) && !cat.cloudEnabled) {
       s.addLog('WARN', 'Cloud model selected but Ollama is not signed in — '
                      + 'run `ollama signin`')
     }
+    if (['planner', 'design', 'builder'].includes(role)) {
+      api.saveSettings({ [`${role}_model`]: id }).catch(() =>
+        s.addLog('WARN', `Could not save the ${role} model — it will not stick.`))
+    }
     if (role === 'qa') {
-      const eff = id || models.agent
+      const eff = id || models.builder || models.agent
       s.addLog(isCloud(eff) ? 'INFO' : 'WARN', isCloud(eff)
         ? `QA runs on ${eff}`
         : `${eff} is local — QA is cloud-only and will not run.`)
     }
     if (role === 'srs') {
 
-      const eff = id || models.agent
+      const eff = id || models.planner || models.agent
       api.saveSettings({ srs_model: id }).catch(() =>
         s.addLog('WARN', 'Could not save the SRS model — it will not stick.'))
       s.addLog(roomyContext(cat.all, eff) ? 'INFO' : 'WARN',
@@ -65,7 +70,7 @@ export default function Sidebar({
     }
     if (role === 'deploy') {
 
-      const eff = id || models.agent
+      const eff = id || models.planner || models.agent
       api.saveSettings({ deploy_model: id }).catch(() =>
         s.addLog('WARN', 'Could not save the deploy model — it will not stick.'))
       s.addLog(roomyContext(cat.all, eff) ? 'INFO' : 'WARN',
@@ -162,10 +167,13 @@ export default function Sidebar({
       String(p.name || '').toLowerCase().includes(needle))
   }, [projects, q])
 
-  const qaEffective = models.qa || models.agent
-  const srsEffective = models.srs || models.agent
+  const builderEffective = models.builder || models.agent
+  const plannerEffective = models.planner || models.agent || builderEffective
+  const designEffective = models.design || models.agent || builderEffective
+  const qaEffective = models.qa || builderEffective
+  const srsEffective = models.srs || plannerEffective
   const srsRoomy = roomyContext(cat.all, srsEffective)
-  const deployEffective = models.deploy || models.agent
+  const deployEffective = models.deploy || plannerEffective
   const deployRoomy = roomyContext(cat.all, deployEffective)
   const dot = { live: 'bg-ok', busy: 'bg-warn', connecting: 'bg-muted2' }[status]
     || 'bg-bad'
@@ -209,43 +217,41 @@ export default function Sidebar({
       <SectionLabel className="border-b border-line2 px-[14px] py-[9px]"
                     right={<span className="font-mono text-[10px] font-normal
                                             tracking-normal text-muted2">
-                             {agentMode ? 4 : 2}
+                             7
                            </span>}>
         Models
       </SectionLabel>
-      {!agentMode ? (
-        <>
-          <ModelPicker label="Refine" value={models.refine} options={cat.local}
-                       onChange={id => pick('refine', id)} />
-          <ModelPicker label="Build" value={models.build} options={cat.local}
-                       onChange={id => pick('build', id)} />
-        </>
-      ) : (
-        <>
-          <ModelPicker label="Agent" value={models.agent} options={cat.all}
-                       onChange={id => pick('agent', id)}
-                       hint={hasVision(cat.all, models.agent)
+      <>
+          <ModelPicker label="Planner" value={models.planner} options={cat.all}
+                       onChange={id => pick('planner', id)}
+                       hint={`Writes the build plan on ${plannerEffective}. Thinking is always off for planning.`} />
+          <ModelPicker label="Design" value={models.design} options={cat.all}
+                       onChange={id => pick('design', id)}
+                       hint={`Draws and interprets the UI designs on ${designEffective}. Thinking is always off for design.`} />
+          <ModelPicker label="Builder" value={models.builder} options={cat.all}
+                       onChange={id => pick('builder', id)}
+                       hint={hasVision(cat.all, builderEffective)
                          ? 'Accepts images — the pencil can send it a capture'
                          : 'No vision: a vision model is borrowed for pencil captures'} />
-          <ModelPicker label="QA" value={models.qa} placeholder="same as agent"
-                       options={[{ id: '', label: 'same as agent', icon: '↳',
-                                   desc: 'Follow whatever the agent model is.' },
+          <ModelPicker label="QA" value={models.qa} placeholder="same as builder"
+                       options={[{ id: '', label: 'same as builder', icon: '↳',
+                                   desc: 'Follow whatever the builder model is.' },
                                  ...cat.all]}
                        onChange={id => pick('qa', id)}
                        hint={isCloud(qaEffective)
                          ? `QA runs on ${qaEffective} — unit tests, their repair and the signed-in sweep.`
                          : `${qaEffective} is local and QA is cloud-only, so those stages will not run.`} />
-          <ModelPicker label="SRS" value={models.srs} placeholder="same as agent"
-                       options={[{ id: '', label: 'same as agent', icon: '↳',
-                                   desc: 'Follow whatever the agent model is.' },
+          <ModelPicker label="SRS" value={models.srs} placeholder="same as planner"
+                       options={[{ id: '', label: 'same as planner', icon: '↳',
+                                   desc: 'Follow whatever the planner model is.' },
                                  ...cat.all]}
                        onChange={id => pick('srs', id)}
                        hint={srsRoomy
                          ? `The interview and the SRS run on ${srsEffective}.`
                          : `${srsEffective} has a ${maxContext(cat.all, srsEffective).toLocaleString()}-token window — the SRS carries the whole interview and will be truncated.`} />
-          <ModelPicker label="Deploy" value={models.deploy} placeholder="same as agent"
-                       options={[{ id: '', label: 'same as agent', icon: '↳',
-                                   desc: 'Follow whatever the agent model is.' },
+          <ModelPicker label="Deploy" value={models.deploy} placeholder="same as planner"
+                       options={[{ id: '', label: 'same as planner', icon: '↳',
+                                   desc: 'Follow whatever the planner model is.' },
                                  ...cat.all]}
                        onChange={id => pick('deploy', id)}
                        hint={deployRoomy
@@ -264,18 +270,11 @@ export default function Sidebar({
                              ? 'Fooocus is up — pictures are generated for the build.'
                              : 'Fooocus is not running yet; turn Images on below to start it.')
                          : 'No generator: every picture is a drawn placeholder.'} />
-        </>
-      )}
+      </>
 
       <Seg block className="mb-1">
-        <Tip className="flex-1" text="Run the whole build as one agent">
-          <SegOpt block on={agentMode}
-                  onClick={() => toggle('agentMode', KEYS.agentMode)}>
-            Agent
-          </SegOpt>
-        </Tip>
         <Tip className="flex-1"
-             text="A reasoning pass costs real time on a twenty-file build">
+             text="Enable the reasoning pass for Builder and QA work">
           <SegOpt block on={think} onClick={() => toggle('think', KEYS.think)}>
             Think
           </SegOpt>
@@ -353,7 +352,7 @@ export default function Sidebar({
                 <span className={cn('mt-[3px] block truncate text-[11px] leading-tight',
                                     asking ? 'text-deep' : 'text-muted2')}>
                   {asking ? 'delete this and its database?'
-                          : `${p.stack || 'next'}${p.file_count ? ` · ${p.file_count} files` : ''}`}
+                          : (p.file_count ? `${p.file_count} files` : 'project')}
                 </span>
               </button>
 

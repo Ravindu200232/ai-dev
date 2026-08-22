@@ -1,5 +1,6 @@
 """E2E investigation, tool use, and runtime source selection."""
 from .debugger_common import *
+from .session import QASession
 
 
 class DebuggerInvestigateMixin:
@@ -303,7 +304,9 @@ Do not output locator shorthand by itself.
             self.arch._stream(
                 [{"role": "system", "content": SYSTEM},
                  {"role": "user", "content": user}],
-                collect, temperature=0.05, model=self.model, timeout=100)
+                collect, temperature=0.05, model=self.model, timeout=100,
+                reasoning=QASession.reasoning_for(getattr(self.agent, "qa", None)),
+                max_output_tokens=DEBUGGER_OUTPUT_TOKENS)
         except _StopDebuggerStream:
             pass
         except Exception as e:
@@ -355,19 +358,23 @@ Do not output locator shorthand by itself.
             return f"### {arg} -> {rel}\n{str(files.get(rel) or '')[:TOOL_RESULT_CHARS]}"
         if name == "ANALYZER":
             return self._analyzer(arg)
-        if name == "PLAN":
-            plan = getattr(self.arch, "plan", None) or {}
+        if name == "CODE_MAP":
+            journey = getattr(self.agent, "_active_journey", None) or {}
+            try:
+                routes = self.agent.route_map() or {}
+            except Exception:
+                routes = {}
             text = json.dumps({
-                "capabilities": plan.get("capabilities") or [],
-                "workflows": plan.get("workflows") or [],
-                "contracts": plan.get("contracts") or [],
-                "pages": plan.get("pages") or [],
+                "journey": journey.get("title") or "",
+                "contract": journey.get("contract") or {},
+                "routes": routes,
+                "generated_source_files": journey.get("source_files") or [],
             }, ensure_ascii=False, indent=2)
             needle = str(arg or "").strip().lower()
             if not needle or needle == "current":
                 return text[:TOOL_RESULT_CHARS]
             rows = [ln for ln in text.splitlines() if needle in ln.lower()]
-            return "\n".join(rows[:100]) or "no matching plan lines"
+            return "\n".join(rows[:100]) or "no matching generated-code lines"
         return f"unknown tool: {name}"
 
     def _runtime_locations(self, text: str) -> list[dict]:

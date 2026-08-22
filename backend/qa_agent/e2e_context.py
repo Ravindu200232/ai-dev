@@ -53,12 +53,60 @@ class E2EContextMixin:
         self._fire("on_test", status, msg, detail)
 
     def accounts(self) -> list:
-        """The demo accounts, from `.agentforge/plan.json`."""
+        """Demo accounts from generated seed source, with metadata fallback."""
         plan = getattr(self.arch, "plan", None) or {}
-        accs = [a for a in (plan.get("demo_accounts") or [])
-                if a.get("email") and a.get("password")]
-        if accs:
-            return accs
+        planned = [a for a in (plan.get("demo_accounts") or [])
+                   if isinstance(a, dict) and a.get("email") and a.get("password")]
+        planned_by_email = {
+            str(a.get("email") or "").strip().casefold(): a for a in planned
+        }
+        files = getattr(self.arch, "files", None) or {}
+        seed = "\n".join(
+            str(body or "") for rel, body in sorted(files.items())
+            if "seed" in str(rel).lower() and str(rel).endswith((".js", ".jsx")))
+        if seed:
+            shared = re.search(
+                r"\b(?:DEMO_)?PASSWORD\w*\s*=\s*['\"]([^'\"]{4,})['\"]",
+                seed, re.I)
+            generated = []
+            # Read each flat seed object as a unit. Generated code is free to
+            # put `role` before `email`; slicing from one email to the next used
+            # to attach the following account's role to the current identity.
+            blocks = re.findall(
+                r"\{[^{}]{0,1600}\bemail\s*:\s*['\"]"
+                r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}['\"][^{}]{0,1600}\}",
+                seed, re.I | re.S)
+            for block in blocks:
+                email = re.search(
+                    r"\bemail\s*:\s*['\"]([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})['\"]",
+                    block, re.I)
+                if not email:
+                    continue
+                password = re.search(
+                    r"\bpassword\s*:\s*['\"]([^'\"]{4,})['\"]|"
+                    r"\bhashSync\s*\(\s*['\"]([^'\"]{4,})['\"]",
+                    block, re.I)
+                role = re.search(r"\brole\s*:\s*['\"]([^'\"]{1,40})['\"]",
+                                 block, re.I)
+                meta = planned_by_email.get(email.group(1).casefold(), {})
+                secret = ((password.group(1) or password.group(2))
+                          if password else
+                          (shared.group(1) if shared else meta.get("password", "")))
+                if secret:
+                    generated.append({
+                        "email": email.group(1),
+                        "password": secret,
+                        "role": (role.group(1) if role else
+                                 str(meta.get("role") or "")),
+                    })
+            if generated:
+                return generated
+
+        # Some generated seeds hash a runtime variable, so the literal cannot
+        # safely be recovered. Project metadata is then credentials-only setup;
+        # it never supplies E2E journeys, routes, controls, or proof contracts.
+        if planned:
+            return planned
         try:
             fp = self.project_dir / ".agentforge" / "plan.json"
             if fp.is_file():
@@ -70,7 +118,7 @@ class E2EContextMixin:
         return []
 
     def account_for(self, role) -> dict:
-        """The demo account a scenario signs in with."""
+        """The exact demo account for a role; never borrow another role."""
         accs = self.accounts()
         if not accs:
             return {}
@@ -79,7 +127,7 @@ class E2EContextMixin:
         for a in accs:
             if (a.get("role") or "").lower() == role.lower():
                 return a
-        return accs[0]
+        return {}
 
     def route_map(self) -> dict:
         """Every URL this build serves, from the analyzer or straight off disk."""
@@ -275,7 +323,7 @@ class E2EContextMixin:
         for handoff in (contract.get("handoffs") or []):
             if isinstance(handoff, dict):
                 seed(owned, str(handoff.get("from") or ""))
-        # `served_routes` is what the workflow itself names
+        # `served_routes` comes from the generated page inventory.
         if "served_routes" not in journey:
             ground = getattr(self, "ground_journey_routes", None)
             if callable(ground):
@@ -397,40 +445,12 @@ class E2EContextMixin:
         for url in re.findall(r"(?<![\w:])(/[A-Za-z0-9_./\[\]-]+)", jtext):
             add_file(file_for_url(url.rstrip("/") or "/"))
 
-        stop = {"the", "and", "then", "from", "with", "into", "that", "this",
-                "page", "user", "admin", "member", "customer", "client",
-                "visitor", "staff", "owner", "manager", "click", "go", "reach"}
-        jwords = {w for w in re.findall(r"[a-z0-9]+", jtext)
-                  if len(w) > 3 and w not in stop}
-
-        plan = getattr(self.arch, "plan", None) or {}
-
-        covers = {str(x or "").upper() for x in (journey.get("covers") or [])}
-        if covers:
-            for cap in (plan.get("capabilities") or []):
-                if not isinstance(cap, dict):
-                    continue
-                if str(cap.get("id") or "").upper() not in covers:
-                    continue
-                for rel in (cap.get("files") or []):
-                    add_file(str(rel or "").strip())
-
-        scored = []
-        for c in (plan.get("contracts") or []):
-            if not isinstance(c, dict):
-                continue
-            ctext = " ".join(str(c.get(k) or "") for k in
-                             ("name", "trigger", "effect", "target")).lower()
-            cwords = {w for w in re.findall(r"[a-z0-9]+", ctext)
-                      if len(w) > 3 and w not in stop}
-            overlap = len(jwords & cwords)
-            if overlap:
-                scored.append((overlap, c))
-        for _, c in sorted(scored, key=lambda x: -x[0]):
-            add_file(str(c.get("from") or ""))
-            target = str(c.get("target") or "")
-            if target and "[" not in target:
-                add_file(file_for_url(target.rstrip("/") or "/"))
+        # Exact files discovered from the generated page/import/API graph.
+        contract = journey.get("contract") or {}
+        for rel in contract.get("source_files") or journey.get("source_files") or []:
+            rel = str(rel or "")
+            if rel and not rel.startswith("app/api/"):
+                add_file(rel)
 
         role = str(journey.get("role") or "").lower().strip()
         role_rows, rest = [], []
@@ -453,7 +473,7 @@ class E2EContextMixin:
         return [p for p in out if p][:self.JOURNEY_PAGES]
 
     def _url_for_file(self, rel: str) -> str:
-        """Static URL served by a planned page file, or `""`."""
+        """Static URL served by a generated page file, or `""`."""
         if not rel or not self.az:
             return ""
         try:
@@ -466,7 +486,7 @@ class E2EContextMixin:
         return ""
 
     def _journey_routes(self, journey: dict = None, limit: int = 7) -> list:
-        """Concrete static routes that are relevant to one workflow."""
+        """Concrete generated routes relevant to one planned journey."""
         journey = journey or {}
         out = []
         def add(url):
@@ -479,7 +499,7 @@ class E2EContextMixin:
         except Exception:
             route_map = {}
 
-        # Explicit URLs in the workflow are authoritative.
+        # Explicit URLs in the planned journey are authoritative.
         text = " ".join([str(journey.get("title") or ""),
                          str(journey.get("role") or "")] +
                         [str(x) for x in (journey.get("steps") or [])])

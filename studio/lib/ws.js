@@ -7,8 +7,8 @@ const STEP_ALIAS = { plan: 'build', generate: 'build' }
 
 // What each outgoing message is, in the terms the overlay presents.
 const WORK_KIND = {
-  build: 'build', agent_build: 'build',
-  update: 'repair', agent_update: 'repair', agent_resume: 'build',
+  agent_build: 'build',
+  agent_update: 'repair', agent_resume: 'build',
   feature: 'feature',
   element_edit: 'select',
   pencil_edit: 'pencil',
@@ -21,6 +21,7 @@ let lastEdit = null
 
 let streamPending = ''
 let streamTimer = null
+let e2eVersion = 0
 
 function flushStream() {
   if (!streamPending) return
@@ -159,17 +160,24 @@ function handle(m) {
       useStore.setState({ liveFile: null, liveBuf: '' })
       break
 
-    case 'test_start':   s.testStart(); break
+    case 'test_start':
+      e2eVersion += 1
+      s.setE2eLive(null)
+      s.testStart()
+      break
     case 'test_run':     s.testRun(m.attempt); break
     case 'test_result':  s.testResult(m); break
     case 'test_fixing':  s.testFixing(m); break
     case 'e2e_event': {
       const prior = m.state === 'journey_start' ? {} : (s.e2eLive || {})
-      s.setE2eLive({ ...prior, ...m, frame: m.state === 'journey_start' ? '' : (m.frame ?? prior.frame ?? ''), at: Date.now() })
+      const at = Date.now()
+      s.setE2eLive({ ...prior, ...m,
+        frame: m.state === 'journey_start' ? '' : (m.frame ?? prior.frame ?? ''), at })
       if (m.state === 'journey_done') {
+        const version = ++e2eVersion
         setTimeout(() => {
-          const cur = useStore.getState().e2eLive
-          if (cur?.at === useStore.getState().e2eLive?.at && cur?.state === 'journey_done') {
+          const current = useStore.getState().e2eLive
+          if (version === e2eVersion && current?.at === at) {
             useStore.getState().setE2eLive(null)
           }
         }, 1500)
@@ -183,7 +191,7 @@ function handle(m) {
       s.setWorkKind('')
       s.testDone()
       resetStreamQueue()
-      useStore.setState({ liveFile: null, liveBuf: '' })
+      useStore.setState({ liveFile: null, liveBuf: '', e2eLive: null })
   // Invalidate the cached QA report after project changes.
       s.setQaReport(null)
       if (m.project) useStore.setState({ project: m.project })
@@ -195,7 +203,7 @@ function handle(m) {
       s.setWorkKind('')
       s.testDone()
       resetStreamQueue()
-      useStore.setState({ liveFile: null, liveBuf: '', project: '' })
+      useStore.setState({ liveFile: null, liveBuf: '', e2eLive: null, project: '' })
       s.setQaReport(null)
       s.addLog('WARN', m.project
         ? `cancelled — ${m.project} and its specification were removed`
@@ -207,7 +215,7 @@ function handle(m) {
       s.setWorkKind('')
       s.testDone()
       resetStreamQueue()
-      useStore.setState({ liveFile: null, liveBuf: '' })
+      useStore.setState({ liveFile: null, liveBuf: '', e2eLive: null })
       s.addLog('ERROR', m.text || 'failed')
       break
 

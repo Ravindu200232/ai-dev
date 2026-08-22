@@ -2,6 +2,14 @@
 from .e2e_common import *
 from .e2e_contract import capability_contract, refresh_shipped_files
 
+
+def _journey_values(value) -> list:
+    """Normalize optional planner metadata without splitting strings to chars."""
+    if isinstance(value, str):
+        value = [value]
+    return list(value) if isinstance(value, (list, tuple, set)) else []
+
+
 class E2EJourneyAuthoringMixin:
     def _journeys_from_plan_md(self, roles: list) -> list:
         """The `### Journeys` chains out of the architect's plan.md."""
@@ -216,6 +224,31 @@ class E2EJourneyAuthoringMixin:
                               f"serve: " + " · ".join(unserved[:4]))
         return journey
 
+    def planner_code_preflight(self, journey: dict) -> dict:
+        """Compare the planned workflow with the code before authoring E2E."""
+        self.ground_journey_routes(journey)
+        contract = journey.get("contract") or capability_contract(self.arch, journey)
+        refresh_shipped_files(self.arch, contract)
+        missing = list(contract.get("missing_source_files") or [])
+        unserved = list(journey.get("unserved_routes") or [])
+        fields = self.fields_in_journey(journey)
+        preflight = {
+            "planner_checked": bool(journey.get("steps") or journey.get("covers")),
+            "code_checked": True,
+            "status": "gap" if missing or unserved else "ready",
+            "source_files": list(contract.get("source_files") or []),
+            "missing_source_files": missing,
+            "served_routes": list(journey.get("served_routes") or []),
+            "unserved_routes": unserved,
+            "form_fields": fields,
+        }
+        journey["contract"] = contract
+        journey["preflight"] = preflight
+        state = "implementation gaps recorded" if preflight["status"] == "gap" \
+            else "planner and generated code agree"
+        self._log("INFO", f"   🔎 E2E preflight — {journey.get('title', 'journey')}: {state}")
+        return preflight
+
     def journeys(self) -> list:
         """Every journey the app should be able to walk, from the plan."""
         out = []
@@ -225,6 +258,37 @@ class E2EJourneyAuthoringMixin:
 
         sources = []
         plan = getattr(self.arch, "plan", None) or {}
+        # Prefer the SRS testing handoff because it carries the deterministic
+        # seed/account/record prerequisites that plain workflows omit.
+        try:
+            handoff_path = self.project_dir / ".agentforge" / "srs" / "handoff.json"
+            if handoff_path.is_file():
+                handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+                testing = (handoff.get("testing_contract") or
+                           (handoff.get("builder_handoff") or {}).get("testing_contract") or {})
+                handoff_flows = []
+                for case in testing.get("e2e") or []:
+                    if not isinstance(case, dict):
+                        continue
+                    handoff_flows.append({
+                        "name": case.get("name"),
+                        "actor": case.get("actor"),
+                        "covers": case.get("covers") or [],
+                        "steps": case.get("steps") or [],
+                        "routes": case.get("routes") or [],
+                        "pre_journey": case.get("pre_journey") or {},
+                        "preconditions": ((case.get("pre_journey") or {})
+                                          .get("explicit_preconditions") or []),
+                        "expected_results": case.get("proofs") or [],
+                        "required_actions": case.get("required_actions") or [],
+                        "testing_contract_id": case.get("id"),
+                    })
+                if handoff_flows:
+                    sources.append(handoff_flows)
+                    self._log("INFO", f"   🌱 loaded {len(handoff_flows)} E2E "
+                                      "pre-journey contract(s) from the SRS handoff")
+        except Exception as e:
+            log.debug(f"SRS E2E testing handoff: {e}")
         if plan.get("workflows"):
             sources.append(plan["workflows"])
         try:
@@ -261,7 +325,13 @@ class E2EJourneyAuthoringMixin:
                 covers = [str(x).strip().upper() for x in (wf.get("covers") or [])
                           if str(x).strip()] if isinstance(wf.get("covers"), list) else []
                 out.append({"title": title, "steps": steps, "role": role,
-                            "covers": covers})
+                            "covers": covers,
+                            "routes": _journey_values(wf.get("routes")),
+                            "preconditions": _journey_values(wf.get("preconditions")),
+                            "pre_journey": (wf.get("pre_journey") or {}),
+                            "expected_results": _journey_values(wf.get("expected_results")),
+                            "required_actions": _journey_values(wf.get("required_actions")),
+                            "testing_contract_id": wf.get("testing_contract_id")})
 
         # If workflows are absent (common on imported/legacy apps).
         covered_ids = {str(x or "").upper()
@@ -304,8 +374,7 @@ class E2EJourneyAuthoringMixin:
                         "role": "", "covers": [], "generated": True})
         final = out[:MAX_FLOWS]
         for item in final:
-            self.ground_journey_routes(item)
-            item["contract"] = capability_contract(self.arch, item)
+            self.planner_code_preflight(item)
         return final
 
     def author(self, previous: Scenario = None, why: str = "",
@@ -340,7 +409,7 @@ class E2EJourneyAuthoringMixin:
 
         if journey:
             steps = "\n".join(f"  {i}. {s}" for i, s in
-                              enumerate(journey.get("steps") or [], start=1))
+                               enumerate(journey.get("steps") or [], start=1))
             ask += (f"\n## THE JOURNEY THIS SCENARIO WALKS\n"
                     f"{journey['title']}"
                     + (f" — as the {journey['role']}" if journey.get("role") else "")
@@ -348,8 +417,32 @@ class E2EJourneyAuthoringMixin:
                     f"Walk EVERY step above, in order, and assert on what each "
                     f"one leaves behind — the row that appeared, the total that "
                     f"changed, the status that moved. A scenario that signs in "
-                    f"and looks at one page has not walked this journey.\n")
+                     f"and looks at one page has not walked this journey.\n")
+            setup = journey.get("pre_journey") or {}
+            preconditions = _journey_values(journey.get("preconditions"))
+            expected = _journey_values(journey.get("expected_results"))
+            required_actions = _journey_values(journey.get("required_actions"))
+            if setup or preconditions or expected or required_actions:
+                handoff = {
+                    "pre_journey": setup,
+                    "preconditions": preconditions,
+                    "required_actions": required_actions,
+                    "expected_results": expected,
+                }
+                ask += ("\n## PRE-JOURNEY TEST HANDOFF\n"
+                        + self._fit(json.dumps(handoff, ensure_ascii=False, indent=2), 6_000)
+                        + "\nUse the real deterministic seed, exact-role account, required "
+                          "records/routes/APIs and real dynamic IDs described here. Never "
+                          "borrow another role's account, invent fixture data, or depend on "
+                          "a previous E2E journey. Prove every required action and expected "
+                          "result.\n")
             contract = journey.get("contract") or capability_contract(self.arch, journey)
+            preflight = journey.get("preflight") or self.planner_code_preflight(journey)
+            ask += ("\n## PLANNER AND GENERATED-CODE PREFLIGHT\n"
+                    + self._fit(json.dumps(preflight, ensure_ascii=False, indent=2), 4_000)
+                    + "\nThe planner defines WHAT must work. The generated source, routes, "
+                      "API calls and form fields define HOW this build implements it. "
+                      "Do not hide a recorded gap by weakening or skipping the planned step.\n")
             ask += ("\n## EXECUTABLE PROOF CONTRACT\n"
                     + self._fit(json.dumps(contract, ensure_ascii=False, indent=2), 7_000)
                     + "\nThis contract is authoritative. Do not invent a field, control, route, "
@@ -500,13 +593,15 @@ class E2EJourneyAuthoringMixin:
                                   on_file_start=lambda p: None,
                                   on_file_token=lambda t: None,
                                   on_file_end=lambda p, c: None)
-        from agents.ollama_client import is_transient, with_retry
+        from agents.core.ollama_client import is_transient, with_retry
         try:
             with_retry(
                 lambda: self.arch._stream(
                     convo, parser.feed, temperature=TEMPERATURE,
                     model=QASession.model_for(self.qa, self.arch),
-                    timeout=CALL_BUDGET),
+                    timeout=CALL_BUDGET,
+                    reasoning=QASession.reasoning_for(self.qa),
+                    max_output_tokens=AUTHOR_OUTPUT_TOKENS),
                 what="the QA model")
         except Exception as e:                                  # noqa: BLE001
             blocked = is_transient(e)

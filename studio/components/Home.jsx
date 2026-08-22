@@ -45,24 +45,26 @@ const EXAMPLES = [
 
 export default function Home({ onStarted }) {
   const s = useStore()
-  const { agentMode, images, think, models, srsId, srsPhase } = s
+  const { images, think, models, srsId, srsPhase } = s
   const [prompt, setPrompt] = useState('')
   const [logoFor, setLogoFor] = useState(null)
   const [themeFor, setThemeFor] = useState(null)
   const [srsError, setSrsError] = useState('')
   const box = useRef(null)
   const attach = useAttachments()
+  const builderModel = models.builder || models.agent
+  const plannerModel = models.planner || models.agent || builderModel
+  const designModel = models.design || models.agent || builderModel
 
   function begin(p, srs = '') {
     if (!p) return
     // The look is settled first.
-    if (agentMode) return setThemeFor({ idea: p, srs })
-    startBuild(p, '', srs)
+    setThemeFor({ idea: p, srs })
   }
 
   function afterTheme(p, srs, theme) {
     setThemeFor(null)
-    if (agentMode && images) return setLogoFor({ idea: p, srs, theme })
+    if (images) return setLogoFor({ idea: p, srs, theme })
     startBuild(p, '', srs, theme)
   }
 
@@ -77,20 +79,17 @@ export default function Home({ onStarted }) {
     s.setBusy(true)
     s.setProgress('Starting…', 0)
     onStarted?.()
-    if (agentMode) {
-      s.addLog('INFO', `Agent mode — ${models.agent}`)
-      if (logo) s.addLog('INFO', 'Building around the logo you accepted')
-      if (srs) s.addLog('INFO', 'Building from the SRS you approved')
-      if (theme) s.addLog('INFO', `Building to the ${theme.id} design you chose`)
-      send({ type: 'agent_build', prompt: p, model: models.agent,
-             think, qa_model: models.qa, logo, srs_id: srs || '',
-             uploads: uploads && Object.keys(uploads).length ? uploads : undefined,
-             theme: theme?.id || '', theme_html: theme?.html || '',
-             theme_page: theme?.page || '', theme_dir: theme?.dir || '' })
-    } else {
-      send({ type: 'build', prompt: p,
-             refine_model: models.refine, build_model: models.build })
-    }
+    s.addLog('INFO', `Planner — ${plannerModel} · Design — ${designModel} · Builder — ${builderModel}`)
+    if (logo) s.addLog('INFO', 'Building around the logo you accepted')
+    if (srs) s.addLog('INFO', 'Building from the SRS you approved')
+    if (theme) s.addLog('INFO', `Building to the ${theme.id} design you chose`)
+    send({ type: 'agent_build', prompt: p, model: builderModel,
+           builder_model: builderModel, planner_model: plannerModel,
+           design_model: designModel,
+           think, qa_model: models.qa, logo, srs_id: srs || '',
+           uploads: uploads && Object.keys(uploads).length ? uploads : undefined,
+           theme: theme?.id || '', theme_html: theme?.html || '',
+           theme_page: theme?.page || '', theme_dir: theme?.dir || '' })
   }
 
   async function planFirst() {
@@ -101,7 +100,7 @@ export default function Home({ onStarted }) {
     s.setSrs({ srsPhase: 'planning', srsBusy: 'Reading your idea…' })
     try {
 
-      await api.saveSettings({ srs_model: models.srs || models.agent || '' })
+      await api.saveSettings({ srs_model: models.srs || plannerModel || '' })
         .catch(() => { })
   // Attachments need a project and a written idea.
       const created = await api.srs('/projects', { idea: idea || 'See the attached files.' })
@@ -185,12 +184,11 @@ export default function Home({ onStarted }) {
           <div className="soft-card p-4">
             <div className="label-2xs text-label">Model</div>
             <div className="mt-1 truncate font-mono text-[12px] text-ink">
-              {agentMode ? (models.agent || 'no model chosen')
-                         : `${models.refine} → ${models.build}`}
+              P {plannerModel || '—'} · D {designModel || '—'} · B {builderModel || '—'}
             </div>
             <div className="mt-0.5 text-[11px] text-muted2">
-              {agentMode ? 'agent mode' : 'two-model mode'}
-              {think ? ' · thinking pass' : ' · no thinking pass'}
+              planner · design · builder
+              {think ? ' · builder + QA thinking on' : ' · builder + QA thinking off'}
               {images ? ' · images' : ''}
             </div>
           </div>
@@ -283,13 +281,13 @@ export default function Home({ onStarted }) {
 
       {themeFor && (
         <ThemePicker idea={themeFor.idea} srsId={themeFor.srs}
-                     model={models.agent}
+                     model={designModel}
                      onPick={(theme) => afterTheme(themeFor.idea, themeFor.srs, theme)}
                      onSkip={() => afterTheme(themeFor.idea, themeFor.srs, null)} />
       )}
 
       {logoFor && (
-        <LogoPanel idea={logoFor.idea} model={models.agent}
+        <LogoPanel idea={logoFor.idea} model={designModel}
                    onAccept={(file, uploads) => startBuild(logoFor.idea, file,
                                                   logoFor.srs, logoFor.theme, uploads)}
                    onSkip={(uploads) => startBuild(logoFor.idea, '', logoFor.srs,

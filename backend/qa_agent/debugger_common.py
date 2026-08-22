@@ -22,9 +22,10 @@ from .debugger_rules import (
 
 log = logging.getLogger("qa.debugger")
 
-MAX_TOOL_TURNS = 5
+MAX_TOOL_TURNS = 2
 TOOL_RESULT_CHARS = 7000
 DEBUGGER_OUTPUT_CHARS = 5000
+DEBUGGER_OUTPUT_TOKENS = 1_200
 
 
 class _StopDebuggerStream(Exception):
@@ -50,7 +51,7 @@ TOOL :: READ_FILE :: repo/path.js
 TOOL :: SEARCH_CODE :: regex or literal text
 TOOL :: ROUTE_SOURCE :: /route/or/api/path
 TOOL :: ANALYZER :: repo/path.js
-TOOL :: PLAN :: capability|workflow|contract text
+TOOL :: CODE_MAP :: route|form|API|generated-source text
 TOOL :: DOM :: current
 TOOL :: NETWORK :: current
 TOOL :: AUTH :: current
@@ -75,8 +76,8 @@ Decision rules:
   as APP evidence unless a stronger API/auth boundary proves otherwise.
 - TEST_FIX: app behavior is correct AND the DOM/source shows a real equivalent
   control/value/route the scenario can target; patch only the exact bad step.
-  A missing control that the accepted workflow/capability REQUIRES is NOT a
-  TEST_FIX just because the browser reported a selector miss.
+  A missing control that the generated form/route/API contract REQUIRES is NOT
+  a TEST_FIX just because the browser reported a selector miss.
 - APP_FIX: production behavior/code is wrong. This includes a required business
   action whose control is absent/inaccessible in the rendered DOM, and an
   icon-only required action that has no accessible name.

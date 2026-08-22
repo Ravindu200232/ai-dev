@@ -7,7 +7,7 @@ from pathlib import Path
 class AgentSourceCommentStyleTests(unittest.TestCase):
     def test_generated_app_comment_rewriter_is_not_installed(self):
         self.assertFalse(Path("agents/comment_style.py").exists())
-        text = Path("agents/architect_writes.py").read_text(encoding="utf-8")
+        text = Path("agents/builder/orchestration/writes.py").read_text(encoding="utf-8")
         self.assertNotIn("compact_source_comments", text)
 
     def test_agentforge_comments_are_compact(self):

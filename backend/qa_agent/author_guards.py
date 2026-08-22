@@ -168,6 +168,10 @@ class UnitAuthorGuardMixin:
                 f"and inline styles are not the contract")
 
     _TESTID_ATTR_RE = re.compile(r"""data-testid\s*=\s*['\"]([\w:-]+)['\"]""")
+    _TEST_JSX_TAG_RE = re.compile(r"<[A-Za-z][^<>]*>", re.S)
+    _DYNAMIC_PARAM_RE = re.compile(r"\[(?:\.\.\.)?([A-Za-z_$][\w$]*)\]")
+    _ROUTE_HELPER_RE = re.compile(
+        r"\b(getJson|postJson|postForm|patchJson|putJson|deleteJson)\s*\(")
 
     def source_closure(self, target_rel: str) -> str:
         """A component's source and the local children it renders."""
@@ -175,7 +179,7 @@ class UnitAuthorGuardMixin:
         if not body:
             return ""
         try:
-            from agents.exports import parse_imports, resolve_local
+            from agents.gates.exports import parse_imports, resolve_local
             files = dict(getattr(self.arch, "files", None) or {})
             files.setdefault(target_rel, body)
             seen, queue, parts = set(), [(target_rel, 0)], [body]
@@ -214,6 +218,59 @@ class UnitAuthorGuardMixin:
                     break
         return out
 
+    @classmethod
+    def _route_helper_calls(cls, test_src: str) -> list[tuple[str, str]]:
+        """Return complete helper calls so nested request bodies stay intact."""
+        calls = []
+        for match in cls._ROUTE_HELPER_RE.finditer(test_src or ""):
+            i = match.end() - 1
+            depth, quote, escaped = 0, "", False
+            while i < len(test_src):
+                ch = test_src[i]
+                if quote:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == quote:
+                        quote = ""
+                elif ch in "'\"`":
+                    quote = ch
+                elif ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0:
+                        calls.append((match.group(1), test_src[match.end():i]))
+                        break
+                i += 1
+        return calls
+
+    def _missing_dynamic_params(self, test_src: str, target_rel: str) -> str:
+        """A URL does not populate an App Router dynamic `params` object."""
+        if "/route." not in (target_rel or ""):
+            return ""
+        names = self._DYNAMIC_PARAM_RE.findall(target_rel or "")
+        if not names:
+            return ""
+        calls = self._route_helper_calls(test_src)
+        if not calls:
+            return ""
+        missing = []
+        for helper, args in calls:
+            absent = [name for name in names if not re.search(
+                rf"\bparams\s*:\s*\{{[^}}]*\b{re.escape(name)}\b\s*(?=[:,}}])",
+                args, re.S)]
+            if absent:
+                missing.append((helper, absent))
+        if not missing:
+            return ""
+        params = ", ".join(dict.fromkeys(
+            name for _helper, absent in missing for name in absent))
+        return (f"{len(missing)} dynamic-route helper call(s) omit "
+                f"`params: {{ {params} }}` — putting the value only in the URL "
+                f"does not pass it to the Next route handler")
+
     def _invented_selectors(self, test_src: str, target_rel: str) -> str:
         """Selectors this test looks for that the component does not contain."""
         body = self.source_closure(target_rel)
@@ -226,7 +283,12 @@ class UnitAuthorGuardMixin:
                         f"could not be read")
             return ""
 
+        # A small consumer component declared inside the test is real rendered
+        # markup too.  Keep only JSX tags: query strings themselves must not be
+        # able to make an invented selector look valid.
+        fixture_markup = "\n".join(self._TEST_JSX_TAG_RE.findall(test_src or ""))
         body += "\n" + "\n".join(self._mock_bodies(test_src))
+        body += "\n" + fixture_markup
 
         missing = []
         queried = [tid for _, tid in self.TESTID_Q_RE.findall(test_src)]
@@ -250,6 +312,14 @@ class UnitAuthorGuardMixin:
         for _, role in self.ROLE_Q_RE.findall(test_src):
             r = role.strip().lower()
             if f'role="{r}"' in low or f"role='{r}'" in low:
+                continue
+            if r == "form":
+                # An unnamed <form> has no implicit ARIA form role. Testing
+                # Library exposes it only after it receives an accessible name.
+                if re.search(r"<form\b[^>]*\baria-(?:label|labelledby)\s*=",
+                             low, re.S):
+                    continue
+                missing.append('role "form" (an unnamed <form> has no accessible form role; submit the element from the render container)')
                 continue
             tags = self.IMPLICIT_ROLES.get(r)
             if tags is None:

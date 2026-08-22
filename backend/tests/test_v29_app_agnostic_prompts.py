@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.app_vocab import Vocab, derive, plural, render, singular
-from agents.architect import ArchitectAgent
-from agents.architect_turns import ArchitectTurnMixin
+from agents.planner.app_vocab import Vocab, derive, plural, render, singular
+from agents.builder.orchestration.agent import ArchitectAgent
+from agents.builder.orchestration.turns import ArchitectTurnMixin
 from qa_agent.e2e_grounding import E2EGroundingMixin
 from qa_agent.flows import FIELD_CSS
 
@@ -24,10 +24,10 @@ AMBIGUOUS = re.compile(
     r"(?<!router )(?<!testing-)(?<!a )(?<!no )\blibrar(?:y|ies)\b")
 
 PROMPT_FILES = [
-    "agents/architect_next_planner_prompt_a.py",
-    "agents/architect_next_planner_prompt_b.py",
-    "agents/architect_next_builder_prompt_a.py",
-    "agents/architect_next_builder_prompt_b.py",
+    "agents/planner/prompt_a.py",
+    "agents/planner/prompt_b.py",
+    "agents/builder/prompts/part_a.py",
+    "agents/builder/prompts/part_b.py",
 ]
 
 IDEAS = [
@@ -138,7 +138,7 @@ class PromptNeutralityTests(unittest.TestCase):
 
 class AgentDeHardcodingTests(unittest.TestCase):
     def test_global_lessons_drop_project_specific_fixes(self):
-        from agents.lessons import prompt_block, record
+        from agents.repair.lessons import prompt_block, record
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp, "lessons.json")
@@ -156,7 +156,7 @@ class AgentDeHardcodingTests(unittest.TestCase):
         self.assertNotIn("CUSTOM_PROJECT_FIX", block)
 
     def test_transport_ids_are_detected_by_origin_not_domain_name(self):
-        from agents.analyzer_ui import AnalyzerUIMixin
+        from agents.gates.analyzer_ui import AnalyzerUIMixin
 
         class Probe(AnalyzerUIMixin):
             def plan_text(self):
@@ -175,11 +175,11 @@ const row = await col.findOne({ parent_ref: refValue })
 
     def test_generic_checks_name_no_hotel_fields(self):
         files = [
-            "agents/analyzer_ui.py",
-            "agents/architect_next_builder_prompt_b.py",
+            "agents/gates/analyzer_ui.py",
+            "agents/builder/prompts/part_b.py",
             "qa_agent/author_common.py",
             "qa_agent/flows.py",
-            "server_modules/agent/images.py",
+            "server_modules/agent/picture/images.py",
         ]
         text = "\n".join(Path(rel).read_text(encoding="utf-8") for rel in files)
         leaked = re.findall(
@@ -208,7 +208,7 @@ const row = await col.findOne({ parent_ref: refValue })
         self.assertIsNone(DOMAIN.search(blob))
 
     def test_role_detection_covers_titles_no_list_could_name(self):
-        from agents.architect_scaffold import ArchitectScaffoldMixin
+        from agents.builder.scaffolding.base import ArchitectScaffoldMixin
         rx = ArchitectScaffoldMixin.PRIVILEGED_ROLE
         for known in ("admin", "manager", "cashier", "doctor", "librarian"):
             self.assertTrue(rx.search(known), known)
@@ -224,11 +224,11 @@ class NoSingleAppCarriesThePromptTests(unittest.TestCase):
     """No industry may take over shared prompts."""
 
     FILES = PROMPT_FILES + [
-        "agents/architect_stack_rules.py", "qa_agent/e2e_common.py",
+        "agents/builder/prompts/stack.py", "qa_agent/e2e_common.py",
         "qa_agent/e2e_journeys.py", "qa_agent/author_common.py",
         "qa_agent/harness_install.py", "server_modules/qa/verification.py",
-        "agents/features_common.py", "agents/workspace.py",
-        "agents/bugfixer_common.py", "qa_agent/debugger_common.py",
+        "agents/feature/common.py", "agents/core/workspace.py",
+        "agents/repair/common.py", "qa_agent/debugger_common.py",
         "qa_agent/debugger_investigate.py", "qa_agent/flows.py",
     ]
 
@@ -255,13 +255,13 @@ class RefinerIsShapeNotIndustryTests(unittest.TestCase):
     """Site types describe the shape of a site, never one trade."""
 
     def test_no_industry_has_a_type_of_its_own(self):
-        from agents.refiner import KEYWORD_WEIGHTS, SECTION_MAP, SITE_TYPES
+        from agents.planner.refiner import KEYWORD_WEIGHTS, SECTION_MAP, SITE_TYPES
         for table in (SITE_TYPES, SECTION_MAP, KEYWORD_WEIGHTS):
             found = sorted(k for k in table if DOMAIN.search(k))
             self.assertEqual(found, [], f"site type named after a trade: {found}")
 
     def test_places_people_visit_all_share_one_shape(self):
-        from agents.refiner import RefinerAgent
+        from agents.planner.refiner import RefinerAgent
         agent = RefinerAgent.__new__(RefinerAgent)
         for idea in ("a restaurant website with our menu",
                      "a hair salon, our prices and book an appointment",
@@ -270,14 +270,14 @@ class RefinerIsShapeNotIndustryTests(unittest.TestCase):
             self.assertEqual(agent._detect_type(idea), "venue", idea)
 
     def test_wording_does_not_have_to_match_the_keyword_exactly(self):
-        from agents.refiner import RefinerAgent
+        from agents.planner.refiner import RefinerAgent
         agent = RefinerAgent.__new__(RefinerAgent)
         self.assertEqual(agent._detect_type("build me a habit tracking app"), "app")
         self.assertEqual(agent._detect_type("a todo list app"), "app")
         self.assertEqual(agent._detect_type("some random thing"), "general")
 
     def test_a_spec_written_before_the_rename_still_resolves(self):
-        from agents.refiner import SECTION_MAP, normalise_type
+        from agents.planner.refiner import SECTION_MAP, normalise_type
         self.assertEqual(normalise_type("restaurant"), "venue")
         self.assertIn(normalise_type("restaurant"), SECTION_MAP)
 
@@ -325,11 +325,11 @@ class WholeAgentFolderTests(unittest.TestCase):
 class ServerAndRuntimeTests(unittest.TestCase):
     """server.py and server_modules/ must not assume one kind of app either."""
 
-    ROOTS = ["server.py", "server_runtime.py", "pipeline.py"]
+    ROOTS = ["server.py", "server_runtime.py"]
 
     def _files(self):
         out = [Path(r) for r in self.ROOTS if Path(r).exists()]
-        for folder in ("server_modules", "pipeline_core", "qa_agent"):
+        for folder in ("server_modules", "qa_agent"):
             out.extend(sorted(Path(folder).rglob("*.py")))
         return out
 
@@ -351,11 +351,3 @@ class ServerAndRuntimeTests(unittest.TestCase):
         for private in ("/checkout", "/inventory", "/appointments",
                         "/admin/doctors", "/courses/12", "/my-orders"):
             self.assertTrue(needs_session(private), private)
-
-    def test_the_type_banner_is_read_from_the_refiner(self):
-        from agents.refiner import SITE_TYPES
-        from server_modules.agent.pipeline.watcher import _known_types
-        banner = _known_types()
-        for name in SITE_TYPES:
-            self.assertIn(name, banner, name)
-        self.assertNotIn("restaurant", banner)

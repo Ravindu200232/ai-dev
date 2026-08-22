@@ -305,7 +305,7 @@ export default function PreviewPane({ hidden }) {
 
     const payload = {
       type: kind, project, element: picked,
-      model: models.agent || models.build, think,
+      model: models.builder || models.agent, think,
       route: picked.route || path, scroll: picked.scroll, viewport: picked.viewport,
       strokes: pencilOn ? strokesRef.current : undefined,
       console: consoleReport(),

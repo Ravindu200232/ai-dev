@@ -1,4 +1,5 @@
 # Security, API, runtime and performance checks.
+from agents.gates.analyzer_common import finding_identity
 def run_security_stage(arch, proj_dir: Path, analyzer) -> tuple:
     """Final app safety checks and repairs."""
     from qa_agent.security import SecurityAgent
@@ -234,9 +235,7 @@ def pretest_flow_convergence(arch, proj_dir: Path, analyzer, *, build_ok: bool):
         return _merge_analyzer_reports(*reports)
 
     def _key(f):
-        return (getattr(f, "code", ""), getattr(f, "path", ""),
-                re.sub(r"\b[0-9a-f]{24}\b", "<id>",
-                       str(getattr(f, "message", "") or ""))[:200])
+        return finding_identity(f)
 
     report = collect()
     serious = _serious_findings(report)
@@ -251,7 +250,8 @@ def pretest_flow_convergence(arch, proj_dir: Path, analyzer, *, build_ok: bool):
 
     while build_ok and serious and convergence_round < 2:
         # A finding that survived a repair of its own file gets parked
-        active = [f for f in serious if parked.get(_key(f), 0) < 1]
+        eligible = _drop_exhausted(serious, "pre-test flow repair")
+        active = [f for f in eligible if parked.get(_key(f), 0) < 1]
         if not active:
             elog("WARN", "   ↔ every remaining flow finding already survived "
                          "its own repair — parking them for the report")
@@ -275,6 +275,9 @@ def pretest_flow_convergence(arch, proj_dir: Path, analyzer, *, build_ok: bool):
         # Deterministic rescan only: the model promise audit jitters
         report = collect(semantic=False)
         next_serious = _serious_findings(report)
+        active_keys = {_key(f) for f in active}
+        _park_exhausted([f for f in next_serious
+                         if _key(f) in active_keys])
         for f in next_serious:
             parked.setdefault(_key(f), parked.get(_key(f), 0))
         closed = {_key(f) for f in serious} - {_key(f) for f in next_serious}
@@ -643,10 +646,7 @@ _EXHAUSTED_FINDINGS = set()
 
 def _finding_key(finding) -> tuple:
     """Identity of a finding, id digits masked so two runs of it match."""
-    return (str(getattr(finding, "code", "") or ""),
-            str(getattr(finding, "path", "") or ""),
-            re.sub(r"\b[0-9a-f]{24}\b", "<id>",
-                   str(getattr(finding, "message", "") or ""))[:260])
+    return finding_identity(finding)
 
 
 def _park_exhausted(findings) -> None:

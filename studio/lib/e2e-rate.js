@@ -3,13 +3,16 @@
 /** Group journey results by outcome. */
 function journeyTally(e2e) {
   const rows = Array.isArray(e2e?.flows) ? e2e.flows : []
-  const tally = { passed: 0, failed: 0, blocked: 0, skipped: 0, total: rows.length }
+  const tally = { passed: 0, failed: 0, blocked: 0, skipped: 0, testIssues: 0, total: rows.length }
   for (const row of rows) {
     if (row?.blocked) tally.blocked += 1
     else if (row?.blocked_upstream) tally.skipped += 1
     else if (row?.ran === false) tally.skipped += 1
     else if ((row?.failed ?? 0) > 0) tally.failed += 1
-    else tally.passed += 1
+    else {
+      tally.passed += 1
+      if ((row?.test_issue ?? 0) > 0) tally.testIssues += 1
+    }
   }
   tally.walked = tally.passed + tally.failed
   tally.rate = tally.walked ? Math.round((tally.passed / tally.walked) * 100) : 0
@@ -32,6 +35,7 @@ export function journeySummary(e2e) {
   const parts = [`${t.passed} of ${t.walked} passed`]
   if (t.blocked) parts.push(`${t.blocked} could not start`)
   if (t.skipped) parts.push(`${t.skipped} skipped`)
+  if (t.testIssues) parts.push(`${t.testIssues} E2E warning${t.testIssues === 1 ? '' : 's'}`)
   return {
     ...t, tone,
     label: `${t.rate}%`,
@@ -46,5 +50,6 @@ export function journeyStatus(row) {
   if (row?.ran === false) return { tone: 'muted', label: 'not run' }
   const failed = row?.failed ?? 0
   if (failed > 0) return { tone: 'bad', label: failed === 1 ? '1 step failed' : `${failed} steps failed` }
+  if ((row?.test_issue ?? 0) > 0) return { tone: 'warn', label: 'passed · warning recorded' }
   return { tone: 'ok', label: 'passed' }
 }

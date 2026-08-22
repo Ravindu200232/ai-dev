@@ -158,6 +158,9 @@ class UIHandler(SimpleHTTPRequestHandler):
                 "api_key_hint": (f"…{key[-4:]}" if key else ""),
                 "local_num_ctx": s.get("local_num_ctx", max_context("llama3.1:8b")),
                 "agent_model": s.get("agent_model", default_agent_model()),
+                "planner_model": s.get("planner_model", default_planner_model()),
+                "design_model": s.get("design_model", default_design_model()),
+                "builder_model": s.get("builder_model", default_builder_model()),
                 **_image_settings(),
                 "mongodb_uri_set": bool(uri),
                 "mongodb_uri_hint": _redact_uri(uri),
@@ -277,24 +280,22 @@ class UIHandler(SimpleHTTPRequestHandler):
         if path == "/build/cancel":
             out = cancel.request()
             return self._json(out, 200 if out.get("ok") else 409)
-        if path == "/build":
+        if path == "/resume":
             body = self._body()
-            threading.Thread(
-                target=run_pipeline,
-                args=(body.get("prompt",""),
-                      body.get("refine_model", DEFAULT_REFINE),
-                      body.get("build_model",  DEFAULT_BUILD)),
-                daemon=True
-            ).start()
-            self._json({"ok": True})
-        elif path == "/resume":
-            body = self._body()
+            builder_model = (body.get("builder_model") or body.get("model")
+                             or default_builder_model())
             threading.Thread(
                 target=run_agent_pipeline,
-                args=("", body.get("model") or default_agent_model(),
+                args=("", builder_model,
                       _think_flag(body),
                       (body.get("qa_model") or "").strip(),
                       body.get("project", "").strip()),
+                kwargs={
+                    "planner_model": (body.get("planner_model")
+                                      or default_planner_model()),
+                    "design_model": (body.get("design_model")
+                                     or default_design_model()),
+                },
                 daemon=True
             ).start()
             self._json({"ok": True})
@@ -320,7 +321,7 @@ class UIHandler(SimpleHTTPRequestHandler):
             idea = str(body.get("prompt", "")).strip()
             if not idea:
                 return self._json({"error": "prompt is required"}, 400)
-            model = (body.get("model") or default_agent_model()).strip()
+            model = (body.get("model") or default_design_model()).strip()
             try:
                 r = ollama.chat(model, [
                     {"role": "system", "content": LOGO_PROMPT_SYSTEM},
@@ -339,7 +340,7 @@ class UIHandler(SimpleHTTPRequestHandler):
             text = str(body.get("prompt", "")).strip()
             if not text:
                 return self._json({"error": "prompt is required"}, 400)
-            model = (body.get("model") or default_agent_model()).strip()
+            model = (body.get("model") or default_builder_model()).strip()
             element = body.get("element") or {}
             route = str(body.get("route") or element.get("route") or "/")
             tuned = tune_instruction(text, element, route, model,
@@ -351,7 +352,7 @@ class UIHandler(SimpleHTTPRequestHandler):
             body = self._body()
             idea = str(body.get("prompt", "")).strip()
             srs_id = str(body.get("srs_id", "")).strip()
-            model = (body.get("model") or default_agent_model()).strip()
+            model = (body.get("model") or default_design_model()).strip()
             if not idea and not srs_id:
                 return self._json({"error": "prompt or srs_id is required"}, 400)
 
@@ -381,7 +382,14 @@ class UIHandler(SimpleHTTPRequestHandler):
 
             app_name = _srs_app_name(srs_id) or ""
             settings = load_settings()
-            directions = themekit.random_directions(themekit.COUNT)
+            design_count = themekit.design_count(model)
+            directions = themekit.random_directions(design_count)
+            site_map = themekit.site_map_from_plan(plan, doc)
+            preview_pages = themekit.representative_pages(site_map)
+            for direction in directions:
+                direction["total"] = len(directions)
+                direction["site_map"] = site_map
+                direction["preview_pages"] = preview_pages
             elog("INFO", f"   🎨 drawing {len(directions)} designs of the whole "
                          f"app from {source} — {model}")
 
@@ -389,7 +397,7 @@ class UIHandler(SimpleHTTPRequestHandler):
             why = []
             lock = threading.Lock()
 
-            # Five designs in parallel, not in a row: the calls.
+            # Independent directions run in parallel, not in a row.
             workers = [threading.Thread(
                 target=_draw_design,
                 args=(d, brief, app_name, model, settings, out, lock, why),
@@ -404,7 +412,7 @@ class UIHandler(SimpleHTTPRequestHandler):
             if not out:
                 busy = sum(1 for row in why if row.get("busy"))
                 detail = (f"{model} was busy for all {len(directions)} designs — "
-                          f"they are five calls at once, which is the heaviest "
+                          f"they are {len(directions)} calls at once, which is the heaviest "
                           f"moment in a build. Try again, or set a smaller "
                           f"model for design work."
                           if busy and busy >= len(why) else
@@ -422,9 +430,10 @@ class UIHandler(SimpleHTTPRequestHandler):
                 elog("INFO", f"   💾 {len(out)} design(s) saved under "
                              f"{_designs_dir().name}/{key} — moved into the "
                              f"project when the build starts")
-            # The header line: the pages the fullest design contains.
-            fullest = max(out, key=lambda d: d.get("pages", 0))
-            names = fullest.get("page_names") or []
+            # Every direction now shares one controller-selected sitemap.
+            names = ([str(page.get("name") or "") for page in preview_pages]
+                     if preview_pages else
+                     (max(out, key=lambda d: d.get("pages", 0)).get("page_names") or []))
             if why:
                 elog("WARN", f"   ⚠ {len(why)} of {len(directions)} designs "
                              f"did not come back; the picker shows the "
@@ -481,14 +490,22 @@ class UIHandler(SimpleHTTPRequestHandler):
                         "url": (f"/generated/{name}.png" if proj else "")})
         elif path == "/agent-build":
             body = self._body()
+            builder_model = (body.get("builder_model") or body.get("model")
+                             or default_builder_model())
             threading.Thread(
                 target=run_agent_pipeline,
                 args=(body.get("prompt", ""),
-                      body.get("model") or default_agent_model(),
+                      builder_model,
                       _think_flag(body),
                       (body.get("qa_model") or "").strip(),
                       "", str(body.get("logo", "")).strip(),
                       str(body.get("srs_id", "")).strip()),
+                kwargs={
+                    "planner_model": (body.get("planner_model")
+                                      or default_planner_model()),
+                    "design_model": (body.get("design_model")
+                                     or default_design_model()),
+                },
                 daemon=True
             ).start()
             self._json({"ok": True})
@@ -611,6 +628,10 @@ class UIHandler(SimpleHTTPRequestHandler):
                     pass
             if body.get("agent_model"):
                 patch["agent_model"] = str(body["agent_model"]).strip()
+            for role in ("planner", "design", "builder"):
+                key = f"{role}_model"
+                if key in body:
+                    patch[key] = str(body[key]).strip()
 
             if "srs_model" in body:
                 patch["srs_model"] = str(body["srs_model"]).strip()
@@ -651,16 +672,6 @@ class UIHandler(SimpleHTTPRequestHandler):
                     log.error(f"Failed to write {rel_path}: {e}")
 
             self._json({"ok": True, "project": pname})
-        elif path == "/update":
-            body = self._body()
-            threading.Thread(
-                target=run_update_pipeline,
-                args=(body.get("project",""),
-                      body.get("prompt",""),
-                      body.get("build_model", DEFAULT_BUILD)),
-                daemon=True
-            ).start()
-            self._json({"ok": True})
         else:
             self._json({"error": f"unknown endpoint {path}"}, 404)
 

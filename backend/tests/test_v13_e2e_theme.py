@@ -1,8 +1,8 @@
 import types
 import unittest
 
-from agents.theme_contract import extract_theme_contract, theme_facts_markdown
-from agents.themes import design_prompt
+from agents.picture.theme_contract import extract_theme_contract, theme_facts_markdown
+from agents.picture.themes import design_prompt
 from qa_agent.debugger_rules import diagnose_page_health
 from qa_agent.e2e_progress import MIN_REPAIR_ROUNDS, stop_after_no_progress
 

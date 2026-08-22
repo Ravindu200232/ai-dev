@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import server
-from agents.architect import ArchitectAgent
-from agents.architect_boundaries import ArchitectBoundaryMixin
+from agents.builder.orchestration.agent import ArchitectAgent
+from agents.builder.workflow.boundaries import ArchitectBoundaryMixin
 
 
 class DependencyGapTests(unittest.TestCase):

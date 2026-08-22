@@ -8,9 +8,9 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-PENCIL = Path("server_modules/agent/pencil_page.py")
-ACTIONS = Path("server_modules/agent/feature_actions.py")
-APPLY = Path("agents/features_apply.py")
+PENCIL = Path("server_modules/agent/pencil/page.py")
+ACTIONS = Path("server_modules/agent/feature/actions.py")
+APPLY = Path("agents/feature/apply.py")
 
 
 def server():

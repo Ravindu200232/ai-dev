@@ -7,7 +7,7 @@ from typing import Any, Callable
 import requests
 from jsonschema import Draft202012Validator
 
-from deployment_agent.config import OLLAMA_MODEL, OLLAMA_NUM_PREDICT, OLLAMA_THINK, OLLAMA_TIMEOUT_SECONDS, OLLAMA_URL
+from deployment_agent.config import OLLAMA_MODEL, OLLAMA_NUM_PREDICT, OLLAMA_TIMEOUT_SECONDS, OLLAMA_URL
 from deployment_agent.models import DeploymentPlan, ProjectSpec
 from deployment_agent.security import redact_data
 
@@ -83,7 +83,9 @@ class OllamaClient:
                         "model": self.model,
                         "messages": messages,
                         "stream": True,
-                        "think": OLLAMA_THINK,
+                        # Deployment planning is deliberately deterministic and
+                        # never inherits the Studio Builder thinking switch.
+                        "think": False,
                         "options": {"temperature": 0, "num_predict": OLLAMA_NUM_PREDICT},
                     }
                     if native_schema:

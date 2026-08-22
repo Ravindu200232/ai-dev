@@ -2,10 +2,10 @@
 import unittest
 from pathlib import Path
 
-from agents.features_common import FeatureSpec
-from agents.features_planning import FeaturesAgentPlanningMixin
+from agents.feature.common import FeatureSpec
+from agents.feature.planning import FeaturesAgentPlanningMixin
 
-PLANNING = Path("agents/features_planning.py")
+PLANNING = Path("agents/feature/planning.py")
 RUNTIME = Path("server_modules/qa/runtime_repair.py")
 STAGE = Path("server_modules/qa/e2e_stage.py")
 

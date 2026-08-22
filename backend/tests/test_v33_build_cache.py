@@ -4,7 +4,7 @@ import time
 import unittest
 from pathlib import Path
 
-from agents.build_cache import (already_green, clear, fingerprint, mark_green)
+from agents.core.build_cache import (already_green, clear, fingerprint, mark_green)
 
 
 def project(**files):
@@ -89,13 +89,13 @@ class GreenStateTests(unittest.TestCase):
 
 class WiringTests(unittest.TestCase):
     def test_the_build_loop_checks_and_records_the_state(self):
-        text = Path("server_modules/agent/build_repair.py").read_text(encoding="utf-8")
+        text = Path("server_modules/agent/repair/build.py").read_text(encoding="utf-8")
         self.assertIn("already_green(proj_dir)", text)
         self.assertIn("mark_green(proj_dir", text)
         self.assertIn("build skipped", text)
 
     def test_a_caller_can_still_insist_on_a_real_build(self):
-        text = Path("server_modules/agent/build_repair.py").read_text(encoding="utf-8")
+        text = Path("server_modules/agent/repair/build.py").read_text(encoding="utf-8")
         self.assertIn("force: bool = False", text)
         self.assertIn("if not force:", text)
 

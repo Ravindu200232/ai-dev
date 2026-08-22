@@ -150,7 +150,8 @@ class UnitAuthorWriteMixin:
             try:
                 self.arch._stream(convo, parser.feed, temperature=TEMPERATURE,
                                   model=QASession.model_for(self.qa, self.arch),
-                                  timeout=CALL_BUDGET)
+                                  timeout=CALL_BUDGET,
+                                  reasoning=QASession.reasoning_for(self.qa))
             except Exception as e:
                 self._log("WARN", f"   ⚠ test author failed: {e}")
                 parser.close()
@@ -208,7 +209,8 @@ class UnitAuthorWriteMixin:
             try:
                 self.arch._stream(convo, parser.feed, temperature=TEMPERATURE,
                                   model=QASession.model_for(self.qa, self.arch),
-                                  timeout=CALL_BUDGET)
+                                  timeout=CALL_BUDGET,
+                                  reasoning=QASession.reasoning_for(self.qa))
             except Exception as e:
                 self._log("WARN", f"   ⚠ retry failed: {e}")
             parser.close()
@@ -410,7 +412,8 @@ class UnitAuthorWriteMixin:
             try:
                 self.arch._stream(convo, parser.feed, temperature=TEMPERATURE,
                                   model=QASession.model_for(self.qa, self.arch),
-                                  timeout=CALL_BUDGET)
+                                  timeout=CALL_BUDGET,
+                                  reasoning=QASession.reasoning_for(self.qa))
             except Exception as e:
                 self._log("WARN", f"   ⚠ {path}: fix round {rnd} failed: {e}")
                 parser.close()

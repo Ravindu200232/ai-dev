@@ -24,7 +24,7 @@ class E2EGroundingMixin:
     }
 
     def _journey_requires_field(self, journey: dict, key: str) -> bool:
-        """Whether the accepted workflow explicitly requires this field."""
+        """Whether the generated form inventory explicitly contains this field."""
         journey = journey or {}
         text = " ".join([str(journey.get("title") or "")]
                         + [str(x) for x in (journey.get("steps") or [])]).lower()
@@ -230,7 +230,7 @@ class E2EGroundingMixin:
                         not self._journey_requires_field(journey or {}, key)):
                     return (f"ungrounded form field {st.describe()}: field={key} "
                             "is absent from the observed DOM/source and is not "
-                            "required by the accepted workflow. Re-author using "
+                            "present in the planned journey. Re-author using "
                             "an observed field instead of inventing one.")
 
             if st.verb == "SELECT":
@@ -293,13 +293,22 @@ class E2EGroundingMixin:
         return "" if role in self._SIGNED_OUT else role
 
     def _idea(self):
+        """Compact generated-app inventory; planner prose is intentionally absent."""
         try:
-            convo = getattr(self.arch, "convo", None) or []
-            if len(convo) > 1 and convo[1].get("role") == "user":
-                return convo[1]["content"][:3000]
+            routes = self.route_map() or {}
         except Exception:
-            pass
-        return (getattr(self.arch, "plan_md", "") or "")[:3000]
+            routes = {}
+        pages = [u for u, meta in sorted(routes.items())
+                 if (meta or {}).get("kind") == "page"]
+        apis = [f"{','.join((meta or {}).get('methods') or ['GET'])} {u}"
+                for u, meta in sorted(routes.items())
+                if (meta or {}).get("kind") == "api"]
+        files = [rel for rel in sorted((getattr(self.arch, "files", None) or {}))
+                 if rel.startswith(("app/", "components/", "lib/"))]
+        return ("Generated application inventory (source of truth)\n"
+                "Pages: " + (" · ".join(pages[:40]) or "none discovered") + "\n"
+                "APIs: " + (" · ".join(apis[:40]) or "none discovered") + "\n"
+                "Generated source: " + (" · ".join(files[:60]) or "read from disk"))[:3000]
 
     _REVEAL_VERBS = ("edit", "manage", "view", "details", "detail", "open",
                      "expand", "show")
@@ -451,29 +460,18 @@ class E2EGroundingMixin:
         return fixed
 
     def action_id_block(self, journey: dict = None) -> str:
-        """The ids the app is guaranteed to carry, for this journey's routes."""
+        """Generated test ids found in this journey's actual source closure."""
         try:
-            from agents.action_ids import workflow_actions
-            rows = workflow_actions(getattr(self.arch, "plan", None) or {})
+            bundle = self.journey_source_bundle(journey)
+            ids = list(dict.fromkeys(self._TESTID_RE.findall(bundle or "")))
         except Exception as e:
             log.debug(f"action id block: {e}")
             return ""
-        if not rows:
+        if not ids:
             return ""
-        who = str((journey or {}).get("role") or "").strip().lower()
-        title = str((journey or {}).get("title") or "").strip().lower()
-        mine = [r for r in rows
-                if not who or not r["who"]
-                or who in r["who"].lower() or r["who"].lower() in who
-                or r["workflow"].lower() in title]
-        rows = mine or rows
-        lines = ["GUARANTEED CONTROL IDS — the app was built to carry these and "
-                 "the build already verified they exist. For any step below "
-                 "that matches one, write `testid=<id>` exactly; do not "
-                 "paraphrase its wording into a role/name locator."]
-        for r in rows[:20]:
-            lines.append(f"  {r['route']:<20} {r['phrase'][:40]:<42} "
-                         f"testid={r['testid']}")
+        lines = ["GENERATED CONTROL IDS — copied from this journey's shipped "
+                 "source. When the required control has one, use it exactly."]
+        lines.extend(f"  testid={name}" for name in ids[:20])
         return "\n".join(lines)
 
     @staticmethod
@@ -489,16 +487,19 @@ class E2EGroundingMixin:
             fp = self.project_dir / rel
             fp.parent.mkdir(parents=True, exist_ok=True)
             body = to_playwright_js(sc, base_url=self.base_url)
-            fp.write_text(body, encoding="utf-8")
+            changed = not fp.is_file() or fp.read_text(encoding="utf-8") != body
+            if changed:
+                fp.write_text(body, encoding="utf-8")
             cfg = self.project_dir / "playwright.config.js"
             if not cfg.is_file():
                 cfg.write_text(PLAYWRIGHT_CONFIG, encoding="utf-8")
         except Exception as e:
             self._log("WARN", f"   ⚠ could not write {rel}: {e}")
             return ""
-        size = f"{len(body) / 1024:.1f}KB" if len(body) >= 1024 else f"{len(body)}B"
-        self._fire("on_file_written", rel, size, body)
-        self._log("INFO", f"   🎭 {rel}")
+        if changed:
+            size = f"{len(body) / 1024:.1f}KB" if len(body) >= 1024 else f"{len(body)}B"
+            self._fire("on_file_written", rel, size, body)
+            self._log("INFO", f"   🎭 {rel}")
         return rel
 
 

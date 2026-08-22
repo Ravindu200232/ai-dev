@@ -55,9 +55,9 @@ def agent_for(root, **kw):
 
 
 class PreJourneyPreparationTests(unittest.TestCase):
-    """The code is loaded and repaired before `journeys()` decides anything."""
+    """The shipped code is loaded before `journeys()` decides anything."""
 
-    def test_source_is_loaded_repaired_and_reloaded_before_journeys(self):
+    def test_source_is_loaded_and_snapshotted_without_a_plan_scan(self):
         server = importlib.import_module("server")
         trace = []
 
@@ -70,14 +70,10 @@ class PreJourneyPreparationTests(unittest.TestCase):
 
         class Analyzer:
             def scan(self):
-                trace.append("scan")
-                return SimpleNamespace(findings=[
-                    SimpleNamespace(severity="blocker", code="DEAD_LINK",
-                                    path="app/page.jsx")])
+                raise AssertionError("code-driven E2E must not run the planner analyzer")
 
             def repair(self, report):
-                trace.append("repair")
-                return 1
+                raise AssertionError("code-driven E2E must not pre-repair from a plan")
 
         class Agent:
             invalidated = False
@@ -95,10 +91,9 @@ class PreJourneyPreparationTests(unittest.TestCase):
             paths, baseline = server._prepare_app_before_journeys(
                 agent, arch, Path(td), Analyzer())
 
-        # Read, repair, read again — in that order, before any journey exists.
-        self.assertEqual(["load", "scan", "repair", "load", "invalidate"], trace)
+        self.assertEqual(["load"], trace)
         self.assertEqual(["app/page.jsx"], paths)
-        self.assertTrue(agent.invalidated)
+        self.assertFalse(agent.invalidated)
         self.assertIsNotNone(baseline)
 
     def test_journeys_are_decided_after_the_preparation_step(self):
@@ -175,8 +170,20 @@ class JourneyRouteGroundingTests(unittest.TestCase):
 
     def test_journeys_carry_the_grounding_and_the_contract(self):
         with TemporaryDirectory() as td:
+            routes = dict(self.ROUTES)
+            routes["/api/orders"] = {
+                "kind": "api", "file": "app/api/orders/route.js",
+                "dynamic": False, "methods": ["GET", "POST"]}
+            files = {
+                "app/page.jsx": "export default function Page(){return <main>Home</main>}",
+                "app/admin/dashboard/page.jsx": (
+                    "export default function Page(){ async function save(e){"
+                    "e.preventDefault(); await fetch('/api/orders', {method:'POST'})}"
+                    "return <form onSubmit={save}><input name='item'/><button>Save order</button></form>}"),
+                "app/api/orders/route.js": "export async function POST(){}",
+            }
             agent = agent_for(
-                td, routes=self.ROUTES,
+                td, routes=routes, files=files,
                 plan={"workflows": [{"name": "Booking", "who": "guest",
                                      "steps": ["go to /admin/rooms"]}],
                       "demo_accounts": [{"email": "g@x.io", "password": "pw",
@@ -185,8 +192,13 @@ class JourneyRouteGroundingTests(unittest.TestCase):
 
         first = journeys[0]
         self.assertEqual("Booking", first["title"])
+        self.assertEqual("guest", first["role"])
+        self.assertEqual([], first["served_routes"])
         self.assertEqual(["/admin/rooms"], first["unserved_routes"])
-        self.assertIn("missing_source_files", first["contract"])
+        self.assertEqual("guest", first["contract"]["actor"])
+        self.assertTrue(first["preflight"]["planner_checked"])
+        self.assertTrue(first["preflight"]["code_checked"])
+        self.assertEqual("gap", first["preflight"]["status"])
 
 
 class RouteTableTests(unittest.TestCase):
@@ -272,7 +284,7 @@ class PromptBudgetTests(unittest.TestCase):
         self.assertIn("JOURNEY SOURCE CONTRACT", prompt)
         self.assertNotIn("did not fit the model context window", prompt)
 
-    def test_planned_but_missing_files_are_named_in_the_prompt(self):
+    def test_stale_generated_files_are_named_in_the_prompt(self):
         with TemporaryDirectory() as td:
             agent = self._loaded_agent(td, num_ctx=16_384, qa_ctx=131_072,
                                        qa_model="big-cloud")
@@ -451,7 +463,7 @@ class BorrowedModelContextTests(unittest.TestCase):
     """A call on a borrowed model asks for that model's context window."""
 
     def test_a_qa_model_is_not_sent_the_build_models_window(self):
-        from agents import architect_runtime as ar
+        from agents.builder.orchestration import runtime as ar
 
         arch = object.__new__(ar.ArchitectRuntimeMixin)
         arch.model = "local-build"
@@ -471,7 +483,7 @@ class BorrowedModelContextTests(unittest.TestCase):
             ar.max_context = real
 
     def test_the_stream_options_carry_the_borrowed_window(self):
-        source = (Path("agents/architect_runtime.py")
+        source = (Path("agents/builder/orchestration/runtime.py")
                   .read_text(encoding="utf-8"))
         self.assertIn('"num_ctx": self.ctx_for(model)', source)
         self.assertNotIn('"num_ctx": self.num_ctx', source)

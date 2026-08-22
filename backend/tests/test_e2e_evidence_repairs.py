@@ -210,7 +210,8 @@ class E2EEvidenceRepairTests(unittest.TestCase):
             "  controls: button Create account\n"
             "## Source\nconst name = 'not a form control'"
         )
-        dbg = AgenticE2EDebugger(SimpleNamespace(), arch)
+        agent = SimpleNamespace(_active_journey={})
+        dbg = AgenticE2EDebugger(agent, arch)
         dbg.notebook.goal = "Registration"
         result = dbg._selector_arbitration([failure], packet)
         self.assertEqual(result["verdict"], "TEST_FIX")
@@ -233,11 +234,17 @@ class E2EEvidenceRepairTests(unittest.TestCase):
             "  fields: none\n"
             "  controls: link Back to rooms href=/\n"
         )
-        dbg = AgenticE2EDebugger(SimpleNamespace(), arch)
+        agent = SimpleNamespace(_active_journey={
+            "contract": {"origin": "generated_code",
+                         "forms": [{"actions": ["Pay Now"]}],
+                         "source_files": ["app/checkout/page.jsx"]},
+            "source_files": ["app/checkout/page.jsx"],
+        })
+        dbg = AgenticE2EDebugger(agent, arch)
         dbg.notebook.goal = "Managing Payments"
         result = dbg._selector_arbitration([failure], packet)
         self.assertEqual(result["verdict"], "APP_FIX")
-        self.assertIn("workflow requires", result["root"])
+        self.assertIn("generated form/route/API contract", result["root"])
         self.assertNotIn("rendered DOM contains", result["root"])
 
 
@@ -287,7 +294,13 @@ class E2EFewerRoundRegressionTests(E2EEvidenceRepairTests):
             message="nothing matched testid 'cancel-booking'",
         )
         packet = "## DOM at failure\n  controls: link View booking href=/bookings/1"
-        dbg = AgenticE2EDebugger(SimpleNamespace(), arch)
+        agent = SimpleNamespace(_active_journey={
+            "contract": {"origin": "generated_code",
+                         "forms": [{"actions": ["Cancel booking"]}],
+                         "source_files": ["app/my-bookings/page.jsx"]},
+            "source_files": ["app/my-bookings/page.jsx"],
+        })
+        dbg = AgenticE2EDebugger(agent, arch)
         dbg.notebook.goal = "Cancelling a Booking"
         result = dbg._selector_arbitration([failure], packet)
         self.assertEqual(result["verdict"], "APP_FIX")

@@ -433,15 +433,20 @@ def to_playwright_js(sc: Scenario, *, base_url="http://localhost:5173") -> str:
     """The same scenario as a real `@playwright/test` spec, for the project."""
     body = [
         "// Written by AgentForge from a generated scenario.",
-        "//   npm i -D @playwright/test && npx playwright test",
+        "//   npm i -D @playwright/test@latest && npx playwright test",
         "//",
         "// Navigation waits on 'load', never 'networkidle'. The dev server's",
         "// HMR socket never closes, so a networkidle wait can only time out.",
-        "import { test, expect } from '@playwright/test'",
+        "import { test, expect } from './fixtures.js'",
         "",
         f"const BASE = process.env.BASE_URL || {js_string(base_url)}",
         "",
-        f"test({js_string(sc.title)}, async ({{ page }}) => {{",
+    ]
+    if sc.role:
+        body += [f"test.use({{ agentforgeRole: {js_string(sc.role)} }})", ""]
+    body += [
+        f"test({js_string(sc.title)}, async ({{ page, roleAccount }}) => {{",
+        "  void roleAccount // resolves the exact-role fixture before the journey",
         "  const problems = []",
         "  page.on('pageerror', (e) => problems.push(String(e)))",
         "  page.on('console', (m) => "

@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
-PLANNER_B = Path("agents/architect_next_planner_prompt_b.py")
+PLANNER_B = Path("agents/planner/prompt_b.py")
 
 
 def prompt_for(idea="a unit converter for length and weight"):
@@ -88,7 +88,7 @@ class NoNumberOutranksTheRequestTests(unittest.TestCase):
         self.assertEqual(found, [], f"still forces a size: {found}")
 
     def test_the_seven_route_figure_stays_tied_to_the_request(self):
-        body = Path("agents/architect_next_planner_prompt_a.py").read_text(
+        body = Path("agents/planner/prompt_a.py").read_text(
             encoding="utf-8")
         window = body[body.index("GIVE EACH ROLE ITS OWN SECTION"):
                       body.index("at least seven routes")]

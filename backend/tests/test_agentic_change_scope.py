@@ -2,8 +2,8 @@ import re
 import unittest
 from types import SimpleNamespace
 
-from agents.features import FeaturesAgent
-from agents.bugfixer import BugFixerAgent, RUNTIME_MAX_FILES
+from agents.feature.agent import FeaturesAgent
+from agents.repair.agent import BugFixerAgent, RUNTIME_MAX_FILES
 
 
 class AgenticChangeScopeTests(unittest.TestCase):
@@ -89,7 +89,7 @@ class AgenticChangeScopeTests(unittest.TestCase):
             def sync_dependencies(self):
                 pass
 
-        from agents.features_common import FeatureSpec
+        from agents.feature.common import FeatureSpec
         arch = Arch()
         agent = FeaturesAgent(arch, analyzer=Analyzer(arch))
         spec = FeatureSpec(files=[

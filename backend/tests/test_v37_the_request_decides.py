@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
-PLANNER_A = Path("agents/architect_next_planner_prompt_a.py")
-PLANNER_B = Path("agents/architect_next_planner_prompt_b.py")
+PLANNER_A = Path("agents/planner/prompt_a.py")
+PLANNER_B = Path("agents/planner/prompt_b.py")
 
 
 def prompt_for(idea="a unit converter for length and weight"):
@@ -80,12 +80,12 @@ class TheRequestIsStillTheFloorTests(unittest.TestCase):
 
 class TheUserWordsStayAuthoritativeTests(unittest.TestCase):
     def test_the_planner_message_still_leads_with_the_request(self):
-        body = Path("agents/architect_planning.py").read_text(encoding="utf-8")
+        body = Path("agents/planner/execution.py").read_text(encoding="utf-8")
         self.assertIn("AUTHORITATIVE PRODUCT REQUIREMENTS", body)
         self.assertIn("these and only these define", body)
 
     def test_build_context_is_never_turned_into_features(self):
-        body = Path("agents/architect_planning.py").read_text(encoding="utf-8")
+        body = Path("agents/planner/execution.py").read_text(encoding="utf-8")
         self.assertIn("DO NOT turn them into Core Features", body)
 
     def test_the_action_clauses_of_the_request_are_still_extracted(self):

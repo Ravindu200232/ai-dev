@@ -4,6 +4,17 @@ from .e2e_common import *
 
 
 class E2EExecutionMixin:
+    def _authenticated_401(self, recent: list[str]) -> str:
+        """Return a real in-session 401, excluding intentional logout."""
+        journey = getattr(self, "_active_journey", {}) or {}
+        role = str(journey.get("role") or "").strip().lower()
+        signed_out = set(getattr(self, "_SIGNED_OUT", ()) or ())
+        if (not role or role in signed_out or
+                bool(getattr(self, "_expected_signed_out", False))):
+            return ""
+        return next((row for row in recent
+                     if re.search(r"HTTP\s+401\b", str(row), re.I)), "")
+
     def _business_state_at(self, sc, start_index: int) -> bool:
         """Restore whether a resumed checkpoint is already post-mutation."""
         return any(self._is_business_step(step)
@@ -24,6 +35,7 @@ class E2EExecutionMixin:
 
         self._scenario_changed = False
         self._active_journey = journey or {}
+        self._expected_signed_out = False
         self._begin_mutation_memory(sc)
         self._business_started = self._business_state_at(sc, start_index)
         self.warm(sc)
@@ -35,7 +47,15 @@ class E2EExecutionMixin:
         step_trace = []
         resume_auth_error = ""
         current_step_index = -1
+        event_meta = {
+            "journey_id": str((journey or {}).get("_e2e_id") or
+                              (journey or {}).get("id") or
+                              (journey or {}).get("title") or "e2e-journey"),
+            "journey_index": int((journey or {}).get("_e2e_index") or 1),
+            "journey_count": int((journey or {}).get("_e2e_total") or 1),
+        }
         self._fire("on_e2e_event", {
+            **event_meta,
             "state": "journey_start",
             "title": str((journey or {}).get("title") or "End-to-end journey"),
             "role": str((journey or {}).get("role") or ""),
@@ -225,6 +245,7 @@ class E2EExecutionMixin:
                     self._intended_route = route
                     label = st.describe()
                     self._fire("on_e2e_event", {
+                        **event_meta,
                         "state": "step", "index": idx + 1, "total": len(sc.steps),
                         "label": label, "verb": str(getattr(st, "verb", "") or ""),
                         "value": str(getattr(st, "value", "") or ""),
@@ -263,6 +284,7 @@ class E2EExecutionMixin:
                                        "before": route_before, "after": route,
                                        "ok": not bool(err)})
                     self._fire("on_e2e_event", {
+                        **event_meta,
                         "state": "step_done" if not err else "step_failed",
                         "index": idx + 1, "total": len(sc.steps),
                         "label": label, "route": route, "ok": not bool(err),
@@ -271,13 +293,12 @@ class E2EExecutionMixin:
                         "role": str((journey or {}).get("role") or ""),
                         "frame": live_frame(page),
                     })
-                    if (not err and (getattr(self, "_active_journey", {}) or {}).get("role")):
-                        recent_401 = [x for x in net[net_before:]
-                                      if re.search(r"HTTP\s+401\b", x)]
-                        if recent_401:
+                    if not err:
+                        auth_401 = self._authenticated_401(net[net_before:])
+                        if auth_401:
                             err = (KIND_BEHAVIOR,
                                    "authenticated journey received HTTP 401: "
-                                   + recent_401[0][:260])
+                                   + auth_401[:260])
                     if err:
                         kind, msg = err
                         self._test("fail", label, msg)
@@ -351,6 +372,7 @@ class E2EExecutionMixin:
                         "journey": dict(journey or {}),
                     }
                     self._fire("on_e2e_event", {
+                        **event_meta,
                         "state": "journey_done", "route": route,
                         "index": len(sc.steps), "total": len(sc.steps),
                         "title": str((journey or {}).get("title") or "End-to-end journey"),

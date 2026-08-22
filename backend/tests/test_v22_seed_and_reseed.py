@@ -125,7 +125,7 @@ class ReseedRestartTests(unittest.TestCase):
 class SeedGuardContractTests(unittest.TestCase):
     """The builder is told to write a seed that survives a wiped database."""
 
-    PROMPT = Path("agents/architect_next_builder_prompt_b.py")
+    PROMPT = Path("agents/builder/prompts/part_b.py")
 
     def test_the_template_rechecks_instead_of_caching_forever(self):
         text = self.PROMPT.read_text(encoding="utf-8")

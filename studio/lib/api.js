@@ -39,7 +39,7 @@ export const api = {
   logoPrompt: (prompt, model, opts) => localJob('/logo-prompt', { prompt, model }, opts),
   image: (body, opts) => localJob('/image', body, opts),
 
-  // Five designs of one page.
+  // Several whole-app visual directions, generated in parallel.
   themes: (body, opts) => localJob('/themes', body, opts),
   tune: (body, opts) => localJob('/tune', body, opts),
 
@@ -189,8 +189,6 @@ async function localJob(path, body, { onWait, signal } = {}) {
 }
 
 export const HTTP_FALLBACK = {
-  build: '/build',
-  update: '/update',
   agent_build: '/agent-build',
   agent_update: '/agent-update',
   agent_resume: '/resume',

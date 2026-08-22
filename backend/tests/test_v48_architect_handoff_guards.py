@@ -4,14 +4,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
 
 class TokenAccountingTests(unittest.TestCase):
     def test_new_agent_starts_with_token_counters(self):
         with (tempfile.TemporaryDirectory() as tmp,
-              patch("agents.architect_runtime.max_context", return_value=4096),
-              patch("agents.architect_runtime.is_cloud_model", return_value=False)):
+             patch("agents.builder.orchestration.runtime.max_context", return_value=4096),
+             patch("agents.builder.orchestration.runtime.is_cloud_model", return_value=False)):
             agent = ArchitectAgent(object(), "test-model", Path(tmp))
 
         self.assertEqual(agent.tokens_in, 0)
@@ -76,7 +76,7 @@ class PreHandoffRepairTests(unittest.TestCase):
         broken = [{"path": "components/A.jsx", "line": 3,
                    "message": 'Expected ")" but found "{"'}]
 
-        with patch("agents.exports.check_syntax", return_value=(broken, "")):
+        with patch("agents.gates.exports.check_syntax", return_value=(broken, "")):
             self.assertFalse(agent._verify_output())
 
         messages = " ".join(str(call) for call in agent._log.call_args_list)

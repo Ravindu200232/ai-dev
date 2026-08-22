@@ -6,10 +6,10 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agents.analyzer_code import AnalyzerCodeMixin
-from agents.analyzer_common import AnalyzerReport, Finding
-from agents.analyzer_repair_apply import AnalyzerRepairApplyMixin
-from agents.commands import validate
+from agents.gates.analyzer_code import AnalyzerCodeMixin
+from agents.gates.analyzer_common import AnalyzerReport, Finding
+from agents.gates.analyzer_repair_apply import AnalyzerRepairApplyMixin
+from agents.core.commands import validate
 from qa_agent.runner import VitestRunner, TARGET_COMMAND_CHARS
 
 

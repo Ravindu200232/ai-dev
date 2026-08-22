@@ -2,7 +2,7 @@
 import unittest
 from pathlib import Path
 
-from agents.ollama_client import (RETRY_ATTEMPTS, is_transient, retry_delay,
+from agents.core.ollama_client import (RETRY_ATTEMPTS, is_transient, retry_delay,
                                   with_retry)
 
 BUSY = ("Ollama 503 @ http://localhost:11434: {\"error\":\"model "
@@ -38,7 +38,7 @@ class RetryLoopTests(unittest.TestCase):
                 raise RuntimeError(BUSY)
             return "written"
 
-        import agents.ollama_client as oc
+        import agents.core.ollama_client as oc
         original = oc.time.sleep
         oc.time.sleep = lambda _s: None
         try:
@@ -65,7 +65,7 @@ class RetryLoopTests(unittest.TestCase):
             calls["n"] += 1
             raise RuntimeError(BUSY)
 
-        import agents.ollama_client as oc
+        import agents.core.ollama_client as oc
         original = oc.time.sleep
         oc.time.sleep = lambda _s: None
         try:

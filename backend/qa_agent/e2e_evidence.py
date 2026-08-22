@@ -313,13 +313,37 @@ class E2EEvidenceMixin:
         return False
 
     @staticmethod
-    def _is_auth_action(st) -> bool:
+    def _auth_action_kind(st, loc=None) -> str:
+        """Return login/logout from the rendered control, then its selector."""
+        visible = ""
+        if loc is not None:
+            try:
+                visible = str(loc.evaluate(
+                    """e => [e.getAttribute('aria-label'), e.innerText, e.value,
+                              e.title, e.getAttribute('data-action'),
+                              e.getAttribute('href')]
+                             .filter(Boolean).join(' ')""") or "")
+            except Exception:
+                visible = ""
+        sel = getattr(st, "selector", None)
+        authored = " ".join([str(getattr(sel, "pattern", "") or ""),
+                              str(getattr(sel, "role", "") or "")])
+
+        def kind(text):
+            compact = re.sub(r"[^a-z0-9]+", "", str(text or "").lower())
+            if re.search(r"(?:signout|logout|logoff)", compact):
+                return "logout"
+            if re.search(r"(?:signin|login|authenticate)", compact):
+                return "login"
+            return ""
+
+        return kind(visible) or kind(authored)
+
+    @classmethod
+    def _is_auth_action(cls, st) -> bool:
         if getattr(st, "verb", "") != "CLICK":
             return False
-        sel = getattr(st, "selector", None)
-        text = " ".join([str(getattr(sel, "pattern", "") or ""),
-                         str(getattr(sel, "role", "") or "")]).lower()
-        return bool(re.search(r"sign.?in|log.?in|login|authenticate", text))
+        return cls._auth_action_kind(st) == "login"
 
     def role_separation(self, page) -> list:
         """Every demo role, against every other role's pages."""

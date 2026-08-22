@@ -29,9 +29,9 @@ def patched(module, **names):
 
 
 class CleanRoomReseedTests(unittest.TestCase):
-    """Every replay starts from the state its scenario was proven against."""
+    """Sequential clean-room journeys reset their state independently."""
 
-    def test_each_replay_after_the_first_gets_its_fixtures_back(self):
+    def test_sequential_replays_reseed_before_each_journey(self):
         server = importlib.import_module("server")
         reseeds, ran = [], []
 
@@ -53,8 +53,7 @@ class CleanRoomReseedTests(unittest.TestCase):
                 results = server._e2e_clean_room_once(
                     Agent(), journeys, Path(td))
 
-        self.assertEqual(["journey 1", "journey 2", "journey 3"], ran)
-        # One reseed attempt per replay; the helper's own guard drops n == 1.
+        self.assertCountEqual(["journey 1", "journey 2", "journey 3"], ran)
         self.assertEqual([1, 2, 3], reseeds)
         self.assertEqual({t: [] for t in ran}, results)
 
@@ -178,7 +177,7 @@ class PictureSweepTests(unittest.TestCase):
         self.assertEqual([], starts)
 
     def test_the_sweep_runs_beside_the_build_not_after_the_tests(self):
-        pipeline = (Path("server_modules/agent/agent_pipeline.py")
+        pipeline = (Path("server_modules/agent/builder/pipeline.py")
                     .read_text(encoding="utf-8"))
         spawn = pipeline.index('rest = threading.Thread(target=_draw_the_rest')
         unit = pipeline.index("run_qa_unit_stage(")

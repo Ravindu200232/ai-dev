@@ -2,7 +2,7 @@
 import unittest
 from pathlib import Path
 
-STAGE = Path("server_modules/agent/design_stage.py")
+STAGE = Path("server_modules/agent/design/stage.py")
 HANDLER = Path("server_modules/ui/http_handler.py")
 BOOTSTRAP = Path("server_modules/core/bootstrap.py")
 
@@ -17,7 +17,7 @@ class TheBusyDaemonIsWaitedOutTests(unittest.TestCase):
 
     def test_the_helpers_reach_the_shared_runtime(self):
         boot = BOOTSTRAP.read_text(encoding="utf-8")
-        self.assertIn("from agents.ollama_client import is_transient, with_retry",
+        self.assertIn("from agents.core.ollama_client import is_transient, with_retry",
                       boot)
 
     def test_a_dropped_design_records_why_it_was_dropped(self):

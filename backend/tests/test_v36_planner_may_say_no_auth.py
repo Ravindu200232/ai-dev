@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
-PROMPT_A = Path("agents/architect_next_planner_prompt_a.py")
-PROMPT_B = Path("agents/architect_next_planner_prompt_b.py")
+PROMPT_A = Path("agents/planner/prompt_a.py")
+PROMPT_B = Path("agents/planner/prompt_b.py")
 
 
 def architect(idea="a unit converter for length and weight", plan=None):

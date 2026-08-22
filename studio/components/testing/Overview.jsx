@@ -82,8 +82,12 @@ export default function Overview({ qa, live }) {
         <Card title="Browser flows" hint="real Playwright journeys through the app">
           {r?.e2e ? (
             <>
-              <div className={cn('text-[26px] font-semibold', r.e2e.failed ? 'text-bad' : 'text-ok')}>
-                {r.e2e.failed ? `${r.e2e.failed} failing` : 'Passing'}
+              <div className={cn('text-[26px] font-semibold',
+                r.e2e.failed ? 'text-bad'
+                  : r.e2e.status === 'pass_with_warnings' ? 'text-amber-600 dark:text-amber-300'
+                    : 'text-ok')}>
+                {r.e2e.failed ? `${r.e2e.failed} failing`
+                  : r.e2e.status === 'pass_with_warnings' ? 'Passing with warnings' : 'Passing'}
               </div>
               <p className="mt-2 text-[11px] text-muted">{(r.e2e.flows || []).length} journey(s) recorded · {r.e2e.fixed || 0} repair round(s)</p>
             </>

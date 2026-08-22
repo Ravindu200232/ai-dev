@@ -4,6 +4,7 @@ from __future__ import annotations
 from .builder_access import _flow_section
 from .builder_auth import auth_prompt_lines
 from .builder_features import feature_prompt_lines
+from .builder_testing import testing_prompt_lines
 from .builder_constants import MAX_CHARS, MAX_WORDS
 from .builder_utils import _clean, _page_file
 
@@ -20,7 +21,7 @@ def render_prompt(handoff: dict, plan: dict, *, auth: bool = False,
                      if not r.get("source_id") and r.get("kind") != "page"]
 
     lines: list[str] = [
-        "AGENTFORGE BUILD HANDOFF v4 — AUTHORITATIVE PRODUCT CONTRACT",
+        "AGENTFORGE BUILD HANDOFF v5 — AUTHORITATIVE PRODUCT CONTRACT",
         "",
         (f"APP NAME: {name}" if name else f"APP TYPE: {kind}"),
         (f"APP TYPE: {kind}" if name else ""),
@@ -36,6 +37,7 @@ def render_prompt(handoff: dict, plan: dict, *, auth: bool = False,
         "- Every user-visible action has observable proof. Browser-visible capabilities are `e2e=true` and are covered by a walkable journey. If the SRS has no journey for one, generate a minimal meaningful E2E journey instead of skipping E2E.",
         "- Every route named below is served by a real App Router page/handler and every navigation target exists. Dynamic detail links are tested with real seeded record ids, not only with the `[id]` file existing.",
         "- Every mutation persists to MongoDB and the next visible state proves it happened. A successful HTTP response with unchanged UI/data is not complete.",
+        "- Every non-navigation user operation has an exact success toast after confirmed completion and an exact error toast on failure, implemented through one accessible shared toast host. The toast complements durable visible proof; it never replaces it. Pure navigation, tabs, filters and disclosure toggles do not create toast noise.",
         "- Access control is enforced server-side before protected data is read or written. Hiding a nav item is not authorization.",
         "- Mongo relation/ObjectId fields are not plain browser strings: validate URL/form/session ids and convert to ObjectId before Mongo queries; serialize ObjectIds back to strings at client boundaries.",
         "- Do not change an approved data type, route, role boundary or workflow merely to make a generated test pass. Repair the test when its assumption is wrong; repair the app when behavior/contract evidence is wrong.",
@@ -79,6 +81,7 @@ def render_prompt(handoff: dict, plan: dict, *, auth: bool = False,
     lines += _flow_section(plan, pages, doc)
     lines += auth_prompt_lines(handoff.get("auth_contract") or {"enabled": bool(auth)})
     lines += feature_prompt_lines(handoff.get("feature_contracts") or [])
+    lines += testing_prompt_lines(handoff.get("testing_contract") or {})
 
     models = handoff.get("models") or []
     if models:
@@ -171,7 +174,7 @@ def render_prompt(handoff: dict, plan: dict, *, auth: bool = False,
 
     notifications = handoff.get("notification_rules") or []
     if notifications:
-        lines.append("NOTIFICATIONS:")
+        lines.append("PRODUCT NOTIFICATIONS (email/SMS/inbox rules; distinct from required transient action toasts):")
         for item in notifications:
             event = _clean(item.get("event") or "event")
             rec = ", ".join(str(x) for x in (item.get("recipients") or []))
@@ -226,7 +229,7 @@ def render_prompt(handoff: dict, plan: dict, *, auth: bool = False,
 
     lines += [
         "FINAL BUILDER CHECK:",
-        "Before generation starts, prove that every FR/source requirement maps to a capability, exact files and (when browser-visible) a workflow. Before calling the app clean, run build + unit + real browser E2E against those journeys. If a required capability has no proof, the app is incomplete even when `npm run build` is green.",
+        "Before generation starts, consume `testing_contract`: map every FR/source requirement to a capability and exact files, implement every unit target, and prepare every E2E pre-journey fixture before QA. Then run build + unit + real browser E2E against those journeys. If a required capability, fixture or durable proof is missing, the app is incomplete even when `npm run build` is green.",
     ]
 
     compact: list[str] = []

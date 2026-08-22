@@ -42,7 +42,7 @@ export default function ModelPicker({
           <span className="min-w-0">
             <span className={cn('block truncate font-mono text-[11px]',
                                 value ? 'text-ink' : 'text-muted2')}>
-              {value || placeholder}
+              {current?.label || value || placeholder}
             </span>
             {current?.ctx ? (
               <span className="mt-px block text-[10px] text-muted2">

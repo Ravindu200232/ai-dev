@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from agents.features import FeaturesAgent
-from agents.features_common import FeatureSpec
+from agents.feature.agent import FeaturesAgent
+from agents.feature.common import FeatureSpec
 
 
 class RepairEvidenceAnchorTests(unittest.TestCase):

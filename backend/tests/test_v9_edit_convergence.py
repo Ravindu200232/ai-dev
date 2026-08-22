@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import server
-from agents.features import FeaturesAgent
+from agents.feature.agent import FeaturesAgent
 
 
 class RouteGroundingTests(unittest.TestCase):

@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.architect_next_scaffold import (ArchitectNextScaffoldMixin,
+from agents.builder.scaffolding.next import (ArchitectNextScaffoldMixin,
                                             PLACEHOLDER_PNG_B64)
-from agents.seed_keys import family_key, seed_arrays, slugify, template_keys
+from agents.data.seed_keys import family_key, seed_arrays, slugify, template_keys
 from qa_agent.debugger_rules import diagnose_broken_images
 from qa_agent.e2e_common import CONCEPT_STOPWORDS, singular
 from qa_agent.e2e_steps import E2EStepsMixin

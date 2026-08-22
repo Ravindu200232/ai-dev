@@ -211,8 +211,11 @@ async def generate_srs_node(state: AgentState) -> AgentState:
         srs["srs_document"]["approved_plan_markdown"] = str(state.get("plan_markdown") or "")
         attach_handoff(srs, plan, pack_profile, auth=auth)
         handoff = srs["srs_document"]["builder_handoff"]
+        testing = handoff.get("testing_contract") or {}
         await bus.emit(pid, "SrsJsonGeneratorAgent",
                        f"Builder handoff ready: {len(handoff['requirements'])} requirements, "
+                       f"{len(testing.get('unit') or [])} unit contracts, "
+                       f"{len(testing.get('e2e') or [])} E2E journeys, "
                        f"{len(handoff['prompt'].split())} words.",
                        level="success", progress=65)
 

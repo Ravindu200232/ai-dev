@@ -2,7 +2,7 @@
 import unittest
 from pathlib import Path
 
-from agents.architect_next_rules import (field_label, name_unnamed_fields,
+from agents.builder.workflow.rules import (field_label, name_unnamed_fields,
                                          unnamed_fields)
 
 # The admin price cell exactly as the build wrote it.
@@ -92,14 +92,14 @@ class NamingPassTests(unittest.TestCase):
 
 class WiredIntoEveryBuildTests(unittest.TestCase):
     def test_it_runs_with_the_other_mechanical_repairs(self):
-        text = Path("agents/architect_boundaries.py").read_text(encoding="utf-8")
+        text = Path("agents/builder/workflow/boundaries.py").read_text(encoding="utf-8")
         chain = text[text.index("def apply_next_fixes"):]
         self.assertIn("self.name_form_fields()", chain)
         self.assertLess(chain.index("self.name_form_fields()"),
                         chain.index("self.enforce_dynamic()"))
 
     def test_the_pass_exists_on_the_architect(self):
-        from agents.architect import ArchitectAgent
+        from agents.builder.orchestration.agent import ArchitectAgent
         self.assertTrue(callable(getattr(ArchitectAgent, "name_form_fields", None)))
 
 

@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.agent_memory import KINDS, AgentMemory, memory_for
-from agents.workspace import TOOL_HELP, WorkspaceTools
+from agents.core.agent_memory import KINDS, AgentMemory, memory_for
+from agents.core.workspace import TOOL_HELP, WorkspaceTools
 
 
 class Arch:

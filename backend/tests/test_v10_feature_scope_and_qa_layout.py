@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import server
-from agents.security import SecurityAgent as CompatSecurityAgent
+from agents.gates.security import SecurityAgent as CompatSecurityAgent
 from qa_agent.security import SecurityAgent
 from qa_agent.api_verification import reprobe_affected_gets
 

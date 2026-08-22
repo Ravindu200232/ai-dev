@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.architect import ArchitectAgent
+from agents.builder.orchestration.agent import ArchitectAgent
 
 PROJECTS = Path("srs-agent/srs_agent/app/routers/projects.py")
 SCHEMA = Path("srs-agent/srs_agent/app/schemas/project.py")

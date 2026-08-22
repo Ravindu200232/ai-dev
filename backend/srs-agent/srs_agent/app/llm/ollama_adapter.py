@@ -59,6 +59,8 @@ class LLMClient:
             "model": model,
             "messages": messages,
             "stream": False,
+            # SRS never inherits the Studio Builder thinking switch.
+            "think": False,
             "options": {
 
                 "num_ctx": bridge.num_ctx(model),

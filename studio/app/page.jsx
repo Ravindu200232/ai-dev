@@ -124,17 +124,33 @@ export default function Studio() {
       setCat(c)
 
       const cur = useStore.getState().models
-      if (cur.agent) return
-      // No model chosen in this browser yet.
+      if (cur.planner && cur.design && cur.builder) return
+      // Fill only roles this browser has not chosen. Server-side role settings
+      // fall back to the former single Agent setting during migration.
       const known = new Set([...c.cloud, ...(c.local || [])].map(m => m.id))
       api.settings().then(s => {
-        const saved = String(s?.agent_model || '').trim()
-        const pick = (saved && known.has(saved)) ? saved : (c.cloud[0]?.id || '')
+        const fallback = c.cloud[0]?.id || ''
+        const legacy = String(s?.agent_model || '').trim()
+        const pick = value => {
+          const saved = String(value || legacy).trim()
+          return (saved && known.has(saved)) ? saved : fallback
+        }
         const now = useStore.getState().models
-        if (!now.agent && pick) useStore.setState({ models: { ...now, agent: pick } })
+        useStore.setState({ models: {
+          ...now,
+          planner: now.planner || pick(s?.planner_model),
+          design: now.design || pick(s?.design_model),
+          builder: now.builder || pick(s?.builder_model),
+        } })
       }).catch(() => {
         const now = useStore.getState().models
-        if (!now.agent && c.cloud[0]) useStore.setState({ models: { ...now, agent: c.cloud[0].id } })
+        if (!c.cloud[0]) return
+        useStore.setState({ models: {
+          ...now,
+          planner: now.planner || c.cloud[0].id,
+          design: now.design || c.cloud[0].id,
+          builder: now.builder || c.cloud[0].id,
+        } })
       })
     }).catch(() => { })
   }, [])
@@ -184,7 +200,11 @@ export default function Studio() {
     st.addLog('INFO', `Resuming ${name} — picking up where it stopped`)
     setScreen('workspace')
     send({ type: 'agent_resume', project: name,
-           model: st.models.agent, think: st.think,
+           model: st.models.builder || st.models.agent,
+           builder_model: st.models.builder || st.models.agent,
+           planner_model: st.models.planner || st.models.agent,
+           design_model: st.models.design || st.models.agent,
+           think: st.think,
            qa_model: st.models.qa })
   }
 
@@ -266,7 +286,8 @@ export default function Studio() {
 
     const payload = {
       type: 'agent_update', project, route: st.previewRoute || '',
-      model: st.models.agent || st.models.build, think: st.think,
+      model: st.models.builder || st.models.agent,
+      think: st.think,
       qa_model: st.models.qa || '', console: consoleReport(),
     }
 

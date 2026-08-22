@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from agents.source_guidance import feature_image_prompt, feature_image_requested
+from agents.core.source_guidance import feature_image_prompt, feature_image_requested
 
 
 class FeatureImageGuidanceTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class FeatureImageGuidanceTests(unittest.TestCase):
         self.assertFalse(feature_image_requested("remove the hero image"))
 
     def test_builder_gets_human_comment_policy_without_posthoc_rewriter(self):
-        text = Path("agents/architect_runtime.py").read_text(encoding="utf-8")
+        text = Path("agents/builder/orchestration/runtime.py").read_text(encoding="utf-8")
         self.assertIn("HUMAN_COMMENT_POLICY", text)
         self.assertFalse(Path("agents/comment_style.py").exists())
 
@@ -23,8 +23,8 @@ class FeatureImageGuidanceTests(unittest.TestCase):
 class FeatureImageAuditTests(unittest.TestCase):
     def test_explicit_image_without_generated_ref_is_a_semantic_gap(self):
         from types import SimpleNamespace
-        from agents.features import FeaturesAgent
-        from agents.features_common import FeatureSpec
+        from agents.feature.agent import FeaturesAgent
+        from agents.feature.common import FeatureSpec
 
         class Arch:
             def __init__(self):

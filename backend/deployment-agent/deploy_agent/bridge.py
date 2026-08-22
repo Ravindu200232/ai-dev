@@ -39,7 +39,7 @@ DEFAULT_DEPLOY_MODEL = "gemma4:31b-cloud"
 def agentforge_settings() -> dict:
     """Read ~/.agentforge/settings.json."""
     try:
-        from agents.ollama_client import load_settings
+        from agents.core.ollama_client import load_settings
         return load_settings()
     except Exception:
         try:
@@ -62,7 +62,7 @@ def deploy_model() -> str:
 def route(model: str) -> tuple[str, dict]:
     """(base_url, headers) for this model, using AgentForge's routing."""
     try:
-        from agents.ollama_client import _default_client
+        from agents.core.ollama_client import _default_client
         return _default_client().route(model)
     except Exception:
         return "http://localhost:11434", {"Content-Type": "application/json"}

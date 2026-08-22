@@ -7,8 +7,8 @@ import threading
 import time
 from pathlib import Path
 
-from agents.commands import CommandRunner
-from agents.ollama_client import is_cloud_model
+from agents.core.commands import CommandRunner
+from agents.core.ollama_client import is_cloud_model
 
 from .spec import MAX_PER_PHASE, QAReport, select_targets
 
@@ -160,6 +160,18 @@ def add_helper_imports(body: str) -> str:
     return block + "\n" + body
 
 
+def normalize_objectid_helpers(body: str) -> str:
+    """Use the harness' stable ObjectId factory in generated test code.
+
+    Models regularly write `new ObjectId(value)` without importing ObjectId,
+    or add a hand-written constructor which produces a different id. `oid`
+    already accepts an optional hex string and is the supported contract.
+    """
+    if not body:
+        return body
+    return re.sub(r"\bnew\s+ObjectId\s*\(", "oid(", body)
+
+
 class QASessionBase:
     """Owns the timing, the queue and the manifest. Holds no model logic."""
 
@@ -169,12 +181,19 @@ class QASessionBase:
         return (getattr(session, "model", "") or ""
                 or getattr(arch, "model", "") or "")
 
+    @staticmethod
+    def reasoning_for(session) -> bool:
+        """The shared UI Think switch applies to QA when its session exists."""
+        return bool(getattr(session, "reasoning", False))
+
     def __init__(self, project_dir, *, callbacks: dict = None,
-                 model: str = "", enabled: bool = True):
+                 model: str = "", enabled: bool = True,
+                 reasoning: bool = False):
         self.project_dir = Path(project_dir)
         self.cb = callbacks or {}
         self.model = model
         self.enabled = enabled
+        self.reasoning = bool(reasoning)
         self.arch = None
         self.author = None
 

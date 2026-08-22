@@ -5,7 +5,7 @@ import logging
 import re
 from pathlib import Path
 
-from agents.analyzer import Finding
+from agents.gates.agent import Finding
 
 log = logging.getLogger("security")
 
