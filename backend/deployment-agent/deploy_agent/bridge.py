@@ -1,7 +1,12 @@
-"""Every seam between the deployment agent and AgentForge lives here."""
+"""Every seam between the deployment agent and AgentForge lives here.
+
+The deployment agent runs as a subprocess of the Go backend, so these seams read
+the same settings file the backend writes, plus the environment the parent sets.
+"""
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,8 +20,7 @@ for _root in (AGENT_ROOT, PKG_ROOT, LOCODE_ROOT):
         sys.path.insert(0, str(_root))
 
 def _prod_dir(root):
-    """The same rule server.py uses: AGENTFORGE_PROJECTS if set."""
-    import os
+    """The same rule the backend uses: AGENTFORGE_PROJECTS if set."""
     raw = os.environ.get("AGENTFORGE_PROJECTS", "").strip()
     if not raw:
         return root / "production-ready"
@@ -35,18 +39,17 @@ DEPLOY_PORT = 7834
 
 DEFAULT_DEPLOY_MODEL = "gemma4:31b-cloud"
 
+SETTINGS_PATH = Path.home() / ".agentforge" / "settings.json"
+DEFAULT_LOCAL_HOST = "http://localhost:11434"
+CLOUD_HOST = "https://ollama.com"
+
 
 def agentforge_settings() -> dict:
-    """Read ~/.agentforge/settings.json."""
+    """Read ~/.agentforge/settings.json — the file the backend owns."""
     try:
-        from agents.core.ollama_client import load_settings
-        return load_settings()
+        return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
     except Exception:
-        try:
-            path = Path.home() / ".agentforge" / "settings.json"
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+        return {}
 
 
 def deploy_model() -> str:
@@ -59,13 +62,29 @@ def deploy_model() -> str:
     return DEFAULT_DEPLOY_MODEL
 
 
+def _is_cloud(model: str) -> bool:
+    m = (model or "").strip().lower()
+    return m.endswith("-cloud") or m.endswith(":cloud")
+
+
+def _local_host() -> str:
+    host = (os.environ.get("OLLAMA_HOST", "").strip()
+            or str(agentforge_settings().get("ollama_host", "")).strip()
+            or DEFAULT_LOCAL_HOST)
+    if not host.startswith("http"):
+        host = f"http://{host}"
+    return host.rstrip("/")
+
+
 def route(model: str) -> tuple[str, dict]:
-    """(base_url, headers) for this model, using AgentForge's routing."""
-    try:
-        from agents.core.ollama_client import _default_client
-        return _default_client().route(model)
-    except Exception:
-        return "http://localhost:11434", {"Content-Type": "application/json"}
+    """(base_url, headers) for this model."""
+    headers = {"Content-Type": "application/json"}
+    key = (os.environ.get("OLLAMA_API_KEY", "").strip()
+           or str(agentforge_settings().get("ollama_api_key", "")).strip())
+    if _is_cloud(model) and key:
+        headers["Authorization"] = f"Bearer {key}"
+        return CLOUD_HOST, headers
+    return _local_host(), headers
 
 
 def ollama_client(model: str = ""):
