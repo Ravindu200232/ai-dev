@@ -3,6 +3,8 @@ module agentforge/agent
 go 1.24.7
 
 require (
+	github.com/dslipak/pdf v0.0.2
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/paulnegz/langgraphgo v1.0.0
 	github.com/tmc/langchaingo v0.1.14
@@ -11,7 +13,6 @@ require (
 
 require (
 	github.com/dlclark/regexp2 v1.10.0 // indirect
-	github.com/go-pdf/fpdf v0.9.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect

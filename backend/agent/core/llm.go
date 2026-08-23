@@ -214,6 +214,23 @@ func (l *LLM) Text(ctx context.Context, role, system, user string) (string, erro
 	return l.generate(ctx, role, system, user, false, nil)
 }
 
+// Vision shows the model an image and asks about it. Ollama only answers this
+// with a vision-capable model; anything else replies as if the image were not
+// there, which the caller has to be ready for.
+func (l *LLM) Vision(ctx context.Context, role, system, user, mime string, image []byte) (string, error) {
+	if mime == "" {
+		mime = "image/png"
+	}
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, system),
+		{Role: llms.ChatMessageTypeHuman, Parts: []llms.ContentPart{
+			llms.BinaryPart(mime, image),
+			llms.TextPart(user),
+		}},
+	}
+	return l.chat(ctx, role, messages, false, nil)
+}
+
 // Stream asks for prose and hands each token to onToken as it arrives.
 func (l *LLM) Stream(ctx context.Context, role, system, user string, onToken func(string)) (string, error) {
 	return l.generate(ctx, role, system, user, false, onToken)
