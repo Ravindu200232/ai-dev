@@ -310,6 +310,9 @@ func (l *LLM) chat(ctx context.Context, role string, messages []llms.MessageCont
 		if !IsTransient(err) || attempt == llmAttempts {
 			break
 		}
+		if IsUnreachable(err) && attempt >= unreachableAttempts {
+			break
+		}
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
@@ -327,6 +330,31 @@ var transientText = []string{
 	"overload", "temporarily", "try again", "too many requests", "unavailable",
 	"connection reset", "connection aborted", "broken pipe", "timed out",
 	"timeout", "eof", "no such host", "connection refused",
+}
+
+// unreachableText is a daemon that is not listening at all, as opposed to one
+// that is listening and busy.
+var unreachableText = []string{"connection refused", "no such host",
+	"network is unreachable", "actively refused"}
+
+// unreachableAttempts is how many times a request to a daemon that is not
+// listening is worth making. A daemon that is down will not come up during a
+// backoff, and four attempts on a rising delay makes an offline machine wait
+// half a minute to be told what it could have been told in two seconds.
+const unreachableAttempts = 2
+
+// IsUnreachable reports whether nothing answered at all.
+func IsUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, frag := range unreachableText {
+		if strings.Contains(msg, frag) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsTransient reports whether a failure is worth retrying.

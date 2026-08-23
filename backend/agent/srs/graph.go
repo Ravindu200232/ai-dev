@@ -58,8 +58,10 @@ type Service struct {
 	Paths   core.Paths
 	Storage string // where SRS artifacts are written, per project
 
-	mu       sync.Mutex
-	analysis *graph.StateRunnable
+	mu            sync.Mutex
+	analysis      *graph.StateRunnable
+	generation    *graph.StateRunnable
+	customization *graph.StateRunnable
 }
 
 // NewService wires the SRS service to the store and the model client.
@@ -161,10 +163,85 @@ func routeAfterIntake(_ context.Context, state any) string {
 	return "classify"
 }
 
-// RunGeneration and RunCustomization are assembled once their nodes land:
-// generation is audit → english_plan → generate → render_diagrams, and
-// customization is customize → render_diagrams. auditNode and englishPlanNode
-// are written; the rest are the composer, the diagram renderer and the editor.
+// RunGeneration turns the approved plan into the specification and its
+// diagrams.
+func (s *Service) RunGeneration(ctx context.Context, state *State) (*State, error) {
+	s.mu.Lock()
+	if s.generation == nil {
+		g := graph.NewStateGraph()
+		g.AddNode("audit", s.auditNode)
+		g.AddNode("english_plan", s.englishPlanNode)
+		g.AddNode("generate", s.generateNode)
+		g.AddNode("render_diagrams", s.renderDiagramsNode)
+		g.SetEntryPoint("audit")
+		g.AddEdge("audit", "english_plan")
+		g.AddEdge("english_plan", "generate")
+		g.AddEdge("generate", "render_diagrams")
+		g.AddEdge("render_diagrams", graph.END)
+		compiled, err := g.Compile()
+		if err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+		s.generation = compiled
+	}
+	runnable := s.generation
+	s.mu.Unlock()
+	return invoke(ctx, runnable, state)
+}
+
+// RunCustomization applies one edit and redraws what the edit changed.
+func (s *Service) RunCustomization(ctx context.Context, state *State) (*State, error) {
+	s.mu.Lock()
+	if s.customization == nil {
+		g := graph.NewStateGraph()
+		g.AddNode("customize", s.customizeNode)
+		g.AddNode("render_diagrams", s.renderDiagramsNode)
+		g.SetEntryPoint("customize")
+		g.AddEdge("customize", "render_diagrams")
+		g.AddEdge("render_diagrams", graph.END)
+		compiled, err := g.Compile()
+		if err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+		s.customization = compiled
+	}
+	runnable := s.customization
+	s.mu.Unlock()
+	return invoke(ctx, runnable, state)
+}
+
+// renderDiagramsNode draws the specification. A diagram that cannot be drawn
+// is reported and the rest are kept: eleven diagrams must not depend on all
+// eleven working.
+func (s *Service) renderDiagramsNode(ctx context.Context, state any) (any, error) {
+	st := state.(*State)
+	if err := ctx.Err(); err != nil {
+		return st, err
+	}
+	if st.Document == nil {
+		return st, nil
+	}
+	report := func(message string) {
+		s.warn(ctx, st.ProjectID, "DiagramAgent", message, 80)
+	}
+	diagrams := BuildDiagrams(st.Document, report)
+	diagrams = s.RenderDiagrams(ctx, st.ProjectID, st.Document, diagrams, report)
+
+	drawn := 0
+	for _, d := range diagrams {
+		if d.SvgPath != "" {
+			drawn++
+		}
+	}
+	st.Diagrams = diagrams
+	st.Document.Diagrams = diagrams
+	s.emit(ctx, st.ProjectID, "DiagramAgent",
+		fmt.Sprintf("Diagrams ready: %d of %d drawn.", drawn, len(diagrams)),
+		"success", 85, nil)
+	return st, nil
+}
 
 // invoke runs a compiled graph and unwraps the runner's error wrapper so the
 // Studio sees the real message.

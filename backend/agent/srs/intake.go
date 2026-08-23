@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Intake is the gate. Its job is to notice when what arrived is not a product
@@ -339,11 +340,17 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// truncate shortens to n bytes without splitting a character in half, which
+// matters because these strings reach prompts and the customer's console.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 func keysSorted[V any](m map[string]V) []string {
