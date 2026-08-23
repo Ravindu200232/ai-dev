@@ -2,7 +2,10 @@ module agentforge/agent
 
 go 1.24.7
 
-require github.com/tmc/langchaingo v0.1.14
+require (
+	github.com/gorilla/websocket v1.5.3
+	github.com/tmc/langchaingo v0.1.14
+)
 
 require (
 	github.com/dlclark/regexp2 v1.10.0 // indirect
