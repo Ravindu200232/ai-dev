@@ -19,6 +19,7 @@ class Conversation:
     system: str = ""
     goal: str = ""
     turns: list = field(default_factory=list)
+    goal_extra: dict = field(default_factory=dict)
     budget: int = 24_000
     summaries: list = field(default_factory=list)
 
@@ -40,7 +41,8 @@ class Conversation:
         if self.system:
             head.append({"role": "system", "content": self.system})
         if self.goal:
-            head.append({"role": "user", "content": self.goal})
+            head.append({"role": "user", "content": self.goal,
+                         **{k: v for k, v in self.goal_extra.items() if v}})
         for summary in self.summaries:
             head.append({"role": "system",
                          "content": f"Summary of earlier work:\n{summary}"})

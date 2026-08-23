@@ -1,4 +1,5 @@
 """Focused apply responsibilities for FeaturesAgent."""
+from forge.edit import EditAgent, edit_budget, edit_model, project_dir
 from .common import *
 
 
@@ -127,16 +128,14 @@ class FeaturesAgentApplyMixin:
                 One <write_file path="…"> block per changed file.
                 """)
 
-            convo = ([{"role": "system", "content": self.arch._builder_sys() + "\n\n" + TOOL_HELP}]
-                     + self._memory()
-                     + [{"role": "user", "content": user}])
             wave_written = []
 
-            def on_end(path, content):
+            def write_through(path, content) -> bool:
+                """Every write the wave makes, guarded and announced."""
                 key = normalise_change_path(path)
                 if not safe_change_path(key):
                     self._log("WARN", f"   ⛔ ignored unsafe source path {key}")
-                    return
+                    return False
                 if key not in plan_paths:
                     self._log("INFO", f"   ↗ impact expanded to {key} after code inspection")
                 old = (getattr(self.arch, "files", {}) or {}).get(key, "")
@@ -145,43 +144,31 @@ class FeaturesAgentApplyMixin:
                                       f"{len(content)} characters — verifying the requested removal/restructure")
                 self._fire("on_file_start", key)
                 self._fire("on_file_end", key, content)
-                if self.arch.write_file(key, content):
-                    if key not in spec.written:
-                        spec.written.append(key)
-                    wave_written.append(key)
+                if not self.arch.write_file(key, content):
+                    return False
+                if key not in spec.written:
+                    spec.written.append(key)
+                wave_written.append(key)
+                return True
 
-            parser = FileStreamParser(
-                on_text=lambda t: None, on_file_start=lambda p: None,
-                on_file_token=lambda t: None, on_file_end=on_end)
-            raw = []
-            seen_obs = set()
+            loop = EditAgent(self.arch, project_dir(self.arch),
+                             edit_model(self.arch, self.model),
+                             budget=edit_budget(self.arch),
+                             writer=write_through).session(
+                                 self.arch._builder_sys(), user)
+            for message in self._memory():
+                loop.convo.add_message(message)
+            reply = ""
             try:
-                while True:
-                    turn_raw = []
-                    def feed_turn(tok):
-                        turn_raw.append(tok); raw.append(tok); parser.feed(tok)
-                    self._model_stream(convo, feed_turn, temperature=0.35,
-                                       model=self.model)
-                    reply = "".join(turn_raw)
-                    convo.append({"role": "assistant", "content": reply})
-                    observations, used_tools = WorkspaceTools(self.arch).serve(reply)
-                    if used_tools and not wave_written:
-                        sig = observations.strip()
-                        if (sig and sig not in seen_obs and
-                                sum(len(m["content"]) for m in convo) < self._budget_chars()):
-                            seen_obs.add(sig)
-                            self._log("INFO", f"   🧰 implementation inspected {used_tools} workspace tool(s)")
-                            convo.append({"role": "user", "content":
-                                          "Tool observations:\n\n" + observations +
-                                          "\n\nContinue the same change. Follow the dependency evidence and write the files this wave needs."})
-                            continue
-                    break
+                outcome = loop.run()
+                reply = outcome.text
+                if outcome.tool_calls:
+                    self._log("INFO", f"   🧰 implementation made "
+                                      f"{len(outcome.tool_calls)} tool call(s)")
             except Exception as e:
                 self._log("WARN", f"   ⚠ Feature write failed in wave {wave_no}: {e}")
-            finally:
-                parser.close()
 
-            for out in self.arch.run_requested_commands("".join(raw)):
+            for out in self.arch.run_requested_commands(reply):
                 self._log("INFO", f"   📦 {out.splitlines()[0][:110]}")
 
             if not wave_written:

@@ -1,4 +1,6 @@
 """Focused planning responsibilities for FeaturesAgent."""
+from forge.edit import EditAgent, edit_budget, edit_model, project_dir
+from forge.modes import PLAN
 
 
 # The change format's own line kinds.
@@ -301,12 +303,17 @@ class FeaturesAgentPlanningMixin:
               required_evidence_paths=None, investigation_paths=None) -> FeatureSpec:
         """Read → hypothesize → prove → impact-map until evidence converges."""
         self.arch._workspace_tool_cache = {}
-        convo = ([{"role": "system", "content": system + "\n\n" + TOOL_HELP}]
-                 + self._memory()
-                 + [{"role": "user", "content": user}])
-        budget, reads = self._budget_chars(), 0
+        # One session across every analysis round: the request stays pinned and
+        # the history compacts, instead of a conversation grown by hand until
+        # it hits a character ceiling.
+        loop = EditAgent(self.arch, project_dir(self.arch),
+                         edit_model(self.arch, self.model),
+                         budget=edit_budget(self.arch)).session(
+                             system, user, mode=PLAN)
+        for message in self._memory():
+            loop.convo.add_message(message)
+        note, reads = "", 0
         spec = FeatureSpec()
-        seen_tool_observations = set()
         previous_state = None
         best_evidence = 0
         no_progress = 0
@@ -315,35 +322,21 @@ class FeaturesAgentPlanningMixin:
 
         while analysis_round < emergency_turn_cap:
             analysis_round += 1
-            tool_progress = False
-            while True:
-                buf = []
-                try:
-                    self._model_stream(convo, buf.append, temperature=0.22,
-                                       model=self.model)
-                except Exception as e:
-                    self._log("WARN", f"   ⚠ {what} failed: {e}")
-                    return spec
-                reply = "".join(buf)
-                convo.append({"role": "assistant", "content": reply})
-
-                used_chars = sum(len(str(m.get("content", ""))) for m in convo)
-                observations, tool_count = WorkspaceTools(self.arch).serve(reply)
-                if tool_count and used_chars < budget * 0.92:
-                    sig = observations.strip()
-                    if sig and sig in seen_tool_observations:
-                        self._log("WARN", f"   ↔ {what}: repeated the same workspace read — deciding with current evidence")
-                    else:
-                        if sig:
-                            seen_tool_observations.add(sig)
-                        reads += tool_count
-                        tool_progress = True
-                        self._log("INFO", f"   🧰 {what}: inspected {tool_count} workspace tool(s) ({reads} total)")
-                        convo.append({"role": "user", "content":
-                                      "Tool observations:\n\n" + observations +
-                                      "\n\nContinue the SAME analysis. Do not write code. Establish CURRENT, GAP, CAUSE and source EVIDENCE before naming the impact files."})
-                        continue
-                break
+            try:
+                # The loop reads for itself until it has an answer; a repeated
+                # identical read is refused inside it, not policed here.
+                outcome = loop.run(note)
+            except Exception as e:
+                self._log("WARN", f"   ⚠ {what} failed: {e}")
+                return spec
+            note = ""
+            reply = outcome.text
+            tool_progress = bool(outcome.tool_calls)
+            if tool_progress:
+                reads += len(outcome.tool_calls)
+                self._log("INFO", f"   🧰 {what}: inspected "
+                                  f"{len(outcome.tool_calls)} source file(s) "
+                                  f"({reads} total)")
 
             spec = self._parse(reply)
             issues = self._analysis_issues(spec, mode, required_evidence_paths)
@@ -381,12 +374,12 @@ class FeaturesAgentPlanningMixin:
                 no_progress = max(0, no_progress - 1)
             previous_state = state
 
-            used_chars = sum(len(str(m.get("content", ""))) for m in convo)
             if no_progress >= 2:
                 self._log("WARN", f"   ↔ {what}: source analysis stopped making progress")
                 break
-            if used_chars >= budget * 0.92:
-                self._log("WARN", f"   ⚠ {what}: context is full before the impact map was proven")
+            if loop.convo.pressure() >= 0.92:
+                self._log("WARN", f"   ⚠ {what}: context is full before the "
+                                  f"impact map was proven")
                 break
 
             files = getattr(self.arch, "files", {}) or {}
@@ -412,13 +405,12 @@ class FeaturesAgentPlanningMixin:
             bundle = self._evidence_bundle(missing)
             issue_text = "; ".join(issues[:5] or ["analysis protocol incomplete"])
             self._log("WARN", f"   🔎 analysis needs proof — {issue_text[:420]}")
-            convo.append({"role": "user", "content":
-                "The proposed impact map is still speculative:\n- " +
+            note = (
                 "\n- ".join(issues or ["analysis protocol incomplete"]) +
                 ("\n\nController-provided source/import evidence for the unresolved points:\n" + bundle if bundle else "") +
                 "\n\nImportant: symptom/focus files are investigation anchors, not mandatory edit owners. "
                 "Follow the dependency/data-flow evidence to the real owner. Every EXISTING file you plan to edit must have its own concrete EVIDENCE line. "
-                "Re-evaluate the root cause/ownership and output the COMPLETE analysis protocol again: CURRENT, GAP, CAUSE, EVIDENCE lines, SUMMARY, FILE lines, VERIFY, CONFIDENCE, DONE. Do not write code."})
+                "Re-evaluate the root cause/ownership and output the COMPLETE analysis protocol again: CURRENT, GAP, CAUSE, EVIDENCE lines, SUMMARY, FILE lines, VERIFY, CONFIDENCE, DONE. Do not write code.")
 
         # These rounds improve the analysis; they do not block the attempt.
         return self._unproven_but_actionable(

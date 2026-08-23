@@ -76,7 +76,7 @@ class TheMessageStopsBlamingTheModelTests(unittest.TestCase):
         self.body = PENCIL.read_text(encoding="utf-8")
 
     def test_refused_writes_are_remembered(self):
-        self.assertIn("got, raw, refused = {}, [], []", self.body)
+        self.assertIn("got, refused = {}, []", self.body)
         self.assertIn("refused.append(key)", self.body)
 
     def test_a_refused_write_is_not_reported_as_no_write(self):

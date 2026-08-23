@@ -8,6 +8,9 @@ log = logging.getLogger("server.forge")
 
 APPROVAL_TIMEOUT = 900
 
+from forge.edit import edit_budget, edit_model  # noqa: F401
+
+
 # The studio's overlay draws two stages. Forge reports five, so they are
 # grouped onto the two the UI actually renders.
 UI_STAGE = {"scaffold": "build", "plan": "build", "build": "build",

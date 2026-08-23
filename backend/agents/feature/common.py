@@ -6,8 +6,7 @@ import re
 import textwrap
 from dataclasses import dataclass, field
 
-from agents.builder.orchestration.agent import FileStreamParser
-from agents.core.workspace import WorkspaceTools, TOOL_HELP
+from agents.core.workspace import WorkspaceTools
 
 
 LOCAL_IMPORT_RE = re.compile(

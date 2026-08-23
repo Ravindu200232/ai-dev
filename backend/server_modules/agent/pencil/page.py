@@ -1,4 +1,8 @@
 # Pencil-domain edits and page-level update helpers.
+from forge.edit import EditAgent
+from server_modules.forge.bridge import edit_budget as _edit_budget
+from server_modules.forge.bridge import edit_model as _edit_model
+
 def _vision_model(preferred: str) -> str:
     """The model to send an image to."""
     try:
@@ -53,67 +57,27 @@ def _pencil_write_round(arch, path, before, instruction, element, shot,
 
         msg["images"] = [shot.png_b64]
 
-    convo = [{"role": "system", "content": PENCIL_SYSTEM + "\n\n" + TOOL_HELP}, msg]
+    editor = EditAgent(arch, getattr(arch, "project_dir", None) or ".",
+                       _edit_model(arch, vis_model), budget=_edit_budget(arch))
+    images = [shot.png_b64] if (shot and shot.ok()) else []
+    feedback = ""
 
     for attempt in range(1, attempts + 1):
-        got = {"writes": {}}
-
-        def capture_write(out_path, content):
-            key = str(out_path or "").replace("\\", "/").lstrip("./")
-            if key:
-                got["writes"][key] = content
-
-        parser = FileStreamParser(
-            on_text=lambda t: None,
-            on_file_start=lambda p: None,
-            on_file_token=lambda t: None,
-            on_file_end=capture_write)
-
-        raw = []
-
-        def feed(token):
-            raw.append(token)
-            parser.feed(token)
-
+        writes = {}
         try:
-            reply = ""
-            seen_observations = set()
-            while True:
-                turn_raw = []
-
-                def feed_turn(token):
-                    turn_raw.append(token)
-                    feed(token)
-
-                arch._stream(convo, feed_turn, temperature=0.4,
-                             model=vis_model, timeout=arch.EDIT_TIMEOUT)
-                reply = "".join(turn_raw)
-                convo.append({"role": "assistant", "content": reply})
-                observations, used = WorkspaceTools(arch).serve(reply)
-                if used and not got["writes"]:
-                    sig = observations.strip()
-                    used_chars = sum(len(str(m.get("content", ""))) for m in convo)
-                    try:
-                        budget_chars = int(arch._budget_chars())
-                    except Exception:
-                        budget_chars = 0
-                    if sig and sig not in seen_observations and (
-                            not budget_chars or used_chars < budget_chars * 0.82):
-                        seen_observations.add(sig)
-                        elog("INFO", f"   🧰 pencil editor inspected {used} workspace tool(s)")
-                        convo.append({"role": "user", "content":
-                                      "Tool observations:\n\n" + observations +
-                                      "\n\nContinue the SAME visual edit. Follow the source/import/caller evidence. "
-                                      "If another file must change, do not hide that fact; emit the required write so the controller can escalate safely."})
-                        continue
-                    if sig in seen_observations:
-                        elog("WARN", "   ↔ pencil editor repeated the same inspection — deciding with current evidence")
-                break
+            # Captured, not applied: a sketch edit that reached past the page
+            # it was drawn on has to escalate rather than land.
+            outcome = editor.run(PENCIL_SYSTEM, text + feedback, focus=[path],
+                                 capture=writes, images=images)
         except Exception as e:
             eerr(f"The model failed: {e}")
             return False, ""
-        parser.close()
-        writes = got["writes"]
+
+        reply = outcome.text
+        if outcome.tool_calls:
+            elog("INFO", f"   🧰 pencil editor used "
+                         f"{len(outcome.tool_calls)} tool call(s)")
+
         body = writes.get(path, "")
         external = [rel for rel in writes if rel != path]
         if external:
@@ -140,12 +104,10 @@ def _pencil_write_round(arch, path, before, instruction, element, shot,
             elog("WARN", f"   ⚠ no <write_file> block — {vis_model} said: {head}")
 
             if attempt < attempts:
-                convo.append({"role": "assistant", "content": reply[:2000]})
-                convo.append({"role": "user", "content":
-                    "That was not a file. Output the COMPLETE file inside "
-                    f"one <write_file path=\"{path}\">…</write_file> block, "
-                    "starting immediately with '<write_file'. No markdown "
-                    "fences, no description of the image, no explanation."})
+                feedback = (f"\n\n## Your last attempt wrote nothing\n"
+                            f"Call write_file with the complete new contents "
+                            f"of {path}. Do not describe the image back, and "
+                            f"do not answer with prose.")
                 continue
             eerr(f"{vis_model} returned no file after {attempts} attempts. "
                  f"It said: {head[:220]}")
@@ -445,18 +407,16 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
                    f"{chrome}"
                    if chrome else ""))
         arch._workspace_tool_cache = {}
-        convo = [{"role": "system", "content": PAGE_UPDATE_SYSTEM + "\n\n" + TOOL_HELP},
-                 {"role": "user", "content": user}]
-
         mark = dev_log_mark()
 
         # The page, its layouts, and everything they render.
         writable = {path} | {p for p, _ in chain}
         writable.add("/".join(path.split("/")[:-1]) + "/layout.jsx")
         writable |= _rendered_by(arch, writable)
-        got, raw, refused = {}, [], []
+        got, refused = {}, []
 
-        def took(pth, content):
+        def took(pth, content) -> bool:
+            """Accept a write into this page's tree, or say why not."""
 
             key = (pth or "").strip().lstrip("./").replace("\\", "/")
 
@@ -470,55 +430,38 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
                                  f"is app source — taking it; it is reverted "
                                  f"if it does not parse or build")
                     got[key] = content
-                    return
+                    return True
                 refused.append(key)
                 elog("WARN", f"   ⛔ ignored a write to {key} — a page edit "
                              f"changes app/, components/ or lib/ source, "
                              f"nothing else")
-                return
+                return False
             if fresh:
                 elog("INFO", f"   ➕ {key} — new component for this route's "
                              f"chrome")
             got[key] = content
-
-        parser = FileStreamParser(
-            on_text=lambda t: None, on_file_start=lambda pth: None,
-            on_file_token=lambda t: None,
-            on_file_end=took)
-
-        def feed(tok):
-            raw.append(tok)
-            parser.feed(tok)
+            return True
 
         t0 = time.time()
         try:
-            for tool_turn in range(3):
-                turn_raw = []
-                def feed_turn(tok):
-                    turn_raw.append(tok)
-                    feed(tok)
-                arch._stream(convo, feed_turn, temperature=0.3, timeout=arch.EDIT_TIMEOUT)
-                reply = "".join(turn_raw)
-                convo.append({"role": "assistant", "content": reply})
-                observations, used = WorkspaceTools(arch).serve(reply)
-                if used and not got and tool_turn < 2:
-                    elog("INFO", f"   🧰 page editor inspected {used} workspace tool(s)")
-                    convo.append({"role": "user", "content":
-                                  "Tool observations:\n\n" + observations +
-                                  "\n\nContinue the same page edit and write the minimum complete file set."})
-                    continue
-                break
+            outcome = EditAgent(arch, getattr(arch, "project_dir", None) or ".",
+                                _edit_model(arch), budget=_edit_budget(arch),
+                                writer=took).run(PAGE_UPDATE_SYSTEM, user,
+                                                 focus=[path])
+            reply = outcome.text
+            if outcome.tool_calls:
+                elog("INFO", f"   🧰 page editor made "
+                             f"{len(outcome.tool_calls)} tool call(s)")
         except Exception as e:
             eerr(f"The model failed: {e}")
             return
-        parser.close()
         elog("INFO", f"   ⏱ model {time.time() - t0:.1f}s")
 
-        for out in arch.run_requested_commands("".join(raw)):
+        for out in arch.run_requested_commands(reply):
             elog("INFO", f"   📦 {out.splitlines()[0][:110]}")
 
         if not got:
-            head = " ".join("".join(raw).split())[:300] or "(empty response)"
+            head = " ".join(reply.split())[:300] or "(empty response)"
             if refused:
                 # It DID write something.
                 elog("WARN", f"   ⚠ every write was outside what a page edit "
@@ -527,7 +470,7 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
                      f"{', '.join(refused[:3])}, which a page edit cannot touch.")
                 return
             elog("WARN", f"   ⚠ no <write_file> block — model said: {head}")
-            if _DECLINED_RE.search("".join(raw)):
+            if _DECLINED_RE.search(reply):
                 eerr(f"Nothing was changed — the model said: {head[:220]}")
                 return
             eerr(f"The model returned no file. It said: {head[:220]}")

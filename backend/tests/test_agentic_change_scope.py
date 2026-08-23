@@ -72,9 +72,16 @@ class AgenticChangeScopeTests(unittest.TestCase):
                 self._workspace_tool_cache = {}
             def _builder_sys(self):
                 return "builder"
-            def _stream(self, _convo, sink, temperature=0.35, model=None):
-                for path in list(self.files):
-                    sink(f'<write_file path="{path}">{self.files[path]}\n// changed</write_file>')
+            def _stream(self, _convo, sink, **_kwargs):
+                raise AssertionError("feature apply runs on the forge loop now")
+            def lend_model(self):
+                """One write_file call per planned file, then an answer."""
+                from forge.llm import ScriptedModel, tool_call
+                self.forge_model = ScriptedModel(
+                    [tool_call("write_file", path=path,
+                               content=f"{body}\n// changed")
+                     for path, body in list(self.files.items())]
+                    + ["Changed every planned file."])
             def write_file(self, path, content):
                 self.files[path] = content
                 if path not in self.written:
@@ -91,6 +98,7 @@ class AgenticChangeScopeTests(unittest.TestCase):
 
         from agents.feature.common import FeatureSpec
         arch = Arch()
+        arch.lend_model()
         agent = FeaturesAgent(arch, analyzer=Analyzer(arch))
         spec = FeatureSpec(files=[
             {"path": p, "action": "edit", "kind": "server", "why": "large change"}

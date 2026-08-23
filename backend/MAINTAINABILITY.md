@@ -24,7 +24,8 @@ Public entrypoints stay small. Implementation lives in focused modules and exist
 ## Supporting packages
 
 - `forge/` — the small agent core: tools, context budget, plan mode, skills,
-  and the builder and QA agents written on top of them. See `forge/README.md`.
+  and the builder, QA and edit agents written on top of them. The feature,
+  element-select and pencil paths run on `forge/edit/`. See `forge/README.md`.
 - `agents/` — architect, analyzer, builder, repair and project helpers.
 - `qa_agent/` — test authoring, browser execution, evidence and repair support.
 - `srs-agent/` — SRS service.

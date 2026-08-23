@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from forge.llm import ScriptedModel
 from agents.feature.agent import FeaturesAgent
 from agents.feature.common import FeatureSpec
 from qa_agent.e2e_progress import extend_round_budget
@@ -78,11 +79,20 @@ class FocusedWriterTransactionTests(unittest.TestCase):
             sink(reply)
         def _budget_chars(self): return 100000
         def run_requested_commands(self, _raw): return []
+        def write_file(self, rel, content):
+            self.files[rel] = content
+            return True
 
     def test_selection_never_writes_dependency_body_into_selected_page(self):
+        """A focused edit that rewrites a different file must escalate."""
         import server
-        arch = self.Arch([
-            '<write_file path="components/Child.jsx">export default function Child(){return <section/>}</write_file>'
+        from forge.llm import ScriptedModel, tool_call
+        arch = self.Arch([])
+        # The editor asks for a write on the dependency, not the selected page.
+        arch.forge_model = ScriptedModel([
+            tool_call("write_file", path="components/Child.jsx",
+                      content="export default function Child(){return <section/>}"),
+            "Rewrote the child component.",
         ])
         ok, result = server._element_write_round(
             arch, "app/page.jsx", arch.files["app/page.jsx"], "change child card",
@@ -92,23 +102,36 @@ class FocusedWriterTransactionTests(unittest.TestCase):
         self.assertIn("components/Child.jsx", result)
 
     def test_pencil_can_inspect_workspace_before_writing(self):
+        """The sketch editor may read the source before it rewrites it."""
         import server
-        arch = self.Arch([
-            '<read_file path="components/Child.jsx"/>',
-            '<write_file path="app/page.jsx">export default function Page(){return <main>changed</main>}</write_file>',
+        from forge.llm import ScriptedModel, tool_call
+        arch = self.Arch([])
+        model = ScriptedModel([
+            tool_call("read_file", path="components/Child.jsx"),
+            tool_call("write_file", path="app/page.jsx",
+                      content="export default function Page(){return <main>changed</main>}"),
+            "Redesigned the region.",
         ])
+        arch.forge_model = model
         ok, body = server._pencil_write_round(
             arch, "app/page.jsx", arch.files["app/page.jsx"], "redesign this region",
             {"route":"/", "tag":"main", "text":""}, None, "vision-model",
             {"route":"/", "viewport":{}}, attempts=1)
         self.assertTrue(ok)
         self.assertIn("changed", body)
-        self.assertEqual(arch.calls, 2)
+        # It looked before it wrote: a read turn, a write turn, then an answer.
+        self.assertEqual(len(model.seen), 3)
+        self.assertIn("read_file", model.seen[0]["tools"])
 
     def test_pencil_escalates_multi_file_output_instead_of_misapplying_it(self):
+        """A sketch edit that rewrites another file must escalate, not land."""
         import server
-        arch = self.Arch([
-            '<write_file path="components/Child.jsx">export default function Child(){return <section/>}</write_file>'
+        from forge.llm import ScriptedModel, tool_call
+        arch = self.Arch([])
+        arch.forge_model = ScriptedModel([
+            tool_call("write_file", path="components/Child.jsx",
+                      content="export default function Child(){return <section/>}"),
+            "Rewrote the child component.",
         ])
         ok, result = server._pencil_write_round(
             arch, "app/page.jsx", arch.files["app/page.jsx"], "redesign child region",
@@ -217,18 +240,19 @@ class AdaptivePlanningConvergenceTests(unittest.TestCase):
                 self.files = dict(files)
                 self.convo = []
                 self._workspace_tool_cache = {}
-                self.replies = [reply(1), reply(2), reply(3), reply(4)]
                 self.calls = 0
                 self.project_dir = Path(".")
+                self.forge_model = ScriptedModel(
+                    [reply(1), reply(2), reply(3), reply(4)])
             def _stream(self, convo, sink, **kwargs):
-                self.calls += 1
-                sink(self.replies.pop(0))
+                raise AssertionError("planning runs on the forge loop now")
 
         analyzer = SimpleNamespace(_budget_chars=lambda: 200000)
         arch = Arch()
         agent = FeaturesAgent(arch, analyzer=analyzer)
         spec = agent._plan("sys", "request", None, "Feature planning", mode="feature")
-        self.assertEqual(arch.calls, 4)
+        # Four rounds: it kept analysing while the evidence kept growing.
+        self.assertEqual(len(arch.forge_model.seen), 4)
         self.assertEqual(spec.paths(), set(paths))
         self.assertEqual(len(spec.context["evidence"]), 4)
 

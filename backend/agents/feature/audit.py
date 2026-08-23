@@ -1,10 +1,12 @@
 """Post-change semantic audit for feature/selection/pencil edits."""
 from __future__ import annotations
+from forge.edit import EditAgent, edit_budget, edit_model, project_dir
+from forge.modes import PLAN
 
 import re
 
 from .common import FeatureSpec, normalise_change_path, safe_change_path
-from agents.core.workspace import WorkspaceTools, TOOL_HELP
+from agents.core.workspace import WorkspaceTools
 
 
 AUDIT_SYSTEM = """\
@@ -164,30 +166,25 @@ class FeaturesAgentAuditMixin:
                 f"## Current source/import evidence\n{self._audit_source(touched)}\n\n"
                 "Inspect any additional owner/caller/route you need, then audit the exact request.")
         self.arch._workspace_tool_cache = {}
-        convo = ([{"role": "system", "content": AUDIT_SYSTEM + "\n\n" + TOOL_HELP}]
-                 + self._memory() + [{"role": "user", "content": user}])
-        seen = set()
+        loop = EditAgent(self.arch, project_dir(self.arch),
+                         edit_model(self.arch, self.model),
+                         budget=edit_budget(self.arch)).session(
+                             AUDIT_SYSTEM, user, mode=PLAN)
+        for message in self._memory():
+            loop.convo.add_message(message)
+        note = ""
         for _ in range(3):
-            buf = []
             try:
-                self._model_stream(convo, buf.append, temperature=0.1,
-                                   model=self.model)
+                outcome = loop.run(note)
             except Exception as e:
                 self._log("WARN", f"   ⚠ semantic audit failed: {str(e)[:100]}")
                 return {"result": "UNKNOWN", "gap": str(e), "evidence": [],
                         "files": [], "verify": ""}
-            reply = "".join(buf)
-            convo.append({"role": "assistant", "content": reply})
-            observations, used = WorkspaceTools(self.arch).serve(reply)
-            if used:
-                sig = observations.strip()
-                if sig and sig not in seen:
-                    seen.add(sig)
-                    self._log("INFO", f"   🔎 semantic audit inspected {used} workspace tool(s)")
-                    convo.append({"role": "user", "content":
-                                  "Tool observations:\n\n" + observations +
-                                  "\n\nContinue the SAME read-only audit. Output the complete RESULT protocol."})
-                    continue
+            note = ""
+            reply = outcome.text
+            if outcome.tool_calls:
+                self._log("INFO", f"   🔎 semantic audit inspected "
+                                  f"{len(outcome.tool_calls)} source file(s)")
             result = self._audit_parse(reply)
             if result["result"] == "PASS" and result["evidence"]:
                 return result

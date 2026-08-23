@@ -1,4 +1,8 @@
 # Select-tool source graph and safe edit-scope helpers.
+from forge.edit import EditAgent
+from server_modules.forge.bridge import edit_budget as _edit_budget
+from server_modules.forge.bridge import edit_model as _edit_model
+
 
 LOCAL_IMPORT_RE = re.compile(r"""from\s+['"]@/(components/[\w./-]+)['"]""")
 
@@ -379,65 +383,28 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
             + (f"\n\n## The files this one is joined to — what it "
                f"renders, and what renders it\n{near}" if near else ""))
     arch._workspace_tool_cache = {}
-    convo = [{"role": "system", "content": ELEMENT_EDIT_SYSTEM + "\n\n" + TOOL_HELP},
-             {"role": "user", "content": user}]
+    editor = EditAgent(arch, getattr(arch, "project_dir", None) or ".",
+                       _edit_model(arch), budget=_edit_budget(arch))
+    feedback = ""
 
     for attempt in range(1, attempts + 1):
-        got = {"writes": {}}
-
-        def capture_write(out_path, content):
-            key = str(out_path or "").replace("\\", "/").lstrip("./")
-            if key:
-                got["writes"][key] = content
-
-        parser = FileStreamParser(
-            on_text=lambda t: None,
-            on_file_start=lambda p: None,
-            on_file_token=lambda t: None,
-            on_file_end=capture_write)
-        buf = []
-
-        def feed(tok):
-            buf.append(tok)
-            parser.feed(tok)
-
+        writes = {}
         try:
-            reply = ""
-            seen_observations = set()
-            while True:
-                turn_buf = []
-                def feed_turn(tok):
-                    turn_buf.append(tok)
-                    feed(tok)
-                arch._stream(convo, feed_turn, temperature=0.3,
-                             timeout=arch.EDIT_TIMEOUT)
-                reply = "".join(turn_buf)
-                convo.append({"role": "assistant", "content": reply})
-                observations, used = WorkspaceTools(arch).serve(reply)
-                if used and not got["writes"]:
-                    sig = observations.strip()
-                    used_chars = sum(len(str(m.get("content", ""))) for m in convo)
-                    try:
-                        budget_chars = int(arch._budget_chars())
-                    except Exception:
-                        budget_chars = 0
-                    if sig and sig not in seen_observations and (not budget_chars or used_chars < budget_chars * 0.82):
-                        seen_observations.add(sig)
-                        elog("INFO", f"   🧰 section editor inspected {used} workspace tool(s)")
-                        convo.append({"role": "user", "content":
-                                      "Tool observations:\n\n" + observations +
-                                      "\n\nContinue the same selected-element edit. Follow dependencies as far as needed; do not repeat a tool call."})
-                        continue
-                    if sig in seen_observations:
-                        elog("WARN", "   ↔ section editor repeated the same inspection — deciding with current evidence")
-                break
+            # Captured, not applied: this round may still be rejected for
+            # overrunning the selection, or escalated for touching a file the
+            # selection does not own.
+            outcome = editor.run(ELEMENT_EDIT_SYSTEM, user + feedback,
+                                 focus=[path], capture=writes)
         except Exception as e:
             eerr(f"The model failed: {e}")
             return False, ""
-        parser.close()
 
-        full_reply = "".join(buf)
-        for out in arch.run_requested_commands(full_reply):
+        reply = outcome.text
+        if outcome.tool_calls:
+            elog("INFO", f"   🧰 section editor used "
+                         f"{len(outcome.tool_calls)} tool call(s)")
+
+        for out in arch.run_requested_commands(reply):
             elog("INFO", f"   📦 {out.splitlines()[0][:110]}")
 
         need = re.search(r"^\s*NEED\s+(\S+)\s*$", reply, re.M)
@@ -446,7 +413,6 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
             elog("INFO", f"   ↗ focused editor discovered dependency {needed} — escalating automatically")
             return False, "__AGENTFORGE_ESCALATE__:" + needed
 
-        writes = got["writes"]
         body = writes.get(path, "")
         external = [rel for rel in writes if rel != path]
         if external:
@@ -468,11 +434,9 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
                 return False, ""
             elog("WARN", f"   ⚠ no <write_file> block — model said: {head}")
             if attempt < attempts:
-                convo.append({"role": "user", "content":
-                    "That was not a file. Output the COMPLETE file inside "
-                    f"one <write_file path=\"{path}\">…</write_file> block, "
-                    "starting immediately with '<write_file'. No markdown "
-                    "fences, no explanation, no summary."})
+                feedback = (f"\n\n## Your last attempt wrote nothing\n"
+                            f"Call write_file with the complete new contents "
+                            f"of {path}. Do not answer with prose.")
                 continue
 
             # What it said, not only that it said nothing usable.
@@ -494,9 +458,7 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
             eerr("The edit changed far more than the element — nothing was "
                  "written")
             return False, ""
-        convo.append({"role": "assistant", "content": reply[:2000]})
-        convo.append({"role": "user", "content":
-            f"That rewrite was rejected: {why}\n\nTry again. Output the "
-            f"COMPLETE file, byte-identical to the original except for the "
-            f"element described above."})
+        feedback = (f"\n\n## Your last attempt was rejected\n{why}\n"
+                    f"Write {path} again, byte-identical to the original "
+                    f"except for the element described above.")
     return False, ""

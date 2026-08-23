@@ -38,7 +38,7 @@ class FeatureWriterIsolationTests(unittest.TestCase):
                 self.synced = 0
             def _builder_sys(self): return "builder"
             def _stream(self, _convo, sink, **_kwargs):
-                sink('<write_file path="app/page.jsx">export default function Page(){return <main>new</main>}</write_file>')
+                raise AssertionError("feature apply runs on the forge loop now")
             def write_file(self, path, content):
                 self.files[path] = content
                 return True
@@ -49,7 +49,12 @@ class FeatureWriterIsolationTests(unittest.TestCase):
                 raise AssertionError("feature must not rewrite unrelated Next files")
             def sync_dependencies(self): self.synced += 1
 
+        from forge.llm import ScriptedModel, tool_call
         arch = Arch()
+        arch.forge_model = ScriptedModel([
+            tool_call("write_file", path="app/page.jsx",
+                      content="export default function Page(){return <main>new</main>}"),
+            "Changed the page."])
         agent = FeaturesAgent(arch, analyzer=Analyzer(arch))
         spec = FeatureSpec(files=[{"path":"app/page.jsx", "action":"edit",
                                   "kind":"server", "why":"proven owner"}])

@@ -24,6 +24,7 @@ Every file here is under 180 lines and does one thing.
 | `loop.py` | ask, run what it asked for, hand back what happened |
 | `skills/` | Next.js, Vitest and Playwright guides, loaded on a trigger match |
 | `builder/` | scaffold, plan, build |
+| `edit/` | changing a project that already exists — the loop feature, select and pencil run on |
 | `qa/` | Vitest and Playwright, run and repaired |
 | `events.py` | agent events → the websocket messages the UI already knows |
 | `service.py` | the pipeline that puts those in order |
@@ -73,6 +74,23 @@ print(result.summary())     # built 6 file(s) · unit: 14 passed, 0 failed · �
 The approval gate is a callable taking the plan and returning `True` to build,
 a string to send it back with that note, or `False` to stop.
 `server_modules/forge/bridge.py` provides one driven from the websocket.
+
+## Editing an existing project
+
+`forge/edit/` is the same loop pointed at a project that is already there, and
+it is what the feature, element-select and pencil agents run on. Three things
+make it different from the builder:
+
+- **Writes go through the host.** The architect's `write_file` merges
+  `package.json`, canonicalises a path, removes a shadowed `.js`/`.jsx` twin
+  and emits the file event the studio draws. Writing straight to disk would
+  lose all of that, so `host_write_tools` delegates. A caller that guards its
+  own writes passes `writer=`; one that must inspect a rewrite before allowing
+  it passes `capture=` and gets the content without the change happening.
+- **No shell.** An edit changes files; it does not build them.
+- **Sessions.** An analysis that converges over rounds calls `session(...)`
+  once and then `loop.run(note)` per round, so the request stays pinned and
+  the history compacts instead of growing until it hits a character ceiling.
 
 ## Wired into the server
 
