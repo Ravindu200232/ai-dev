@@ -224,6 +224,9 @@ func (s *Server) apiPost(w http.ResponseWriter, r *http.Request, path string) {
 		writeJSON(w, code, payload)
 
 	case "/mongo/prefetch":
+		// Installing mongod takes minutes, so it answers immediately and the
+		// Studio watches /mongo for the progress.
+		go s.Mongo.Prefetch(context.Background())
 		writeJSON(w, 200, s.Mongo.Status(r.Context()))
 
 	case "/discard-srs":

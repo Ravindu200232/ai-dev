@@ -311,3 +311,114 @@ func has(list []string, want string) bool {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// Listing has to be the real command, not our own directory read: the whole
+// point is that the agent sees what the machine reports.
+func TestLsRunsTheRealCommand(t *testing.T) {
+	project := t.TempDir()
+	for _, rel := range []string{"app/page.jsx", "lib/db.js", ".env.local", "node_modules/react/index.js"} {
+		p := filepath.Join(project, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var ran []string
+	sh := NewShell(project)
+	sh.Emit = func(line string) { ran = append(ran, line) }
+
+	entries, err := sh.Ls(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ran) == 0 {
+		t.Fatal("the listing command was never echoed to the console")
+	}
+	if !strings.HasPrefix(ran[0], "ls ") && !strings.HasPrefix(ran[0], "cmd ") {
+		t.Errorf("echoed %q, expected the platform listing command", ran[0])
+	}
+
+	byName := map[string]Entry{}
+	for _, e := range entries {
+		byName[e.Name] = e
+	}
+	// -A keeps dotfiles, and node_modules is skipped after the command runs.
+	if _, ok := byName[".env.local"]; !ok {
+		t.Errorf("a dotfile was not listed: %v", entries)
+	}
+	if _, ok := byName["node_modules"]; ok {
+		t.Errorf("node_modules should be skipped: %v", entries)
+	}
+	if e := byName["app"]; !e.Dir {
+		t.Errorf("app should be reported as a directory: %+v", e)
+	}
+	if e := byName["lib"]; e.Path != "lib" {
+		t.Errorf("path = %q, want a project-relative path", e.Path)
+	}
+}
+
+// Tree is that same listing, one directory at a time, so it must agree with it.
+func TestTreeIsBuiltFromRealListings(t *testing.T) {
+	project := t.TempDir()
+	want := []string{"app/orders/page.jsx", "app/page.jsx", "lib/db.js"}
+	for _, rel := range append(append([]string{}, want...), "node_modules/react/index.js", ".next/build.json") {
+		p := filepath.Join(project, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := NewShell(project).Tree(".", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Tree = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Tree[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// depth 1 stops before descending.
+	shallow, err := NewShell(project).Tree(".", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shallow) != 0 {
+		t.Errorf("depth 1 has no files at the root, got %v", shallow)
+	}
+}
+
+// A listing command that cannot run must fall back rather than report nothing.
+func TestListingFallsBackWhenTheCommandFails(t *testing.T) {
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "a.js"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	names, err := readDirNames(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "a.js" {
+		t.Fatalf("readDirNames = %v", names)
+	}
+}
+
+func TestLsRefusesAFile(t *testing.T) {
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "a.js"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewShell(project).Ls("a.js"); err == nil {
+		t.Error("listing a file should be refused")
+	}
+	if _, err := NewShell(project).Ls("../"); err == nil {
+		t.Error("listing outside the project should be refused")
+	}
+}

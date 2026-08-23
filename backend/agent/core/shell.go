@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -19,9 +20,11 @@ import (
 // file, grep for a symbol, run a command. Those four are the whole tool surface
 // and every phase re-runs them rather than trusting what it already believes.
 //
-// ls/read/grep/tree are implemented against the filesystem instead of exec'ing
-// /bin/ls, because AgentForge ships on Windows through start-agentforge.bat and
-// coreutils are not there. Real processes — npm, npx, node — are exec'd for real.
+// Listing really does run the platform's listing command — `ls` on Unix, `dir`
+// on Windows — so the agent reads what the machine says rather than what we
+// believe, and the Studio console shows the command it ran. Reading a file and
+// walking the tree are built on that. If no shell answers, listing falls back to
+// reading the directory directly rather than going blind.
 
 // Skip lists the directories no survey should ever walk into.
 var Skip = map[string]bool{
@@ -35,6 +38,7 @@ const (
 	maxCapturedOutput  = 256 << 10 // 256 KiB of a command's output is plenty
 	maxReadBytes       = 192 << 10
 	maxSurveyFiles     = 4000
+	listTimeout        = 20 * time.Second
 )
 
 // ErrOutsideProject means a tool was handed a path that escapes the project.
@@ -87,25 +91,45 @@ type Entry struct {
 	Lines int    `json:"lines,omitempty"`
 }
 
-// Ls lists one directory. This is the tool the builder calls at the start of
-// every phase to see what is really on disk.
+// Ls lists one directory by running the real listing command — `ls` on Unix,
+// `dir` on Windows — and parsing what it prints. The agent is meant to be
+// looking at the machine, not at our idea of it, and the command it ran shows
+// up in the Studio console.
 func (s *Shell) Ls(rel string) ([]Entry, error) {
+	return s.list(rel, true)
+}
+
+// list is Ls with control over whether the command is echoed. A recursive walk
+// runs hundreds of listings and must not flood the console with them.
+func (s *Shell) list(rel string, echo bool) ([]Entry, error) {
 	abs, err := s.resolve(rel)
 	if err != nil {
 		return nil, err
 	}
-	items, err := os.ReadDir(abs)
-	if err != nil {
+	if info, err := os.Stat(abs); err != nil {
 		return nil, err
+	} else if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", rel)
 	}
-	out := make([]Entry, 0, len(items))
-	for _, it := range items {
-		if Skip[it.Name()] {
+
+	names, err := s.runListing(abs, echo)
+	if err != nil {
+		// A missing or unusable shell is not a reason to go blind.
+		names, err = readDirNames(abs)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	out := make([]Entry, 0, len(names))
+	for _, name := range names {
+		if name == "" || Skip[name] {
 			continue
 		}
-		e := Entry{Name: it.Name(), Dir: it.IsDir(), Path: s.Rel(filepath.Join(abs, it.Name()))}
-		if info, err := it.Info(); err == nil {
-			e.Size = info.Size()
+		full := filepath.Join(abs, name)
+		e := Entry{Name: name, Path: s.Rel(full)}
+		if info, err := os.Stat(full); err == nil {
+			e.Dir, e.Size = info.IsDir(), info.Size()
 		}
 		out = append(out, e)
 	}
@@ -118,36 +142,115 @@ func (s *Shell) Ls(rel string) ([]Entry, error) {
 	return out, nil
 }
 
-// Tree walks the project, skipping the directories in Skip. depth <= 0 walks
-// the whole tree.
-func (s *Shell) Tree(rel string, depth int) ([]string, error) {
-	root, err := s.resolve(rel)
+// listCommand is the real command for this platform. `ls -A` hides . and ..
+// but keeps dotfiles; `dir /b /a` is the bare-name equivalent.
+func listCommand(abs string) (string, []string) {
+	if runtime.GOOS == "windows" {
+		return "cmd", []string{"/c", "dir", "/b", "/a", abs}
+	}
+	return "ls", []string{"-A", "--", abs}
+}
+
+// runListing executes the listing command and returns one name per line.
+func (s *Shell) runListing(abs string, echo bool) ([]string, error) {
+	name, args := listCommand(abs)
+	if echo && s.Emit != nil {
+		s.Emit(name + " " + strings.Join(trimFlagsForDisplay(args), " "))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = s.Dir
+	var out, errb capped
+	out.limit, errb.limit = maxCapturedOutput, 8<<10
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		// An empty directory makes `dir` exit non-zero with nothing to say.
+		if out.String() == "" && strings.TrimSpace(errb.String()) != "" {
+			return nil, fmt.Errorf("%s: %s", name, strings.TrimSpace(errb.String()))
+		}
+	}
+	var names []string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if line = strings.TrimRight(line, "\r"); strings.TrimSpace(line) != "" {
+			names = append(names, strings.TrimSpace(line))
+		}
+	}
+	return names, nil
+}
+
+// trimFlagsForDisplay shortens the echoed command to the part a person reads.
+func trimFlagsForDisplay(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--" || a == "/c" {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// readDirNames is the fallback when no shell is available.
+func readDirNames(abs string) ([]string, error) {
+	items, err := os.ReadDir(abs)
 	if err != nil {
 		return nil, err
 	}
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		names = append(names, it.Name())
+	}
+	return names, nil
+}
+
+// Tree walks the project with the same listing command, one directory at a
+// time, so the whole survey is built out of real `ls` output. depth <= 0 walks
+// the whole tree.
+func (s *Shell) Tree(rel string, depth int) ([]string, error) {
+	if _, err := s.resolve(rel); err != nil {
+		return nil, err
+	}
+	rel = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(rel)), "./")
+	if rel == "." {
+		rel = ""
+	}
+	if s.Emit != nil {
+		shown := rel
+		if shown == "" {
+			shown = "."
+		}
+		s.Emit("ls -R " + shown)
+	}
+
 	var files []string
-	rootDepth := strings.Count(filepath.ToSlash(root), "/")
-	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	queue := []struct {
+		path  string
+		level int
+	}{{rel, 0}}
+
+	for len(queue) > 0 && len(files) < maxSurveyFiles {
+		here := queue[0]
+		queue = queue[1:]
+		entries, err := s.list(here.path, false)
 		if err != nil {
-			return nil // an unreadable corner is not a reason to abandon the walk
+			continue // an unreadable corner is not a reason to abandon the walk
 		}
-		if d.IsDir() {
-			if path != root && Skip[d.Name()] {
-				return filepath.SkipDir
+		for _, e := range entries {
+			if !e.Dir {
+				if len(files) < maxSurveyFiles {
+					files = append(files, e.Path)
+				}
+				continue
 			}
-			if depth > 0 && strings.Count(filepath.ToSlash(path), "/")-rootDepth >= depth {
-				return filepath.SkipDir
+			if depth <= 0 || here.level+1 < depth {
+				queue = append(queue, struct {
+					path  string
+					level int
+				}{e.Path, here.level + 1})
 			}
-			return nil
 		}
-		if len(files) >= maxSurveyFiles {
-			return io.EOF
-		}
-		files = append(files, s.Rel(path))
-		return nil
-	})
-	if err != nil && !errors.Is(err, io.EOF) {
-		return files, err
 	}
 	sort.Strings(files)
 	return files, nil

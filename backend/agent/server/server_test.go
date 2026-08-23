@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -339,4 +340,83 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition was never met")
+}
+
+func TestMongoArchAndTargets(t *testing.T) {
+	if got := mongoArch(); got != "x86_64" && got != "arm64" {
+		t.Errorf("mongoArch = %q, MongoDB only publishes x86_64 and arm64", got)
+	}
+	targets := mongoTargets()
+	if len(targets) == 0 {
+		t.Fatal("there must always be at least one download target to try")
+	}
+	// Whatever the distro, a widely compatible build has to end the list, or a
+	// machine we do not recognise gets no download at all.
+	last := targets[len(targets)-1]
+	if runtime.GOOS == "linux" && last != "ubuntu2004" {
+		t.Errorf("the last linux target is %q, expected a generic fallback", last)
+	}
+	// Every target we name must have a fallback URL for this arch, or the
+	// feed going down leaves us with nothing.
+	arch := mongoArch()
+	found := false
+	for _, target := range targets {
+		if _, ok := fallbackURLs[target+"/"+arch]; ok {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no fallback URL covers any of %v on %s", targets, arch)
+	}
+}
+
+// The archives carry mongod next to mongos, mongodump and friends. Only one of
+// them is the server.
+func TestIsMongodEntry(t *testing.T) {
+	yes := []string{
+		"mongodb-linux-x86_64-8.3.7/bin/mongod",
+		`mongodb-windows-x86_64-8.3.7\bin\mongod.exe`,
+	}
+	for _, name := range yes {
+		if !isMongodEntry(name) {
+			t.Errorf("%q is mongod", name)
+		}
+	}
+	no := []string{
+		"mongodb-linux-x86_64-8.3.7/bin/mongos",
+		"mongodb-linux-x86_64-8.3.7/bin/mongodump",
+		"mongodb-linux-x86_64-8.3.7/LICENSE-Community.txt",
+	}
+	for _, name := range no {
+		if isMongodEntry(name) {
+			t.Errorf("%q is not the server binary", name)
+		}
+	}
+}
+
+func TestMongoStatusShape(t *testing.T) {
+	m := NewMongo(core.Paths{Base: t.TempDir()})
+	status := m.Status(context.Background())
+	// studio/components/SettingsModal.jsx reads exactly these.
+	for _, key := range []string{"running", "external", "override", "downloaded", "port", "reason"} {
+		if _, ok := status[key]; !ok {
+			t.Errorf("the mongo status is missing %q: %v", key, status)
+		}
+	}
+	if status["port"] != defaultMongoPort {
+		t.Errorf("port = %v", status["port"])
+	}
+}
+
+func TestMongoURIHonoursOverride(t *testing.T) {
+	t.Setenv("AGENTFORGE_MONGO_URI", "mongodb://elsewhere:27017/app")
+	m := NewMongo(core.Paths{Base: t.TempDir()})
+	m.Ensure(context.Background())
+
+	if got := m.URI(); got != "mongodb://elsewhere:27017/app" {
+		t.Errorf("URI = %q, a saved URI must win", got)
+	}
+	if status := m.Status(context.Background()); status["override"] != true {
+		t.Errorf("override should be reported: %v", status)
+	}
 }
