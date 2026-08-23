@@ -348,6 +348,15 @@ func (s *Service) generateNode(ctx context.Context, state any) (any, error) {
 	doc.DocumentLanguage = "English"
 	doc.ApprovedPlanMarkdown = st.PlanMarkdown
 
+	handoff := BuildHandoff(plan, doc, pack, auth)
+	handoff.SourceDocumentLanguage, handoff.PromptLanguage = "English", "English"
+	doc.BuilderHandoff = asDoc(handoff)
+	s.emit(ctx, st.ProjectID, "SrsJsonGeneratorAgent", fmt.Sprintf(
+		"Builder handoff ready: %d requirements, %d unit contracts, %d E2E journeys, %d words.",
+		len(handoff.Requirements), len(handoff.TestingContract.Unit),
+		len(handoff.TestingContract.E2E), len(strings.Fields(handoff.Prompt))),
+		"success", 65, nil)
+
 	summary := Summarize(doc)
 	note := ""
 	if !auth {

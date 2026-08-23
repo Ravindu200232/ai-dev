@@ -24,7 +24,7 @@ func shopPlan() *Plan {
 			{Name: "Sale", Keeps: []string{"Product id", "Total", "Notes"}},
 		},
 		Workflows: []Journey{
-			{Name: "Taking a sale", Who: "Cashier", Steps: []string{"Open the till", "Take payment"}},
+			{Name: "Taking a sale", Who: "Cashier", Steps: []string{"Cashier opens the Sale Terminal", "Cashier takes payment"}},
 		},
 		Features:      []string{"Barcode scanning", "Daily takings report"},
 		AccountPolicy: &AccountPolicy{AccountsRequired: true, RegistrationMode: RegistrationAdmin, ProvisioningRole: "Admin"},
