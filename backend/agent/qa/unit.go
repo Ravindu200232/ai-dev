@@ -16,10 +16,12 @@ import (
 // repairs what the previous round's failures proved, so overlapping them would
 // have round N judging code round N-1 had already replaced.
 //
-// Four rounds is the floor. If the fourth round is still closing failures the
-// budget extends, one round at a time, up to the ceiling — and it stops early
-// the moment a round closes nothing, because a loop that is not converging will
-// not converge by going round again.
+// Four rounds is the budget for repairing, not a number of rounds to run: a
+// suite that passes first time is done, because running a green suite again
+// proves nothing. If the fourth round is still closing failures the budget
+// extends, one round at a time, up to the ceiling — and it stops early the
+// moment a round closes nothing, because a loop that is not converging will not
+// converge by going round again.
 
 const (
 	baseRounds    = 4

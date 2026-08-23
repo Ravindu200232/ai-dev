@@ -370,3 +370,86 @@ func TestBumpMinor(t *testing.T) {
 		}
 	}
 }
+
+// The specification is composed from the approved plan and nothing else — the
+// rule the whole product rests on. It was enforced nowhere in the API: a
+// project with no plan and no interview at all was given a full SRS.
+func TestASpecificationIsOnlyWrittenFromAnApprovedPlan(t *testing.T) {
+	svc := testService(t)
+	ctx := context.Background()
+
+	status, body := call(t, svc, "POST", "/projects", map[string]any{
+		"idea": "a corner shop till", "language": "English"})
+	if status != 200 {
+		t.Fatalf("create = %d %v", status, body)
+	}
+	id, _ := body["id"].(string)
+	if id == "" {
+		project, _ := body["project"].(map[string]any)
+		id, _ = project["id"].(string)
+	}
+	if id == "" {
+		t.Fatalf("no project id in %v", body)
+	}
+
+	// Nothing has been planned, so there is nothing to compose from.
+	if status, body := call(t, svc, "POST", "/projects/"+id+"/generate-srs", nil); status < 400 {
+		t.Fatalf("a project with no plan was given a specification: %d %v", status, body)
+	}
+
+	// A plan the customer has not agreed to is not an approved plan.
+	if _, err := svc.Repo.SavePlan(ctx, PlanRecordDoc{
+		ProjectID: id, Version: 1, Plan: Plan{AppName: "Till"}}); err != nil {
+		t.Fatal(err)
+	}
+	status, body = call(t, svc, "POST", "/projects/"+id+"/generate-srs", nil)
+	if status != 409 {
+		t.Fatalf("an unapproved plan was accepted: %d %v", status, body)
+	}
+}
+
+// The Discard button says it throws the specification away. It reset the
+// project and left every endpoint serving the whole document.
+func TestDiscardingASpecificationRemovesIt(t *testing.T) {
+	svc := testService(t)
+	ctx := context.Background()
+
+	status, body := call(t, svc, "POST", "/projects", map[string]any{
+		"idea": "a private clinic's notes", "language": "English"})
+	if status != 200 {
+		t.Fatalf("create = %d %v", status, body)
+	}
+	id, _ := body["id"].(string)
+	if id == "" {
+		project, _ := body["project"].(map[string]any)
+		id, _ = project["id"].(string)
+	}
+
+	if _, err := svc.Repo.SaveVersion(ctx, Version{
+		ProjectID: id, Version: "1.0.0",
+		SRS: Envelope{Document: Document{DocumentTitle: "Clinic", Version: "1.0.0"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Repo.SaveDiagrams(ctx, id, []Diagram{{Kind: "context", Title: "Context"}}); err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := call(t, svc, "GET", "/projects/"+id+"/srs-json", nil); status != 200 {
+		t.Fatalf("the fixture did not take: srs-json = %d", status)
+	}
+
+	if status, body := call(t, svc, "POST", "/projects/"+id+"/discard", nil); status != 200 {
+		t.Fatalf("discard = %d %v", status, body)
+	}
+
+	// It is gone, not merely hidden.
+	for _, path := range []string{"/srs-json", "/requirements", "/diagrams"} {
+		if status, body := call(t, svc, "GET", "/projects/"+id+path, nil); status < 400 {
+			t.Errorf("%s still serves a discarded specification: %d %v", path, status, body)
+		}
+	}
+	versions, err := svc.Repo.ListVersions(ctx, id)
+	if err != nil || len(versions) != 0 {
+		t.Errorf("versions = %d %v", len(versions), err)
+	}
+}

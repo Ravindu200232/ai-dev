@@ -676,6 +676,19 @@ func (r *Repo) SaveDiagrams(ctx context.Context, projectID string, diagrams []Di
 	return nil
 }
 
+// DiscardSpecification removes a written specification and its diagrams.
+//
+// Discarding is meant to remove it. A customer throwing a draft away because
+// of something in it that should never have been written down has not thrown
+// it away while every endpoint still serves the whole document. The interview
+// and the plans stay: the flow restarts from them.
+func (r *Repo) DiscardSpecification(ctx context.Context, projectID string) error {
+	if err := r.store.DeleteMany(ctx, CollVersions, Doc{"project_id": projectID}); err != nil {
+		return err
+	}
+	return r.store.DeleteMany(ctx, CollDiagrams, Doc{"project_id": projectID})
+}
+
 func (r *Repo) ListDiagrams(ctx context.Context, projectID string) ([]Diagram, error) {
 	docs, err := r.store.Find(ctx, CollDiagrams, Doc{"project_id": projectID}, "", 0, 0)
 	if err != nil {

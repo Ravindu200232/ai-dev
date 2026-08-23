@@ -95,7 +95,7 @@ func (s *Suite) Dev(ctx context.Context, run *core.Run) error {
 		problem := dev.waitReady(ctx, readyTimeout)
 		if problem == "" {
 			run.Info("✅ the app boots clean")
-			s.report.Runtime.Passed = 1
+			s.report.Runtime.Passed, s.report.Runtime.Total = 1, 1
 			return nil
 		}
 		run.Warn(fmt.Sprintf("🐞 runtime error (%d/%d)", attempt, maxRuntimeFix))
@@ -106,7 +106,7 @@ func (s *Suite) Dev(ctx context.Context, run *core.Run) error {
 			return fmt.Errorf("the runtime error could not be repaired: %w", err)
 		}
 		if !fixed {
-			s.report.Runtime.Failed = 1
+			s.report.Runtime.Failed, s.report.Runtime.Total = 1, 1
 			s.report.Runtime.Unresolved = append(s.report.Runtime.Unresolved, firstLines(problem, 4))
 			return fmt.Errorf("the app does not boot: %s", firstLines(problem, 3))
 		}
@@ -117,7 +117,7 @@ func (s *Suite) Dev(ctx context.Context, run *core.Run) error {
 			return run.Check()
 		}
 	}
-	s.report.Runtime.Failed = 1
+	s.report.Runtime.Failed, s.report.Runtime.Total = 1, 1
 	return fmt.Errorf("the app still does not boot after %d repairs", maxRuntimeFix)
 }
 

@@ -142,6 +142,10 @@ func (s *Service) handleDiscardProject(w http.ResponseWriter, r *http.Request) {
 		fail(w, conflict("this specification is approved; it cannot be discarded"))
 		return
 	}
+	if err := s.Repo.DiscardSpecification(r.Context(), id); err != nil {
+		fail(w, err)
+		return
+	}
 	if err := s.Repo.UpdateProject(r.Context(), id, Doc{
 		"status": StatusIntake, "current_version": "0.0.0"}); err != nil {
 		fail(w, err)

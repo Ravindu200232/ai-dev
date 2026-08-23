@@ -569,9 +569,17 @@ func (s *Service) GenerateSRS(ctx context.Context, projectID string) (*Generatio
 	if session == nil {
 		session = &Session{ProjectID: projectID, Answers: map[string]AnswerEntry{}}
 	}
+	// The specification is composed from the approved plan and nothing else.
+	// Falling back to the latest plan wrote one from something the customer
+	// had not agreed to — and with no plan at all, from nothing at all.
 	planDoc, _ := s.ApprovedPlan(ctx, projectID)
 	if planDoc == nil {
-		planDoc, _ = s.Repo.LatestPlan(ctx, projectID)
+		if latest, _ := s.Repo.LatestPlan(ctx, projectID); latest != nil {
+			return nil, conflict("this plan has not been approved yet — approve it, " +
+				"and the specification is written from it")
+		}
+		return nil, badRequest("there is no plan to write a specification from — " +
+			"answer the interview first")
 	}
 
 	state := &State{
