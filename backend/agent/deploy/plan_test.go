@@ -17,7 +17,7 @@ func planner() (*Planner, *[]Event) {
 func TestPlanIsCompleteWithoutAModel(t *testing.T) {
 	spec := read(t, project(t))
 	p, seen := planner()
-	plan := p.Plan(context.Background(), spec)
+	plan := p.Plan(context.Background(), spec, TargetEC2)
 
 	if plan.ProjectSlug != "corner-shop" || plan.PrimaryService != "corner-shop" {
 		t.Errorf("slug = %q %q", plan.ProjectSlug, plan.PrimaryService)
@@ -60,7 +60,7 @@ func TestPlanIsCompleteWithoutAModel(t *testing.T) {
 func TestPlanCarriesTheEnvironmentContractWithoutValues(t *testing.T) {
 	spec := read(t, project(t))
 	p, _ := planner()
-	plan := p.Plan(context.Background(), spec)
+	plan := p.Plan(context.Background(), spec, TargetEC2)
 
 	if len(plan.EnvironmentContract) != 3 {
 		t.Fatalf("contract = %+v", plan.EnvironmentContract)
@@ -190,8 +190,40 @@ func TestStackSlug(t *testing.T) {
 func TestRepairNeedsAModel(t *testing.T) {
 	spec := read(t, project(t))
 	p, _ := planner()
-	plan := p.Plan(context.Background(), spec)
+	plan := p.Plan(context.Background(), spec, TargetEC2)
 	if _, err := p.RepairBuild(context.Background(), spec, plan, "boom"); err == nil {
 		t.Error("a repair with nothing to ask is an error, not an empty list")
+	}
+}
+
+func TestAdviceIsForTheTargetItIsGoing(t *testing.T) {
+	spec := read(t, project(t))
+	for target, want := range map[string]string{
+		TargetEC2:    "AWS Secrets Manager",
+		TargetECS:    "AWS Secrets Manager",
+		TargetVercel: "Vercel production environment variable",
+	} {
+		p, _ := planner()
+		plan := p.Plan(context.Background(), spec, target)
+		if plan.Target != target {
+			t.Errorf("target = %q", plan.Target)
+		}
+		if !warned(plan.Recommendations, want) {
+			t.Errorf("%s advice = %v", target, plan.Recommendations)
+		}
+	}
+
+	// And the thing in front of the app is named correctly for each.
+	p, _ := planner()
+	if plan := p.Plan(context.Background(), spec, TargetEC2); !warned(plan.Recommendations, "nginx") {
+		t.Errorf("ec2 = %v", plan.Recommendations)
+	}
+	p, _ = planner()
+	if plan := p.Plan(context.Background(), spec, TargetECS); !warned(plan.Recommendations, "load balancer") {
+		t.Errorf("ecs = %v", plan.Recommendations)
+	}
+	p, _ = planner()
+	if plan := p.Plan(context.Background(), spec, TargetVercel); warned(plan.Recommendations, "nginx") {
+		t.Errorf("vercel was told about nginx: %v", plan.Recommendations)
 	}
 }

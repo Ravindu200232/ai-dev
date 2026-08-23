@@ -44,12 +44,12 @@ func NewAgent(root string, llm *core.LLM, hub *core.Hub) (*Agent, error) {
 	}
 	emit := func(runID string, event Event) {
 		_ = store.AddEvent(runID, event)
-		if hub != nil {
-			// The Studio's console reads these live over the WebSocket as
-			// well as by polling, so a long deployment is not silent.
-			hub.Emit(map[string]any{
-				"type": "deploy_event", "run_id": runID, "event": asMap(event),
-			})
+		// The deploy panel polls the run's own log, so most of this is
+		// already on screen. What is worth interrupting the Studio for is a
+		// deployment that failed while the customer was looking elsewhere.
+		if hub != nil && event.Status == StatusFailed && event.Message != "" {
+			hub.Emit(map[string]any{"type": "log", "level": "ERROR",
+				"text": "deploy: " + event.Message})
 		}
 	}
 

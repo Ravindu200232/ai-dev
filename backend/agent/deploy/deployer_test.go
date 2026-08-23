@@ -21,7 +21,7 @@ func deployable(t *testing.T) (*Deployer, *Run) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := (&Planner{}).Plan(context.Background(), spec)
+	plan := (&Planner{}).Plan(context.Background(), spec, TargetEC2)
 	plan.ModelUsed = true
 	records, _, err := (&Generator{}).Generate(spec, plan, staged, TargetEC2)
 	if err != nil {

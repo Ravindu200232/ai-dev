@@ -217,7 +217,7 @@ func (a *Analyzer) intakeNode(ctx context.Context, value any) (any, error) {
 
 func (a *Analyzer) planNode(ctx context.Context, value any) (any, error) {
 	s := value.(*state)
-	s.Plan = (&Planner{LLM: a.LLM, Emit: a.emit(s.Run.ID)}).Plan(ctx, s.Spec)
+	s.Plan = (&Planner{LLM: a.LLM, Emit: a.emit(s.Run.ID)}).Plan(ctx, s.Spec, s.Target)
 	return s, nil
 }
 

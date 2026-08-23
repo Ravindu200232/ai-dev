@@ -133,8 +133,9 @@ type Planner struct {
 
 // Plan is the deployment plan for a project. It always returns one: the model
 // improves the plan, it does not produce it.
-func (p *Planner) Plan(ctx context.Context, spec *Spec) *Plan {
+func (p *Planner) Plan(ctx context.Context, spec *Spec, target string) *Plan {
 	service := spec.Services[0]
+	profile := ProfileFor(target)
 	plan := &Plan{
 		ProjectSlug:    stackSlug(spec.Name),
 		PrimaryService: service.Name,
@@ -142,7 +143,7 @@ func (p *Planner) Plan(ctx context.Context, spec *Spec) *Plan {
 		Infrastructure: Infrastructure,
 		Topology:       Topology,
 		Database:       Database,
-		Target:         TargetEC2,
+		Target:         profile.Target,
 
 		SourcePatches:   []map[string]string{},
 		Risks:           []string{},
@@ -168,18 +169,39 @@ func (p *Planner) Plan(ctx context.Context, spec *Spec) *Plan {
 	}
 
 	// These two follow from what the project imports, so they are said
-	// whether or not a model was reachable.
+	// whether or not a model was reachable — worded for where it is going,
+	// because a customer deploying to Vercel has no Secrets Manager.
 	if service.HasMongoDB {
-		plan.Recommendations = append(plan.Recommendations,
-			"Store MONGODB_URI only in AWS Secrets Manager and inject it at runtime.")
+		plan.Recommendations = append(plan.Recommendations, databaseAdvice(profile.Target))
 	}
 	if service.HasBetterAuth {
-		plan.Recommendations = append(plan.Recommendations,
-			"Use same-origin Better Auth client configuration behind the ALB.")
+		plan.Recommendations = append(plan.Recommendations, authAdvice(profile.Target))
 	}
 
 	p.Emit.step("planner", StatusComplete, 29, "Deployment plan ready", nil)
 	return plan
+}
+
+// databaseAdvice is where the connection string belongs on each target.
+func databaseAdvice(target string) string {
+	if target == TargetVercel {
+		return "Store MONGODB_URI as a Vercel production environment variable, " +
+			"never in the repository."
+	}
+	return "Store MONGODB_URI only in AWS Secrets Manager and inject it at runtime."
+}
+
+// authAdvice is what Better Auth has to be told about the address it answers
+// on, which is different for each thing that sits in front of it.
+func authAdvice(target string) string {
+	switch target {
+	case TargetVercel:
+		return "Use same-origin Better Auth client configuration; Vercel serves the " +
+			"app and its API on one domain."
+	case TargetECS:
+		return "Use same-origin Better Auth client configuration behind the load balancer."
+	}
+	return "Use same-origin Better Auth client configuration behind nginx."
 }
 
 func (p *Planner) model() string {

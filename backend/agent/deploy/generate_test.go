@@ -27,7 +27,7 @@ func generated(t *testing.T, target string) (*Spec, *Plan, []Artifact, string, C
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := (&Planner{}).Plan(context.Background(), spec)
+	plan := (&Planner{}).Plan(context.Background(), spec, target)
 	// The model was not reachable, and its absence is a risk on every plan.
 	// The golden was captured before that line existed, so the comparison is
 	// of what generation does, not of what planning said.

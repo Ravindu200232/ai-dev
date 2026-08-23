@@ -304,7 +304,7 @@ func TestRepairRemovesTheRouteThatBreaksTheBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := (&Planner{}).Plan(context.Background(), spec)
+	plan := (&Planner{}).Plan(context.Background(), spec, TargetEC2)
 	records, _, err := (&Generator{}).Generate(spec, plan, staged, TargetEC2)
 	if err != nil {
 		t.Fatal(err)
@@ -358,7 +358,7 @@ func TestRepairNormalizesAnUnsupportedAlertVariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := (&Planner{}).Plan(context.Background(), spec)
+	plan := (&Planner{}).Plan(context.Background(), spec, TargetEC2)
 	records, _, err := (&Generator{}).Generate(spec, plan, staged, TargetEC2)
 	if err != nil {
 		t.Fatal(err)
@@ -386,7 +386,7 @@ func TestRepairWithNothingToDoChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := (&Planner{}).Plan(context.Background(), spec)
+	plan := (&Planner{}).Plan(context.Background(), spec, TargetEC2)
 	records, _, err := (&Generator{}).Generate(spec, plan, staged, TargetEC2)
 	if err != nil {
 		t.Fatal(err)
