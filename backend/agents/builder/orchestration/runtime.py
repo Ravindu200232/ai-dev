@@ -173,7 +173,13 @@ class ArchitectRuntimeMixin:
     LOUD_TURN_CHARS = 100_000
 
     LOOP_BLOCK = 240
-    LOOP_REPEATS = 6
+    # Three identical passages is already a cycle; six let a looping turn run
+    # for minutes and write a quarter of a megabyte before anyone stopped it.
+    LOOP_REPEATS = 3
+    # A cycle longer than one block repeats few blocks many times or many
+    # blocks a few times. Counting the characters it has already sent catches
+    # both, whatever the cycle length turns out to be.
+    LOOP_DUP_CHARS = 20_000
 
     # The turn that thinks and never speaks.
     MAX_SILENT_THINKS = 20_000
@@ -184,16 +190,38 @@ class ArchitectRuntimeMixin:
                 reasoning=None):
         """Stream a chat completion. `on_delta(text)` gets content deltas."""
         use_think = self.think if reasoning is None else reasoning
-        calls, stalled = self._stream_once(
-            messages, on_delta, tools=tools, temperature=temperature,
-            model=model, timeout=timeout, think=use_think,
-            max_output_tokens=max_output_tokens)
+        emitted = [0]
+
+        def tracked(delta):
+            emitted[0] += len(str(delta or ""))
+            on_delta(delta)
+
+        active_tools = tools
+        try:
+            calls, stalled = self._stream_once(
+                messages, tracked, tools=active_tools, temperature=temperature,
+                model=model, timeout=timeout, think=use_think,
+                max_output_tokens=max_output_tokens)
+        except Exception as exc:
+            # Some local/vision models cannot consume function schemas. If
+            # the request failed before emitting anything, retry through the
+            # XML compatibility protocol already present in every prompt.
+            if not active_tools or emitted[0]:
+                raise
+            self._log("WARN", "   ↻ this model rejected function tools — "
+                              "continuing with the compatibility tool tags")
+            log.debug(f"function-tool fallback: {exc}")
+            active_tools = None
+            calls, stalled = self._stream_once(
+                messages, tracked, tools=None, temperature=temperature,
+                model=model, timeout=timeout, think=use_think,
+                max_output_tokens=max_output_tokens)
 
         if stalled and use_think:
             self._log("WARN", "   ↻ taking that turn again with the reasoning "
                               "pass off — it is what stalled")
             calls, _ = self._stream_once(
-                messages, on_delta, tools=tools, temperature=temperature,
+                messages, tracked, tools=active_tools, temperature=temperature,
                 model=model, timeout=timeout, think=False,
                 max_output_tokens=max_output_tokens)
         return calls
@@ -232,6 +260,7 @@ class ArchitectRuntimeMixin:
         tail_len = 0
         seen_blocks = {}  # Block hash -> how many times it has arrived
         looping = 0
+        duplicate_chars = 0
         for chunk in self.client.chat_stream(
                 model or self.model, messages, tools=tools, options=options,
                 keep_alive="10m", think=think, **kw):
@@ -259,8 +288,11 @@ class ArchitectRuntimeMixin:
                     if not block.strip():
                         continue
                     key = hash(block)
-                    seen_blocks[key] = seen_blocks.get(key, 0) + 1
-                    looping = max(looping, seen_blocks[key])
+                    before = seen_blocks.get(key, 0)
+                    seen_blocks[key] = before + 1
+                    if before:
+                        duplicate_chars += len(block)
+                    looping = max(looping, before + 1)
 
             now = time.time()
             if now - spoke >= 30:
@@ -269,9 +301,12 @@ class ArchitectRuntimeMixin:
                 if chars:
                     wrote = f"{chars:,} characters written"
                     if looping > 1:
-                        wrote += (f" — {looping} of them identical, so it is "
-                                  f"repeating itself; stopping it at "
-                                  f"{self.LOOP_REPEATS}")
+                        wrote += (f" — {duplicate_chars:,} of them are text it "
+                                  f"already sent, so it is repeating itself; "
+                                  f"stopping it at {self.LOOP_REPEATS} "
+                                  f"identical passages or "
+                                  f"{self.LOOP_DUP_CHARS:,} repeated "
+                                  f"characters")
                     elif chars >= self.LOUD_TURN_CHARS:
                         wrote += (f" — far past what one turn should write; "
                                   f"stopping it at {self.MAX_TURN_CHARS:,}")
@@ -292,11 +327,13 @@ class ArchitectRuntimeMixin:
                 self.tokens_out += chunk.get("eval_count", 0) or 0
 
             # Both checks run AFTER the delta is delivered.
-            if looping >= self.LOOP_REPEATS:
+            if (looping >= self.LOOP_REPEATS
+                    or duplicate_chars >= self.LOOP_DUP_CHARS):
                 self._log("WARN",
-                          f"   ✂ stopped the model — it sent the same passage "
-                          f"{looping} times ({chars:,} characters, "
-                          f"{time.time() - started:.0f}s). It is looping, not "
+                          f"   ✂ stopped the model — {duplicate_chars:,} of the "
+                          f"{chars:,} characters it sent were text it had "
+                          f"already written, one passage {looping} times "
+                          f"({time.time() - started:.0f}s). It is looping, not "
                           f"working. Carrying on with what it wrote.")
                 break
             if chars >= self.MAX_TURN_CHARS:
@@ -316,7 +353,20 @@ class ArchitectRuntimeMixin:
                           f"is a turn that was never going to end.")
                 stalled = True
                 break
-        return tool_calls, stalled
+        # Streaming providers may repeat the cumulative tool-call array in
+        # more than one chunk. Execute each logical call once.
+        unique, seen = [], set()
+        for call in tool_calls:
+            fn = (call or {}).get("function") or {}
+            signature = (str((call or {}).get("id") or ""),
+                         str(fn.get("name") or ""),
+                         json.dumps(fn.get("arguments") or {}, sort_keys=True,
+                                    default=str))
+            if signature in seen:
+                continue
+            seen.add(signature)
+            unique.append(call)
+        return unique, stalled
 
     # The frontend craft the plan never carries.
     DESIGN_SKILL = """\

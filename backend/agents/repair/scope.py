@@ -27,7 +27,16 @@ class BugFixerScopeMixin:
         """Keep builder repair behavior; QA repair can force reasoning off."""
         if self.reasoning is not None:
             kwargs["reasoning"] = self.reasoning
-        return self.arch._stream(*args, **kwargs)
+        try:
+            return self.arch._stream(*args, **kwargs)
+        except TypeError as exc:
+            # Compatibility for embedders/fakes whose stream predates native
+            # function tools.  Real ArchitectAgent performs its own model-level
+            # fallback when a provider rejects the schemas.
+            if "tools" not in str(exc) or "tools" not in kwargs:
+                raise
+            kwargs.pop("tools", None)
+            return self.arch._stream(*args, **kwargs)
 
     def _fire(self, name, *a):
         fn = self.cb.get(name)

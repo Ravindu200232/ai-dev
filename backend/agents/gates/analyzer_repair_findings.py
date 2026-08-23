@@ -104,19 +104,43 @@ class AnalyzerRepairFindingsMixin:
                 "each journey, then report."},
         ]
 
-        reads, used, out = 0, 0, ""
+        reads, used, out, tool_rounds = 0, 0, "", 0
         budget = self._budget_chars()
         while True:
             chunks = []
             try:
-                self.arch._stream(messages, lambda t: chunks.append(t),
-                                  temperature=0.2)
+                workspace, calls = stream_with_read_tools(
+                    self.arch, messages, chunks.append, temperature=0.2)
             except Exception as e:
                 self._log("WARN", f"   promise audit failed: {e}")
                 return []
             out = "".join(chunks)
-            messages.append({"role": "assistant", "content": out})
+            messages.append(workspace.assistant_message(out, calls))
             used += len(out)
+
+            remaining = max(0, max_reads - reads)
+            if remaining:
+                tool_messages, called = workspace.serve_calls(
+                    calls, names=READ_TOOL_NAMES,
+                    max_calls=min(4, remaining))
+            else:
+                tool_messages = [workspace.tool_message(
+                    call,
+                    str(((call or {}).get("function") or {}).get("name")
+                        or "unknown"),
+                    "refused: semantic-analyzer read budget exhausted")
+                    for call in calls]
+                called = 0
+            if tool_messages:
+                messages.extend(tool_messages)
+                reads += called
+                used += sum(len(str(m.get("content", "")))
+                            for m in tool_messages)
+                if tool_rounds < 3 and used < budget:
+                    tool_rounds += 1
+                    self._log("INFO", f"   🧰 flow analyzer inspected {called} "
+                                      "workspace function tool(s)")
+                    continue
 
             wanted = [p for p in self.READ_RE.findall(out)][:4]
             if not (wanted and reads < max_reads and used < budget):

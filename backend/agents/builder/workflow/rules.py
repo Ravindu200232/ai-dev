@@ -291,6 +291,7 @@ class ArchitectNextRulesMixin:
             az = AnalyzerAgent(self, self.project_dir)
             findings = []
             for check in (az.layout_chrome, az.contract_findings,
+                          az.query_contract_findings,
                           az.planned_data_findings, az.action_id_findings):
                 try:
                     findings.extend(check() or [])

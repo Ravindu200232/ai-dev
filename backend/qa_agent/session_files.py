@@ -121,6 +121,56 @@ class QASessionFilesMixin:
             self._log("INFO", f"   🧪 {n} test(s) marked stale — their target was repaired")
         return n
 
+    def refresh_stale(self, targets=None) -> list:
+        """Re-author stale tests once against settled production source.
+
+        Tests are deliberately drafted beside generation for wall-clock speed.
+        Analyzer/build repairs can then change their subjects.  Refreshing only
+        those stale files in four-target model batches is much cheaper than
+        discovering the drift through a full Vitest run and launching one bug
+        fixer call per failing test file.
+        """
+        if not self.author:
+            return []
+        wanted = None
+        if targets is not None:
+            wanted = {str(p or "").lstrip("./").replace("\\", "/")
+                      for p in targets}
+        from .spec import MAX_PER_PHASE, TestTarget
+
+        stale = []
+        for test_path, meta in sorted(self.manifest.items()):
+            meta = meta or {}
+            target = str(meta.get("target") or "")
+            if not meta.get("stale") or not target:
+                continue
+            if wanted is not None and target not in wanted:
+                continue
+            if not (self.read_source(target) or "").strip():
+                continue
+            stale.append(TestTarget(
+                path=target, test_path=test_path,
+                tier=int(meta.get("tier") or 0),
+                phase=int(meta.get("phase") or 0),
+                reason="target changed after test authoring"))
+        if not stale:
+            return []
+
+        self._log("INFO", f"   ♻ refreshing {len(stale)} stale unit test "
+                           "file(s) against the final repaired source before "
+                           "the first Vitest run")
+        written = []
+        for start in range(0, len(stale), MAX_PER_PHASE):
+            batch = stale[start:start + MAX_PER_PHASE]
+            written.extend(self.author.write_for(batch, phase=0))
+        remaining = sum(1 for t in stale
+                        if (self.manifest.get(t.test_path) or {}).get("stale"))
+        if remaining:
+            self._log("WARN", f"   ⚠ {remaining} stale test file(s) could not "
+                              "be refreshed; normal failure repair will handle "
+                              "them if they are red")
+        return written
+
     def drain(self, timeout: float = 900):
         """Finish the queued work, or give up cleanly."""
         if not self.enabled or not self.arch:

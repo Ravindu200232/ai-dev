@@ -131,7 +131,9 @@ class UnitAuthorRepairMixin:
 
         with guard:
             if self.qa and self.qa.write_test_file(key, content, target=t.path,
-                                                   phase=phase, tier=t.tier):
+                                                   phase=(getattr(t, "phase", 0)
+                                                          or phase),
+                                                   tier=t.tier):
 
                 if key not in written:
                     written.append(key)

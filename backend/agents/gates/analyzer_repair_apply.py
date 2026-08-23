@@ -255,7 +255,26 @@ class AnalyzerRepairApplyMixin:
             on_file_end=on_end)
 
         try:
-            self.arch._stream(convo, parser.feed, temperature=0.4)
+            workspace = None
+            for tool_turn in range(2):
+                turn = []
+
+                def feed(token):
+                    turn.append(token)
+                    parser.feed(token)
+
+                workspace, calls = stream_with_read_tools(
+                    self.arch, convo, feed, temperature=0.4)
+                reply = "".join(turn)
+                convo.append(workspace.assistant_message(reply, calls))
+                messages, called = workspace.serve_calls(
+                    calls, names=READ_TOOL_NAMES, max_calls=4)
+                if messages and not proposed and tool_turn == 0:
+                    convo.extend(messages)
+                    self._log("INFO", f"   🧰 analyzer repair inspected {called} "
+                                      "workspace function tool(s)")
+                    continue
+                break
         except Exception as e:
             self._log("ERROR", f"   ❌ Analyzer repair failed: {e}")
         parser.close()
@@ -278,9 +297,11 @@ class AnalyzerRepairApplyMixin:
                          "<write_file> block each:\n"
                          + "\n".join(f"  • {p}" for p in sorted(retry_files)
                                      if p))
-            convo.append({"role": "assistant",
-                          "content": "\n".join(f"<write_file path=\"{p}\">…"
-                                               for p in sorted(proposed))})
+            if not convo or convo[-1].get("role") != "assistant":
+                convo.append({"role": "assistant",
+                              "content": "\n".join(
+                                  f"<write_file path=\"{p}\">…"
+                                  for p in sorted(proposed))})
             convo.append({"role": "user", "content": "\n".join(retry)})
             reparser = FileStreamParser(
                 on_text=lambda t: None,

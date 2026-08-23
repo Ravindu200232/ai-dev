@@ -1,4 +1,6 @@
 """E2E investigation, tool use, and runtime source selection."""
+from agents.core.workspace import project_structure
+
 from .debugger_common import *
 from .session import QASession
 
@@ -109,6 +111,13 @@ class DebuggerInvestigateMixin:
             "## Current scenario\n" + (scenario_text[:9000] or "(unknown)"),
             packet[:42000],
         ]
+        layout = project_structure(getattr(self.arch, "files", None) or {})
+        if layout:
+            transcript.insert(1, "## The files this app is made of\n" + layout
+                              + "\nEvery path here is real and readable with "
+                                "read_file / dependency_closure. The defect is "
+                                "in one of them — narrow to it from the "
+                                "evidence rather than guessing a filename.")
         if runtime_frames:
             locs = "\n".join(
                 f"- {x['path']}:{x['line']}:{x.get('column', 0)} [{x.get('signal','runtime')}] {x.get('message','')[:180]}"
@@ -282,38 +291,54 @@ Do not output locator shorthand by itself.
         return line[:1200]
 
     def _ask(self, user: str) -> str:
-        buf: list[str] = []
-        chars = 0
+        from agents.core.workspace import READ_TOOL_NAMES, WorkspaceTools
 
-        def collect(delta: str) -> None:
-            nonlocal chars
-            if not delta:
-                return
-            buf.append(delta)
-            chars += len(delta)
-            text = "".join(buf)
-            # The debugger protocol is tiny.
-            if re.search(r"^\s*CONFIDENCE\s*::\s*(?:high|medium|low)\s*$", text, re.I | re.M):
-                raise _StopDebuggerStream()
-            if re.search(r"^\s*TOOL\s*::\s*[A-Z_]+\s*::\s*.+$", text, re.I | re.M) and "\n" in text.strip():
-                raise _StopDebuggerStream()
-            if chars >= DEBUGGER_OUTPUT_CHARS:
-                raise _StopDebuggerStream()
+        convo = [{"role": "system", "content": SYSTEM},
+                 {"role": "user", "content": user}]
+        workspace = WorkspaceTools(self.arch)
+        last = ""
+        for _ in range(3):
+            buf: list[str] = []
+            chars = 0
 
-        try:
-            self.arch._stream(
-                [{"role": "system", "content": SYSTEM},
-                 {"role": "user", "content": user}],
-                collect, temperature=0.05, model=self.model, timeout=100,
-                reasoning=QASession.reasoning_for(getattr(self.agent, "qa", None)),
-                max_output_tokens=DEBUGGER_OUTPUT_TOKENS)
-        except _StopDebuggerStream:
-            pass
-        except Exception as e:
-            log.debug("agentic E2E debugger model call: %s", e)
-            if not buf:
-                return ""
-        return "".join(buf)[:DEBUGGER_OUTPUT_CHARS]
+            def collect(delta: str) -> None:
+                nonlocal chars
+                if not delta:
+                    return
+                buf.append(delta)
+                chars += len(delta)
+                text = "".join(buf)
+                # The debugger protocol is tiny.
+                if re.search(r"^\s*CONFIDENCE\s*::\s*(?:high|medium|low)\s*$", text, re.I | re.M):
+                    raise _StopDebuggerStream()
+                if re.search(r"^\s*TOOL\s*::\s*[A-Z_]+\s*::\s*.+$", text, re.I | re.M) and "\n" in text.strip():
+                    raise _StopDebuggerStream()
+                if chars >= DEBUGGER_OUTPUT_CHARS:
+                    raise _StopDebuggerStream()
+
+            calls = []
+            try:
+                calls = self.arch._stream(
+                    convo, collect, temperature=0.05, model=self.model,
+                    timeout=100,
+                    reasoning=QASession.reasoning_for(getattr(self.agent, "qa", None)),
+                    max_output_tokens=DEBUGGER_OUTPUT_TOKENS,
+                    tools=workspace.schemas(READ_TOOL_NAMES))
+            except _StopDebuggerStream:
+                pass
+            except Exception as e:
+                log.debug("agentic E2E debugger model call: %s", e)
+                if not buf:
+                    return last
+            last = "".join(buf)[:DEBUGGER_OUTPUT_CHARS]
+            convo.append(workspace.assistant_message(last, calls))
+            messages, used = workspace.serve_calls(
+                calls, names=READ_TOOL_NAMES, max_calls=3)
+            convo.extend(messages)
+            if used:
+                continue
+            return last
+        return last
 
     @staticmethod
     def _parse_tool(raw: str):

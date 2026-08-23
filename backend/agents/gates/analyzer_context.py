@@ -243,6 +243,73 @@ class AnalyzerContextMixin:
 
         return sorted(set(pages) - reachable - {"/"})
 
+    # fetch('/api/<name>?<key>=' + x) and fetch(`/api/<name>?<key>=${x}`)
+    FETCH_QUERY_RE = re.compile(
+        r"""fetch\(\s*[`'"](/api/[A-Za-z0-9_\-/\[\]]*)\?([^`'"]{1,200})""")
+
+    QUERY_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
+
+    @classmethod
+    def _query_keys(cls, raw: str) -> list:
+        """The literal parameter names a caller puts in a fetch URL."""
+        keys = []
+        for chunk in str(raw or "").split("&"):
+            key = chunk.split("=")[0].strip()
+            if cls.QUERY_KEY_RE.match(key) and key not in keys:
+                keys.append(key)
+        return keys
+
+    def query_contract_findings(self, routes: dict = None) -> list:
+        """Query parameters a caller sends that its route handler never reads.
+
+        A handler that ignores the parameter answers with the whole
+        collection instead of the row that was asked for. The build stays
+        green, the page renders, and the first real click throws on a
+        property of `undefined` — so this is caught by reading the two files
+        against each other, not by waiting for the browser.
+        """
+        routes = self.enumerate_routes() if routes is None else routes
+        api = {url: meta for url, meta in routes.items()
+               if meta.get("kind") == "api"}
+        if not api:
+            return []
+        files = self.code_files()
+        out, seen = [], set()
+
+        for src, body in sorted(files.items()):
+            if src.endswith("/route.js") or src.endswith("/route.jsx"):
+                continue                      # a route calling itself is not this
+            for url, raw in self.FETCH_QUERY_RE.findall(body or ""):
+                url = url.rstrip("/") or "/"
+                match = next((meta for served, meta in api.items()
+                              if self._route_matches(url, [served])), None)
+                rel = str((match or {}).get("file") or "")
+                if not rel or rel not in files:
+                    continue
+                handler = files.get(rel) or ""
+                for key in self._query_keys(raw):
+                    if f"'{key}'" in handler or f'"{key}"' in handler or f"`{key}`" in handler:
+                        continue
+                    identity = (rel, key)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    out.append(Finding(
+                        "major", "IGNORED_QUERY_PARAM",
+                        f"{src} calls {url}?{key}=… but {rel} never reads "
+                        f"'{key}', so the handler answers with the unfiltered "
+                        f"collection and the caller reads the wrong shape",
+                        path=rel,
+                        fix=(f"read `{key}` in {rel} with "
+                             f"`const {key} = new URL(request.url).searchParams"
+                             f".get('{key}')` and use it to query. If the "
+                             f"caller sends `{key}` to look ONE row up, answer "
+                             f"with that single object and a 404 when it does "
+                             f"not exist — never an array, because the caller "
+                             f"reads properties straight off the response."),
+                        extra=[src, rel]))
+        return out[:12]
+
     def contract_findings(self, routes: dict = None) -> list:
         """Deterministic failures in planner-declared cross-file hand-offs."""
         contracts = (getattr(self.arch, "plan", None) or {}).get("contracts") or []

@@ -221,19 +221,40 @@ class AnalyzerRuntimeMixin:
                  {"role": "user", "content": user}]
         budget = self._budget_chars()
         findings, reads = [], 0
+        from agents.core.workspace import READ_TOOL_NAMES, WorkspaceTools
+        workspace = WorkspaceTools(self.arch)
 
         while True:
             buf = []
             try:
-                self.arch._stream(convo, buf.append, temperature=0.3)
+                calls = self.arch._stream(
+                    convo, buf.append, temperature=0.3,
+                    tools=workspace.schemas(READ_TOOL_NAMES))
             except Exception as e:
                 self._log("WARN", f"   ⚠ Analyzer query failed: {e}")
                 break
             reply = "".join(buf)
-            convo.append({"role": "assistant", "content": reply})
+            convo.append(workspace.assistant_message(reply, calls))
+
+            remaining = max(0, max_reads - reads)
+            if remaining:
+                call_messages, called = workspace.serve_calls(
+                    calls, names=READ_TOOL_NAMES, max_calls=min(4, remaining))
+            else:
+                call_messages = [workspace.tool_message(
+                    call, str(((call or {}).get("function") or {}).get("name") or "unknown"),
+                    "refused: analyzer read budget exhausted") for call in calls]
+                called = 0
+            if call_messages:
+                convo.extend(call_messages)
+            used = sum(len(m["content"]) for m in convo)
+            if called and remaining and used < budget:
+                reads += called
+                self._log("INFO", f"   📖 analyzer inspected {called} "
+                                  "workspace function tool(s)")
+                continue
 
             wanted = self.READ_RE.findall(reply)
-            used = sum(len(m["content"]) for m in convo)
             if wanted and reads < max_reads and used < budget:
                 served = []
                 for rel in wanted[:4]:

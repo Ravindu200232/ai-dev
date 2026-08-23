@@ -243,6 +243,13 @@ class BugFixerPromptMixin:
                 parts.append(f"### {p} (reference)\n"
                              f"```js\n{b[:self.NEIGHBOUR_CHARS]}\n```")
 
+        layout = project_structure(getattr(self.arch, "files", None) or {})
+        if layout:
+            parts.append("## The files this app is made of\n" + layout
+                         + "\nEvery path here is real and readable with the "
+                           "read_file / dependency_closure tools. When the "
+                           "failure points somewhere outside the two files "
+                           "above, read that file before deciding.")
         parts.append(f"## What Vitest reported ({len(failures)} case(s) failing)\n"
                      + "\n".join(cases))
         mechanics = self._mechanical_failure_notes(failures, f0.target)

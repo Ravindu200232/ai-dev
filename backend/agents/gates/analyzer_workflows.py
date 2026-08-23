@@ -158,6 +158,7 @@ class AnalyzerWorkflowMixin:
         r.routes = self.enumerate_routes()
         r.dead_links = self.dead_links(r.routes)
         r.unresolved = self.unresolved_packages()
+        r.findings.extend(self.query_contract_findings(r.routes))
 
         plan_lines = self.plan_text().splitlines()
         for p in r.missing:

@@ -5,7 +5,8 @@ import re
 from dataclasses import dataclass, field
 
 from agents.builder.orchestration.agent import FileStreamParser
-from agents.core.workspace import WorkspaceTools, TOOL_HELP
+from agents.core.workspace import (READ_TOOL_NAMES, TOOL_HELP,
+                                   WorkspaceTools, project_structure)
 from agents.gates.exports import effective_exports, parse_imports, resolve_local
 from agents.selection.picker import guard_scope
 

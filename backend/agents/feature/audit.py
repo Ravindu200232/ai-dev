@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 
 from .common import FeatureSpec, normalise_change_path, safe_change_path
-from agents.core.workspace import WorkspaceTools, TOOL_HELP
+from agents.core.workspace import (READ_TOOL_NAMES, TOOL_HELP,
+                                   WorkspaceTools, structure_block)
 
 
 AUDIT_SYSTEM = """\
@@ -156,7 +157,8 @@ class FeaturesAgentAuditMixin:
                         f"Route: {selected_route or '/'}\n"
                         f"Selected owner candidate: {selected_path or '(unknown)'}\n"
                         f"Selected DOM/region: {selected_element or '(not described)'}\n")
-        user = (f"## User request\n{request}\n\n"
+        user = (structure_block(self.arch)
+                + f"## User request\n{request}\n\n"
                 f"## Pre-change reasoning receipt\n{receipt}\n"
                 f"{selected}\n"
                 f"## Files written by the change\n" +
@@ -167,26 +169,35 @@ class FeaturesAgentAuditMixin:
         convo = ([{"role": "system", "content": AUDIT_SYSTEM + "\n\n" + TOOL_HELP}]
                  + self._memory() + [{"role": "user", "content": user}])
         seen = set()
+        workspace = WorkspaceTools(self.arch)
         for _ in range(3):
             buf = []
             try:
-                self._model_stream(convo, buf.append, temperature=0.1,
-                                   model=self.model)
+                calls = self._model_stream(
+                    convo, buf.append, temperature=0.1, model=self.model,
+                    tools=workspace.schemas(READ_TOOL_NAMES))
             except Exception as e:
                 self._log("WARN", f"   ⚠ semantic audit failed: {str(e)[:100]}")
                 return {"result": "UNKNOWN", "gap": str(e), "evidence": [],
                         "files": [], "verify": ""}
             reply = "".join(buf)
-            convo.append({"role": "assistant", "content": reply})
-            observations, used = WorkspaceTools(self.arch).serve(reply)
+            convo.append(workspace.assistant_message(reply, calls))
+            call_messages, function_count = workspace.serve_calls(
+                calls, names=READ_TOOL_NAMES)
+            convo.extend(call_messages)
+            observations, tag_count = workspace.serve(reply)
+            used = function_count + tag_count
             if used:
-                sig = observations.strip()
+                sig = ("\n".join(m["content"] for m in call_messages) +
+                       "\n" + observations).strip()
                 if sig and sig not in seen:
                     seen.add(sig)
                     self._log("INFO", f"   🔎 semantic audit inspected {used} workspace tool(s)")
+                    if observations:
+                        convo.append({"role": "user", "content":
+                                      "Compatibility tool observations:\n\n" + observations})
                     convo.append({"role": "user", "content":
-                                  "Tool observations:\n\n" + observations +
-                                  "\n\nContinue the SAME read-only audit. Output the complete RESULT protocol."})
+                                  "Continue the SAME read-only audit from the tool results. Output the complete RESULT protocol."})
                     continue
             result = self._audit_parse(reply)
             if result["result"] == "PASS" and result["evidence"]:

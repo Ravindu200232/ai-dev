@@ -7,7 +7,8 @@ import textwrap
 from dataclasses import dataclass, field
 
 from agents.builder.orchestration.agent import FileStreamParser
-from agents.core.workspace import WorkspaceTools, TOOL_HELP
+from agents.core.workspace import (READ_TOOL_NAMES, WORKSPACE_TOOL_NAMES,
+                                   WorkspaceTools, TOOL_HELP, structure_block)
 
 
 LOCAL_IMPORT_RE = re.compile(
@@ -259,7 +260,17 @@ No preamble, no explanation, no markdown.\
         """Keep legacy builder calls untouched; QA can force reasoning off."""
         if self.reasoning is not None:
             kwargs["reasoning"] = self.reasoning
-        return self.arch._stream(*args, **kwargs)
+        try:
+            return self.arch._stream(*args, **kwargs)
+        except TypeError as exc:
+            # Third-party/test hosts may still expose the pre-function-tools
+            # stream signature. Retrying is safe because Python rejects the
+            # unknown keyword before the host can emit output.
+            if "tools" not in kwargs or "tools" not in str(exc):
+                raise
+            fallback = dict(kwargs)
+            fallback.pop("tools", None)
+            return self.arch._stream(*args, **fallback)
 
     def _fire(self, name, *a):
         fn = self.cb.get(name)

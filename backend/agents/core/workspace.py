@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import json
 import re
+import stat
 from pathlib import Path
 
 TOOL_HELP = r"""
 AGENTIC WORKSPACE TOOLS — use them only when current context is insufficient.
-Ask for at most four read-only tools in one turn, one tag per line.  AgentForge
-will return the observations and you continue the SAME task.  Do not repeat an
-identical request.
+Prefer the function tools offered by the API. If this model cannot call tools,
+the tags below are a compatibility fallback. Ask for at most four tools in one
+turn. AgentForge returns the observations and you continue the SAME task. Do
+not repeat an identical request.
 
 <read_file path="app/items/page.jsx"/>
 <search_code query="stock_quantity"/>
@@ -52,6 +54,82 @@ _TAGS = {
     "recall": re.compile(r"<recall\s+query=[\"']([^\"']*)[\"']\s*/?>", re.I),
 }
 
+READ_TOOL_NAMES = (
+    "list_files", "read_file", "search_code", "route_source", "importers",
+    "dependency_closure", "tests_for", "route_map", "plan_query", "recall",
+)
+WORKSPACE_TOOL_NAMES = READ_TOOL_NAMES + ("run_command", "remember")
+
+
+def _schema(name: str, description: str, properties: dict,
+            required=()) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object", "properties": properties,
+                "required": list(required),
+            },
+        },
+    }
+
+
+WORKSPACE_SCHEMAS = {
+    "list_files": _schema(
+        "list_files", "List project files/directories with byte sizes and permissions.",
+        {"path": {"type": "string", "description": "Project-relative directory; empty means project root."},
+         "depth": {"type": "integer", "description": "Levels to include, from 1 to 8."}}),
+    "read_file": _schema(
+        "read_file", "Read a project file with line numbers and a bounded window.",
+        {"path": {"type": "string", "description": "Project-relative file path."},
+         "start": {"type": "integer", "description": "First 1-based line."},
+         "limit": {"type": "integer", "description": "Maximum lines, up to 500."}},
+        ("path",)),
+    "search_code": _schema(
+        "search_code", "Search current project source and return matching path:line evidence.",
+        {"query": {"type": "string", "description": "Text or regular expression."},
+         "path": {"type": "string", "description": "Optional project-relative path prefix."},
+         "glob": {"type": "string", "description": "Optional filename glob such as *.jsx."}},
+        ("query",)),
+    "route_source": _schema(
+        "route_source", "Map a browser or API route to its current source file.",
+        {"path": {"type": "string", "description": "Route such as /items/123 or /api/items."}},
+        ("path",)),
+    "importers": _schema(
+        "importers", "List current source files that import a target file.",
+        {"path": {"type": "string", "description": "Project-relative source file."}},
+        ("path",)),
+    "dependency_closure": _schema(
+        "dependency_closure", "Show a source file and its local imports to depth two.",
+        {"path": {"type": "string", "description": "Project-relative source file."}},
+        ("path",)),
+    "tests_for": _schema(
+        "tests_for", "Find generated tests associated with a source file.",
+        {"path": {"type": "string", "description": "Project-relative source file."}},
+        ("path",)),
+    "route_map": _schema(
+        "route_map", "List application routes and their owning files.",
+        {"prefix": {"type": "string", "description": "Route prefix; / means all routes."}}),
+    "plan_query": _schema(
+        "plan_query", "Search the approved plan, capabilities, workflows and contracts.",
+        {"query": {"type": "string", "description": "Term to find, or current for the compact plan."}}),
+    "recall": _schema(
+        "recall", "Recall durable notes from earlier work on this project.",
+        {"query": {"type": "string", "description": "What to recall."}},
+        ("query",)),
+    "run_command": _schema(
+        "run_command", "Run one allow-listed npm/npx/node/yarn/pnpm project command.",
+        {"command": {"type": "string", "description": "One command, without shell operators."}},
+        ("command",)),
+    "remember": _schema(
+        "remember", "Save one durable project note for later agent turns.",
+        {"kind": {"type": "string", "description": "goal, tried, learned, decided, or avoid."},
+         "text": {"type": "string", "description": "A concise factual note."}},
+        ("kind", "text")),
+}
+
 # `remember` carries its text in the body, so it is matched on its own.
 _REMEMBER_RE = re.compile(
     r"<remember(?:\s+kind=[\"']([a-z]{3,10})[\"'])?\s*>(.{4,400}?)</remember>",
@@ -70,6 +148,86 @@ def _clean(value: str) -> str:
     return value
 
 
+def _unsafe(value: str) -> bool:
+    raw = str(value or "").strip().replace("\\", "/")
+    return (raw.startswith(("/", "~")) or
+            bool(re.match(r"^[a-z]:/", raw, re.I)) or
+            ".." in Path(raw or ".").parts)
+
+
+STRUCTURE_CHARS = 3_500
+
+# Directories whose contents tell a reader nothing about the app's own shape.
+_STRUCTURE_SKIP = ("node_modules/", ".next/", ".git/", ".agentforge/",
+                   "coverage/", "dist/", "out/", ".turbo/", ".vite/")
+
+
+def project_structure(files, *, max_chars: int = STRUCTURE_CHARS,
+                      prefix: str = "") -> str:
+    """The project's folder/file layout, compact enough to sit in a prompt.
+
+    Agents get a tool that reads any file, but a tool is only usable once the
+    caller knows a path to ask for. Handing over the real layout up front is
+    what turns "read the file you need" into something the model can act on
+    without guessing a filename.
+    """
+    if isinstance(files, dict):
+        names = list(files)
+    else:
+        names = list(files or [])
+    base = _clean(prefix).rstrip("/")
+
+    grouped = {}
+    total = 0
+    for rel in sorted(str(name or "").replace("\\", "/") for name in names):
+        if not rel or rel.startswith(_STRUCTURE_SKIP):
+            continue
+        if base and not (rel == base or rel.startswith(base + "/")):
+            continue
+        head, _, leaf = rel.rpartition("/")
+        grouped.setdefault(head + "/" if head else "./", []).append(leaf)
+        total += 1
+    if not total:
+        return ""
+
+    width = min(34, max((len(d) for d in grouped), default=0) + 2)
+    rows, shown = [], 0
+    for directory in sorted(grouped):
+        leaves = grouped[directory]
+        line = f"{directory:<{width}}{', '.join(leaves)}"
+        if sum(len(r) + 1 for r in rows) + len(line) > max(400, max_chars):
+            rows.append(f"… {len(grouped) - shown} more director"
+                        f"{'y' if len(grouped) - shown == 1 else 'ies'}")
+            break
+        rows.append(line)
+        shown += 1
+    head = f"{total} file(s) in {len(grouped)} director" \
+           f"{'y' if len(grouped) == 1 else 'ies'}"
+    return head + "\n" + "\n".join(rows)
+
+
+STRUCTURE_TITLE = "The files this project is made of"
+
+STRUCTURE_NOTE = (
+    "Every path above is real. Read any of them with the read_file / "
+    "dependency_closure tools before you touch something that depends on "
+    "them, and never name a file that is not on this list.")
+
+
+def structure_block(source, *, title: str = STRUCTURE_TITLE,
+                    max_chars: int = STRUCTURE_CHARS,
+                    note: str = STRUCTURE_NOTE) -> str:
+    """A ready-to-paste prompt section, or `""` when there is nothing to show.
+
+    `source` is an agent (anything with `.files`) or the file map itself.
+    """
+    files = getattr(source, "files", source)
+    tree = project_structure(files or {}, max_chars=max_chars)
+    if not tree:
+        return ""
+    return f"## {title}\n{tree}\n{note}\n"
+
+
 class WorkspaceTools:
     def __init__(self, arch):
         self.arch = arch
@@ -82,6 +240,99 @@ class WorkspaceTools:
     @property
     def files(self) -> dict:
         return getattr(self.arch, "files", None) or {}
+
+    @staticmethod
+    def schemas(names=None, extra=()) -> list:
+        """OpenAI/Ollama function schemas, optionally narrowed by agent role."""
+        selected = tuple(names or WORKSPACE_TOOL_NAMES)
+        return [WORKSPACE_SCHEMAS[name] for name in selected
+                if name in WORKSPACE_SCHEMAS] + list(extra or ())
+
+    @staticmethod
+    def assistant_message(content: str, calls=None) -> dict:
+        message = {"role": "assistant", "content": str(content or "")}
+        if calls:
+            message["tool_calls"] = list(calls)
+        return message
+
+    @staticmethod
+    def _arguments(raw) -> dict:
+        if isinstance(raw, dict):
+            return raw
+        try:
+            parsed = json.loads(str(raw or "{}"))
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    @staticmethod
+    def tool_message(call: dict, name: str, content: str) -> dict:
+        message = {"role": "tool", "name": name,
+                   "content": str(content or "")[:18000]}
+        call_id = str((call or {}).get("id") or "").strip()
+        if call_id:
+            message["tool_call_id"] = call_id
+        return message
+
+    def serve_calls(self, calls, *, names=None, max_calls: int = 4) -> tuple[list, int]:
+        """Dispatch standard function calls and return `role: tool` messages."""
+        allowed = set(names or WORKSPACE_TOOL_NAMES)
+        messages, used = [], 0
+        limit = max(1, int(max_calls or 4))
+        for index, call in enumerate(list(calls or [])):
+            fn = (call or {}).get("function") or {}
+            name = str(fn.get("name") or "").strip()
+            args = self._arguments(fn.get("arguments"))
+            if index >= limit:
+                messages.append(self.tool_message(
+                    call, name or "unknown",
+                    f"refused: at most {limit} workspace tools may run in one turn"))
+                continue
+            if name not in allowed or name not in WORKSPACE_SCHEMAS:
+                messages.append(self.tool_message(
+                    call, name or "unknown", f"refused: tool {name!r} is not available in this agent mode"))
+                continue
+            key = f"{name}::{json.dumps(args, sort_keys=True, default=str)}".lower()
+            if key in self.cache:
+                body = "refused: this exact tool call was already served; use its earlier result"
+            else:
+                self.cache[key] = True
+                try:
+                    body = self.dispatch(name, args)
+                except Exception as exc:                       # noqa: BLE001
+                    body = f"{name} failed: {type(exc).__name__}: {exc}"
+                self.cache[key] = body
+                used += 1
+            messages.append(self.tool_message(call, name, body))
+        return messages, used
+
+    def dispatch(self, name: str, args: dict) -> str:
+        """Map structured arguments to the existing safe tool implementations."""
+        if name == "list_files":
+            return self.list_files(path=args.get("path", ""), depth=args.get("depth", 4))
+        if name == "read_file":
+            return self.read_file(args.get("path", ""), args.get("start", 1),
+                                  args.get("limit", 400))
+        if name == "search_code":
+            return self.search_code(args.get("query", ""), args.get("path", ""),
+                                    args.get("glob", ""))
+        if name == "route_source":
+            return self.route_source(args.get("path", ""))
+        if name in {"importers", "dependency_closure", "tests_for"}:
+            return getattr(self, name)(args.get("path", ""))
+        if name == "route_map":
+            return self.route_map(args.get("prefix", "/"))
+        if name == "plan_query":
+            return self.plan_query(args.get("query", "current"))
+        if name == "recall":
+            return self.recall(args.get("query", ""))
+        if name == "run_command":
+            return self.run_command(args.get("command", ""))
+        if name == "remember":
+            kept = self.memory.remember(args.get("kind", "learned"),
+                                        args.get("text", ""))
+            return "note saved" if kept else "note already existed or was empty"
+        return f"unknown workspace tool: {name}"
 
     def requests(self, reply: str) -> list[tuple[str, str]]:
         hits = []
@@ -179,19 +430,30 @@ class WorkspaceTools:
                 kept += 1
         return kept
 
-    def read_file(self, rel: str) -> str:
+    def read_file(self, rel: str, start: int = 1, limit: int = 400) -> str:
         rel = _clean(rel)
-        if not rel or ".." in Path(rel).parts:
+        if not rel or _unsafe(rel):
             return "refused unsafe path"
         body = self.files.get(rel)
         if body is None:
             return f"not found: {rel}"
-        return f"--- {rel} COMPLETE ---\n{str(body)[:18000]}"
+        lines = str(body).splitlines()
+        first = max(1, int(start or 1))
+        count = max(1, min(500, int(limit or 400)))
+        window = lines[first - 1:first - 1 + count]
+        numbered = "\n".join(f"{first + index:>5} {line}"
+                             for index, line in enumerate(window))
+        remaining = len(lines) - (first - 1 + len(window))
+        tail = f"\n… {remaining} more lines" if remaining > 0 else ""
+        return f"--- {rel} ({len(lines)} lines) ---\n{numbered}{tail}"[:18000]
 
-    def search_code(self, query: str) -> str:
+    def search_code(self, query: str, path: str = "", glob: str = "") -> str:
         q = str(query or "").strip()
         if not q:
             return "empty search"
+        if _unsafe(path):
+            return "refused unsafe path"
+        prefix = _clean(path)
         try:
             rx = re.compile(q, re.I)
         except re.error:
@@ -200,6 +462,10 @@ class WorkspaceTools:
         for rel, body in sorted(self.files.items()):
             if not rel.startswith(("app/", "components/", "lib/", "tests/")):
                 continue
+            if prefix and not (rel == prefix or rel.startswith(prefix.rstrip("/") + "/")):
+                continue
+            if glob and not Path(rel).match(glob):
+                continue
             for n, line in enumerate(str(body or "").splitlines(), 1):
                 if rx.search(line):
                     rows.append(f"{rel}:{n}: {line.strip()[:260]}")
@@ -207,12 +473,50 @@ class WorkspaceTools:
                         return "\n".join(rows)
         return "\n".join(rows) or "no matches"
 
-    def list_files(self, prefix: str) -> str:
-        prefix = _clean(prefix)
-        if ".." in Path(prefix or ".").parts:
+    def structure(self, *, max_chars: int = STRUCTURE_CHARS,
+                  prefix: str = "") -> str:
+        """This project's folder/file layout, for a prompt rather than a tool."""
+        return project_structure(self.files, max_chars=max_chars, prefix=prefix)
+
+    def list_files(self, prefix: str = "", *, path: str = "", depth: int = 4) -> str:
+        raw = path if path not in (None, "") else prefix
+        if _unsafe(raw):
             return "refused unsafe prefix"
-        rows = [p for p in sorted(self.files) if not prefix or p.startswith(prefix)]
-        return "\n".join(rows[:200]) or "no files"
+        base = _clean(raw).rstrip("/")
+        levels = max(1, min(8, int(depth or 4)))
+        matches = []
+        for rel in sorted(self.files):
+            if base and not (rel == base or rel.startswith(base + "/")):
+                continue
+            remainder = rel[len(base):].lstrip("/") if base else rel
+            if remainder.count("/") >= levels:
+                continue
+            matches.append(rel)
+        if not matches:
+            return f"{base or '.'}: no files"
+
+        directories = set()
+        for rel in matches:
+            parts = rel.split("/")[:-1]
+            for index in range(1, len(parts) + 1):
+                directory = "/".join(parts[:index])
+                if not base or directory == base or directory.startswith(base + "/"):
+                    directories.add(directory)
+        rows = [f"{base or '.'} ({len(matches)} files, depth {levels})"]
+        for directory in sorted(directories):
+            rows.append(f"dir  {'':>9} drwxr-xr-x {directory}/")
+        for rel in matches:
+            content = str(self.files.get(rel) or "")
+            size = len(content.encode("utf-8", errors="replace"))
+            target = self.project_dir / rel
+            try:
+                mode = stat.filemode(target.stat().st_mode) if target.is_file() else "-rw-------"
+            except OSError:
+                mode = "-rw-------"
+            rows.append(f"file {size:>9,} {mode} {rel}")
+        if len(rows) > 251:
+            rows = rows[:251] + [f"… {len(rows) - 251} more entries"]
+        return "\n".join(rows)
 
     def route_source(self, route: str) -> str:
         route = str(route or "").strip().split("?", 1)[0]

@@ -1,6 +1,19 @@
 """Journey discovery and scenario authoring."""
 from .e2e_common import *
+from agents.core.workspace import STRUCTURE_CHARS, project_structure
 from .e2e_contract import capability_contract, refresh_shipped_files
+
+
+# What the scenario author may read while it writes. No writes, no commands:
+# authoring is a read of the app, and one round of it keeps the stage fast.
+E2E_AUTHOR_TOOLS = ("list_files", "read_file", "search_code", "route_source",
+                    "dependency_closure", "route_map", "plan_query")
+
+STRUCTURE_NOTE = (
+    "Every path above is real and readable with the read_file / "
+    "dependency_closure tools. Pick the ones this journey actually touches; "
+    "never guess a filename that is not on this list.")
+E2E_AUTHOR_TOOL_ROUNDS = 1
 
 
 def _journey_values(value) -> list:
@@ -377,6 +390,23 @@ class E2EJourneyAuthoringMixin:
             self.planner_code_preflight(item)
         return final
 
+    def _author_stream(self, convo, feed, workspace):
+        """One authoring turn, offering workspace reads when the host allows."""
+        kwargs = dict(temperature=TEMPERATURE,
+                      model=QASession.model_for(self.qa, self.arch),
+                      timeout=CALL_BUDGET,
+                      reasoning=QASession.reasoning_for(self.qa),
+                      max_output_tokens=AUTHOR_OUTPUT_TOKENS)
+        if workspace is not None:
+            try:
+                return self.arch._stream(
+                    convo, feed,
+                    tools=workspace.schemas(E2E_AUTHOR_TOOLS), **kwargs)
+            except TypeError as exc:
+                if "tools" not in str(exc):
+                    raise
+        return self.arch._stream(convo, feed, **kwargs)
+
     def author(self, previous: Scenario = None, why: str = "",
                page: str = "", journey: dict = None) -> Scenario:
         """One model call. Returns a parsed scenario — possibly an empty one."""
@@ -400,10 +430,15 @@ class E2EJourneyAuthoringMixin:
         def room() -> int:
             return max(0, budget - fixed - tail - len(ask))
 
+        structure = project_structure(
+            getattr(self.arch, "files", None) or {},
+            max_chars=max(1_200, min(STRUCTURE_CHARS, budget // 12)))
         ask = (f"## The app\n{self._fit(idea, 3_000)}\n\n"
                f"## Pages and endpoints it serves\n"
                f"{self._routes(cap=max(40, budget // 400)) or '  (unknown)'}\n\n"
-               f"## Demo accounts available\nRoles: {roles}\n"
+               + (f"## The files this app is made of\n{structure}\n"
+                  f"{STRUCTURE_NOTE}\n\n" if structure else "")
+               + f"## Demo accounts available\nRoles: {roles}\n"
                f"Use {{{{email}}}} and {{{{password}}}} — AgentForge fills in the "
                f"real values for the role you name with AS.\n")
 
@@ -588,34 +623,60 @@ class E2EJourneyAuthoringMixin:
 
         convo = [{"role": "system", "content": system_prompt(self.accounts())},
                  {"role": "user", "content": ask}]
-        raw = []
-        parser = FileStreamParser(on_text=lambda t: raw.append(t),
-                                  on_file_start=lambda p: None,
-                                  on_file_token=lambda t: None,
-                                  on_file_end=lambda p, c: None)
         from agents.core.ollama_client import is_transient, with_retry
-        try:
-            with_retry(
-                lambda: self.arch._stream(
-                    convo, parser.feed, temperature=TEMPERATURE,
-                    model=QASession.model_for(self.qa, self.arch),
-                    timeout=CALL_BUDGET,
-                    reasoning=QASession.reasoning_for(self.qa),
-                    max_output_tokens=AUTHOR_OUTPUT_TOKENS),
-                what="the QA model")
-        except Exception as e:                                  # noqa: BLE001
-            blocked = is_transient(e)
-            self._log("WARN", f"   ⚠ could not write an end-to-end flow: {e}"
-                              + (" — the daemon stayed busy, so this is not a "
-                                 "verdict on the app" if blocked else ""))
-            empty = Scenario()
-            # The caller must not read a busy daemon as a bad scenario.
-            setattr(empty, "blocked", blocked)
-            setattr(empty, "blocked_why", str(e)[:300] if blocked else "")
-            return empty
-        parser.close()
+        from agents.core.workspace import WorkspaceTools
 
-        text = "".join(raw)
+        # The scenario is written against real markup, so the author may read
+        # the app before it commits to a locator or an assertion.
+        workspace = WorkspaceTools(self.arch)
+        # Its own dedupe ledger: journey two may legitimately read the file
+        # journey one read, and it must not be told the answer is already in
+        # a context it never saw.
+        workspace.cache = {}
+        text = ""
+        for round_no in range(E2E_AUTHOR_TOOL_ROUNDS + 1):
+            raw = []
+            parser = FileStreamParser(on_text=lambda t: raw.append(t),
+                                      on_file_start=lambda p: None,
+                                      on_file_token=lambda t: None,
+                                      on_file_end=lambda p, c: None)
+            offering = round_no < E2E_AUTHOR_TOOL_ROUNDS
+            try:
+                calls = with_retry(
+                    lambda: self._author_stream(
+                        convo, parser.feed,
+                        workspace if offering else None),
+                    what="the QA model")
+            except Exception as e:                              # noqa: BLE001
+                blocked = is_transient(e)
+                self._log("WARN", f"   ⚠ could not write an end-to-end flow: {e}"
+                                  + (" — the daemon stayed busy, so this is not a "
+                                     "verdict on the app" if blocked else ""))
+                empty = Scenario()
+                # The caller must not read a busy daemon as a bad scenario.
+                setattr(empty, "blocked", blocked)
+                setattr(empty, "blocked_why", str(e)[:300] if blocked else "")
+                return empty
+            parser.close()
+
+            text = "".join(raw)
+            calls = list(calls or [])
+            if not calls:
+                break
+            convo.append(workspace.assistant_message(text, calls))
+            messages, used = workspace.serve_calls(calls, names=E2E_AUTHOR_TOOLS)
+            convo.extend(messages)
+            if not used:
+                break
+            self._log("INFO", f"   🧰 the scenario author read {used} thing(s) "
+                              f"out of the app before writing a step")
+            convo.append({"role": "user", "content":
+                          "That is what the app really contains. Write the "
+                          "scenario now, and ground every locator and every "
+                          "assertion in what you just read — an exact "
+                          "data-testid, role/name or visible string from those "
+                          "files. Do not repeat a tool call."})
+            text = ""
         sc = parse_scenario(text, account=self.account_for(
             self._role_in(text)))
         for _, line, reason in sc.dropped[:4]:

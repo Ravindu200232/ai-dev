@@ -550,9 +550,12 @@ def _reseed_for_journey(agent, proj_dir, journey_no: int) -> bool:
 
     # A fresh process is what makes the app seed again
     _restart_for_reseed(proj_dir)
+    # A new dev process has compiled nothing, so start the routes this journey
+    # is about to open compiling WHILE the seed finishes rather than after it.
+    _forget_warm(agent)
+    _warm_routes_async(agent)
     # And the shell answering is not the seed finishing
     _wait_for_seeded_accounts(agent)
-    _forget_warm(agent)
     try:
         agent._mutation_ok = set()
         agent._replay_dupe_urls = set()

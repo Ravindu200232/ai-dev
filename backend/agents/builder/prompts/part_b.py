@@ -160,6 +160,23 @@ CODE RULES:
   • Use the @/ alias for cross-folder imports: '@/components/X', '@/lib/y'.
   • All fetch() URLs are RELATIVE: fetch('/api/tasks').
     NEVER `http://localhost:3000/...`.
+  • A QUERY STRING IS A CONTRACT WITH THE HANDLER, and both ends are yours.
+    The moment you write `fetch('/api/<<things>>?<<key>>=' + value)`, the
+    handler at `app/api/<<things>>/route.js` must read that exact name back:
+
+      const <<key>> = new URL(request.url).searchParams.get('<<key>>')
+
+    and answer the question it was asked. A handler that ignores the parameter
+    still returns 200 with the whole collection, so the build is green and the
+    first real click throws `Cannot read properties of undefined`.
+    THE SHAPE FOLLOWS THE QUESTION, and the caller's own code says which
+    question it asked. A parameter that IDENTIFIES one row — whatever this
+    app's unique key is called — answers with that single object, or 404 when
+    there is none, because the caller reads properties straight off it:
+    `const row = await res.json(); row.<field>`. A parameter that FILTERS
+    answers with an array, and the caller maps it. Decide which of the two
+    this is before you write either file, and when the other file already
+    exists, read it with the `read_file` tool instead of assuming.
   • Icons: `import { Plus, Trash2 } from 'lucide-react'` — verify the name
     is a real lucide icon. When unsure, use an inline <svg> instead.
   • Escape apostrophes in JSX text as &apos; (Don&apos;t, not Don't).

@@ -41,6 +41,9 @@ def _pencil_write_round(arch, path, before, instruction, element, shot,
         where = _where_in_file(before, element, line)
         if where:
             text += f"\nWhere that is in the source:\n{where}\n"
+    layout = structure_block(arch)
+    if layout:
+        text += "\n" + layout
     text += (f"\n## What the user asked for\n{instruction}\n\n"
              f"## The complete current source of {path}\n{before}")
     near = _neighbours(arch, path, before)
@@ -54,6 +57,8 @@ def _pencil_write_round(arch, path, before, instruction, element, shot,
         msg["images"] = [shot.png_b64]
 
     convo = [{"role": "system", "content": PENCIL_SYSTEM + "\n\n" + TOOL_HELP}, msg]
+    from agents.core.workspace import WORKSPACE_TOOL_NAMES, WorkspaceTools
+    workspace = WorkspaceTools(arch)
 
     for attempt in range(1, attempts + 1):
         got = {"writes": {}}
@@ -85,13 +90,20 @@ def _pencil_write_round(arch, path, before, instruction, element, shot,
                     turn_raw.append(token)
                     feed(token)
 
-                arch._stream(convo, feed_turn, temperature=0.4,
-                             model=vis_model, timeout=arch.EDIT_TIMEOUT)
+                calls = arch._stream(
+                    convo, feed_turn, temperature=0.4, model=vis_model,
+                    timeout=arch.EDIT_TIMEOUT,
+                    tools=workspace.schemas(WORKSPACE_TOOL_NAMES))
                 reply = "".join(turn_raw)
-                convo.append({"role": "assistant", "content": reply})
-                observations, used = WorkspaceTools(arch).serve(reply)
+                convo.append(workspace.assistant_message(reply, calls))
+                call_messages, function_count = workspace.serve_calls(
+                    calls, names=WORKSPACE_TOOL_NAMES)
+                convo.extend(call_messages)
+                observations, tag_count = workspace.serve(reply)
+                used = function_count + tag_count
                 if used and not got["writes"]:
-                    sig = observations.strip()
+                    sig = ("\n".join(m["content"] for m in call_messages) +
+                           "\n" + observations).strip()
                     used_chars = sum(len(str(m.get("content", ""))) for m in convo)
                     try:
                         budget_chars = int(arch._budget_chars())
@@ -101,9 +113,11 @@ def _pencil_write_round(arch, path, before, instruction, element, shot,
                             not budget_chars or used_chars < budget_chars * 0.82):
                         seen_observations.add(sig)
                         elog("INFO", f"   🧰 pencil editor inspected {used} workspace tool(s)")
+                        if observations:
+                            convo.append({"role": "user", "content":
+                                          "Compatibility tool observations:\n\n" + observations})
                         convo.append({"role": "user", "content":
-                                      "Tool observations:\n\n" + observations +
-                                      "\n\nContinue the SAME visual edit. Follow the source/import/caller evidence. "
+                                      "Continue the SAME visual edit from the tool results. Follow the source/import/caller evidence. "
                                       "If another file must change, do not hide that fact; emit the required write so the controller can escalate safely."})
                         continue
                     if sig in seen_observations:
@@ -400,7 +414,9 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
         chrome = "\n\n".join(f"--- {p} ({_reach_label(arch, p, route)}) ---\n{b}"
                              for p, b in chain)
         pmap = _project_map(arch)
+        layout = structure_block(arch)
         user = ((f"{pmap}\n\n" if pmap else "")
+                + (f"{layout}\n" if layout else "")
                 + f"## The page\nRoute: {route or '/'}\nFile: {path}\n\n"
                 f"## What the user wants\n{instruction}\n\n"
                 f"DO NOT CHANGE: api routes, entities, functions. The routes "
@@ -445,6 +461,8 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
                    f"{chrome}"
                    if chrome else ""))
         arch._workspace_tool_cache = {}
+        from agents.core.workspace import WORKSPACE_TOOL_NAMES, WorkspaceTools
+        workspace = WorkspaceTools(arch)
         convo = [{"role": "system", "content": PAGE_UPDATE_SYSTEM + "\n\n" + TOOL_HELP},
                  {"role": "user", "content": user}]
 
@@ -497,15 +515,24 @@ def run_page_update(proj_name: str, instruction: str, model: str, route: str,
                 def feed_turn(tok):
                     turn_raw.append(tok)
                     feed(tok)
-                arch._stream(convo, feed_turn, temperature=0.3, timeout=arch.EDIT_TIMEOUT)
+                calls = arch._stream(
+                    convo, feed_turn, temperature=0.3,
+                    timeout=arch.EDIT_TIMEOUT,
+                    tools=workspace.schemas(WORKSPACE_TOOL_NAMES))
                 reply = "".join(turn_raw)
-                convo.append({"role": "assistant", "content": reply})
-                observations, used = WorkspaceTools(arch).serve(reply)
+                convo.append(workspace.assistant_message(reply, calls))
+                call_messages, function_count = workspace.serve_calls(
+                    calls, names=WORKSPACE_TOOL_NAMES)
+                convo.extend(call_messages)
+                observations, tag_count = workspace.serve(reply)
+                used = function_count + tag_count
                 if used and not got and tool_turn < 2:
                     elog("INFO", f"   🧰 page editor inspected {used} workspace tool(s)")
+                    if observations:
+                        convo.append({"role": "user", "content":
+                                      "Compatibility tool observations:\n\n" + observations})
                     convo.append({"role": "user", "content":
-                                  "Tool observations:\n\n" + observations +
-                                  "\n\nContinue the same page edit and write the minimum complete file set."})
+                                  "Continue the same page edit from the tool results and write the minimum complete file set."})
                     continue
                 break
         except Exception as e:

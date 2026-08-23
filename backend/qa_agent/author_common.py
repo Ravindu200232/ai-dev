@@ -8,12 +8,21 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from agents.builder.orchestration.agent import FileStreamParser
+from agents.core.workspace import TOOL_HELP, WorkspaceTools
 
 from .session import QASession
 
 log = logging.getLogger("qa.author")
 
 MAX_READS = 4
+
+
+# Keep the unit author focused.  These are enough to inspect a rendered child,
+# an imported helper, or an existing sibling test without paying the token and
+# decision cost of exposing command/memory tools on every authoring turn.
+UNIT_READ_TOOLS = (
+    "read_file", "search_code", "dependency_closure", "importers", "tests_for",
+)
 
 
 MAX_VERIFY_ROUNDS = 2

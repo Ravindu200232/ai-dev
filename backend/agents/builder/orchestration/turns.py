@@ -232,8 +232,12 @@ class ArchitectTurnMixin:
                 self._last_truncated = parser.path
             parser.close()
 
+        from agents.core.workspace import WorkspaceTools
+        workspace = WorkspaceTools(self)
         try:
-            tool_calls = self._stream(self.convo, feed, temperature=0.5)
+            tool_calls = self._stream(
+                self.convo, feed, temperature=0.5,
+                tools=workspace.schemas(extra=(WRITE_FILE_TOOL,)))
         except _RefusalLoop:
 
             self._log("WARN", "   ⏹ stopped this turn — it was re-writing "
@@ -250,7 +254,34 @@ class ArchitectTurnMixin:
         close_parser()
         reply = "".join(raw)
 
-        self.convo.append({"role": "assistant", "content": reply})
+        self.convo.append(workspace.assistant_message(reply, tool_calls))
+
+        # Function calls must be answered immediately with role=tool messages
+        # before any ordinary user continuation is appended. Read calls use
+        # the shared safe dispatcher; write_file remains under the builder's
+        # ownership and callback/validation pipeline.
+        standard_reads = 0
+        for tc in tool_calls:
+            fn = (tc or {}).get("function") or {}
+            name = str(fn.get("name") or "").strip()
+            if name != "write_file":
+                messages, used = workspace.serve_calls([tc])
+                self.convo.extend(messages)
+                standard_reads += used
+                continue
+            args = workspace._arguments(fn.get("arguments"))
+            path, content = args.get("path"), args.get("content")
+            if not path or not isinstance(content, str):
+                result = "refused: write_file requires path and complete string content"
+            else:
+                self._fire("on_file_start", path)
+                self._fire("on_file_end", path, content)
+                if self.write_file(path, content):
+                    state["count"] += 1
+                    result = f"wrote {path}"
+                else:
+                    result = f"refused write to {path}"
+            self.convo.append(workspace.tool_message(tc, "write_file", result))
 
         if self.stack == "next":
             docs = docsindex.serve(self.project_dir, reply)
@@ -272,27 +303,15 @@ class ArchitectTurnMixin:
                              "already succeeded.",
             })
 
-        for tc in tool_calls:
-            fn = (tc or {}).get("function") or {}
-            if fn.get("name") != "write_file":
-                continue
-            args = fn.get("arguments") or {}
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except json.JSONDecodeError:
-                    continue
-            path, content = args.get("path"), args.get("content")
-            if path and content and path not in self.files:
-                self._fire("on_file_start", path)
-                self._fire("on_file_end", path, content)
-                if self.write_file(path, content):
-                    state["count"] += 1
-
         # Continue with the next focused turn.
         if state["count"] == 0 and _tool_depth < 3:
+            if standard_reads:
+                self._log("INFO", f"   🧰 builder inspected {standard_reads} "
+                                  "workspace function tool(s)")
+                return self._run_write_loop(
+                    "Continue from the function-tool results above. Write only the files the current task requires.",
+                    _tool_depth=_tool_depth + 1)
             try:
-                from agents.core.workspace import WorkspaceTools
                 observations, used = WorkspaceTools(self).serve(reply)
             except Exception as e:  # noqa: BLE001
                 observations, used = "", 0

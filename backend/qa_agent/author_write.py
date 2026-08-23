@@ -23,6 +23,27 @@ class UnitAuthorWriteMixin:
         self._fire("on_log", lvl, txt)
         log.info(txt)
 
+    def _stream_read_turn(self, convo, feed, *, temperature=TEMPERATURE):
+        """One QA model turn with native workspace reads and old-host fallback."""
+        workspace = WorkspaceTools(self.arch)
+        kwargs = {
+            "temperature": temperature,
+            "model": QASession.model_for(self.qa, self.arch),
+            "timeout": CALL_BUDGET,
+        }
+        try:
+            calls = self.arch._stream(
+                convo, feed, tools=workspace.schemas(UNIT_READ_TOOLS),
+                reasoning=QASession.reasoning_for(self.qa), **kwargs)
+        except TypeError as exc:
+            # Small fake/legacy architect hosts may predate the `tools` keyword.
+            if "tools" not in str(exc):
+                raise
+            calls = self.arch._stream(
+                convo, feed, reasoning=QASession.reasoning_for(self.qa),
+                **kwargs)
+        return workspace, list(calls or [])
+
     def _idea(self):
         """The app's idea and approved plan, copied out of the build conversation."""
         try:
@@ -124,7 +145,7 @@ class UnitAuthorWriteMixin:
 
         goal = self._phase_goal(phase)
         convo = [
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": SYSTEM + "\n\n" + TOOL_HELP},
             {"role": "user", "content":
                 f"## The app\n{self._idea()}\n\n"
                 + (f"## This phase\n{goal}\n\n" if goal else "")
@@ -134,13 +155,14 @@ class UnitAuthorWriteMixin:
                 + "\n\nWrite the test files now, one <write_file> block each."},
         ]
 
-        written, rejected, reads = [], [], 0
+        written, rejected, reads, tool_rounds = [], [], 0, 0
 
         self._advice = {}
         budget = self.az._budget_chars() if self.az else 40_000
 
         while True:
             raw = []
+            written_before = len(written)
             parser = FileStreamParser(
                 on_text=lambda t: raw.append(t),
                 on_file_start=lambda p: self._fire("on_file_start", p),
@@ -148,17 +170,39 @@ class UnitAuthorWriteMixin:
                 on_file_end=lambda p, c: self._accept(p, c, assigned, written,
                                                       rejected, phase))
             try:
-                self.arch._stream(convo, parser.feed, temperature=TEMPERATURE,
-                                  model=QASession.model_for(self.qa, self.arch),
-                                  timeout=CALL_BUDGET,
-                                  reasoning=QASession.reasoning_for(self.qa))
+                workspace, calls = self._stream_read_turn(convo, parser.feed)
             except Exception as e:
                 self._log("WARN", f"   ⚠ test author failed: {e}")
                 parser.close()
                 break
             parser.close()
             reply = "".join(raw)
-            convo.append({"role": "assistant", "content": reply})
+            convo.append(workspace.assistant_message(reply, calls))
+
+            remaining = max(0, max_reads - reads)
+            if remaining:
+                call_messages, called = workspace.serve_calls(
+                    calls, names=UNIT_READ_TOOLS, max_calls=min(4, remaining))
+            else:
+                call_messages = [workspace.tool_message(
+                    call,
+                    str(((call or {}).get("function") or {}).get("name")
+                        or "unknown"),
+                    "refused: unit-author read budget exhausted")
+                    for call in calls]
+                called = 0
+            if call_messages:
+                convo.extend(call_messages)
+                reads += called
+                used = sum(len(str(m.get("content", ""))) for m in convo)
+                # A tool-only assistant message needs one continuation.  Cap
+                # this tightly: source-grounded authoring must stay fast.
+                if (len(written) == written_before
+                        and tool_rounds < 2 and used < budget):
+                    tool_rounds += 1
+                    self._log("INFO", f"   🧰 unit author inspected {called} "
+                                      "workspace function tool(s)")
+                    continue
 
             wanted = self.az.READ_RE.findall(reply) if self.az else []
             used = sum(len(m["content"]) for m in convo)
@@ -207,10 +251,11 @@ class UnitAuthorWriteMixin:
                 on_file_end=lambda p, c: self._accept(p, c, assigned, written,
                                                       rejected, phase))
             try:
-                self.arch._stream(convo, parser.feed, temperature=TEMPERATURE,
-                                  model=QASession.model_for(self.qa, self.arch),
-                                  timeout=CALL_BUDGET,
-                                  reasoning=QASession.reasoning_for(self.qa))
+                self.arch._stream(
+                    convo, parser.feed, temperature=TEMPERATURE,
+                    model=QASession.model_for(self.qa, self.arch),
+                    timeout=CALL_BUDGET,
+                    reasoning=QASession.reasoning_for(self.qa))
             except Exception as e:
                 self._log("WARN", f"   ⚠ retry failed: {e}")
             parser.close()
@@ -399,7 +444,7 @@ class UnitAuthorWriteMixin:
             if not body:
                 return False
             convo = [
-                {"role": "system", "content": SYSTEM},
+                {"role": "system", "content": SYSTEM + "\n\n" + TOOL_HELP},
                 {"role": "user",
                  "content": self._fix_prompt(path, t, src, body, fails)},
             ]
@@ -410,10 +455,28 @@ class UnitAuthorWriteMixin:
                 on_file_end=lambda p, c: self._accept(p, c, assigned, written,
                                                       rejected, phase, lock))
             try:
-                self.arch._stream(convo, parser.feed, temperature=TEMPERATURE,
-                                  model=QASession.model_for(self.qa, self.arch),
-                                  timeout=CALL_BUDGET,
-                                  reasoning=QASession.reasoning_for(self.qa))
+                workspace = None
+                for tool_turn in range(2):
+                    body_before_turn = ((self.qa.read_source(path) or "")
+                                        if self.qa else "")
+                    turn = []
+
+                    def feed(token):
+                        turn.append(token)
+                        parser.feed(token)
+
+                    workspace, calls = self._stream_read_turn(convo, feed)
+                    reply = "".join(turn)
+                    convo.append(workspace.assistant_message(reply, calls))
+                    messages, _called = workspace.serve_calls(
+                        calls, names=UNIT_READ_TOOLS, max_calls=4)
+                    body_after_turn = ((self.qa.read_source(path) or "")
+                                       if self.qa else "")
+                    if (messages and body_after_turn == body_before_turn
+                            and tool_turn == 0):
+                        convo.extend(messages)
+                        continue
+                    break
             except Exception as e:
                 self._log("WARN", f"   ⚠ {path}: fix round {rnd} failed: {e}")
                 parser.close()

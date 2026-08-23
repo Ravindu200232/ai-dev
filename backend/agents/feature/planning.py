@@ -25,7 +25,8 @@ class FeaturesAgentPlanningMixin:
                       "do not invent an alternate page for the same workflow unless the request explicitly asks for a new route.\n\n")
         from agents.core.source_guidance import feature_image_prompt
         image_contract = feature_image_prompt(request)
-        user = (f"## The project's plan\n{self.az.plan_text()[:6000]}\n\n"
+        user = (structure_block(self.arch)
+                + f"## The project's plan\n{self.az.plan_text()[:6000]}\n\n"
                 f"## Routes it serves\n{self.az.route_table(routes)}\n\n"
                 + current_ui +
                 f"## The feature to add\n{request}\n\n"
@@ -54,7 +55,8 @@ class FeaturesAgentPlanningMixin:
                         f"Route: {selected_route or '/'}\n"
                         f"Current source file: {selected_path or '(unknown)'}\n"
                         f"Selected region: {selected_element or '(not described)'}\n\n")
-        user = (f"## The project's plan\n{self.az.plan_text()[:6000]}\n\n"
+        user = (structure_block(self.arch)
+                + f"## The project's plan\n{self.az.plan_text()[:6000]}\n\n"
                 f"## Routes it serves\n{self.az.route_table(routes)}\n\n"
                 + selected +
                 f"## The requested change\n{request}\n\n"
@@ -222,7 +224,8 @@ class FeaturesAgentPlanningMixin:
                 focus, budget=int(self._budget_chars() * 0.24))
         else:
             source = self.full_source(budget=int(self._budget_chars() * 0.42))
-        parts = [f"## The project's plan\n{self.az.plan_text()[:4000]}",
+        parts = [structure_block(self.arch),
+                 f"## The project's plan\n{self.az.plan_text()[:4000]}",
                  (("## Focused source neighborhood — plan changes inside this "
                    "set unless the error explicitly names another file\n" + source)
                   if focus else (f"## The source\n{source}" if source
@@ -233,7 +236,9 @@ class FeaturesAgentPlanningMixin:
             parts.append("## The dev server's own output\n"
                          f"```\n{server_log[:4000]}\n```")
         parts.append("Read what you need, then output the plan lines.")
-        return self._plan(REPAIR_SYSTEM, "\n\n".join(parts), max_reads,
+        return self._plan(REPAIR_SYSTEM,
+                          "\n\n".join(part for part in parts if part),
+                          max_reads,
                           "Repair planning", allow_empty=True, mode="repair",
                           investigation_paths=focus or None)
 
@@ -312,6 +317,7 @@ class FeaturesAgentPlanningMixin:
         no_progress = 0
         analysis_round = 0
         emergency_turn_cap = 30  # Loop-safety only; never a file-count ceiling
+        workspace = WorkspaceTools(self.arch)
 
         while analysis_round < emergency_turn_cap:
             analysis_round += 1
@@ -319,18 +325,24 @@ class FeaturesAgentPlanningMixin:
             while True:
                 buf = []
                 try:
-                    self._model_stream(convo, buf.append, temperature=0.22,
-                                       model=self.model)
+                    calls = self._model_stream(
+                        convo, buf.append, temperature=0.22, model=self.model,
+                        tools=workspace.schemas(READ_TOOL_NAMES))
                 except Exception as e:
                     self._log("WARN", f"   ⚠ {what} failed: {e}")
                     return spec
                 reply = "".join(buf)
-                convo.append({"role": "assistant", "content": reply})
+                convo.append(workspace.assistant_message(reply, calls))
 
                 used_chars = sum(len(str(m.get("content", ""))) for m in convo)
-                observations, tool_count = WorkspaceTools(self.arch).serve(reply)
+                call_messages, function_count = workspace.serve_calls(
+                    calls, names=READ_TOOL_NAMES)
+                convo.extend(call_messages)
+                observations, tag_count = workspace.serve(reply)
+                tool_count = function_count + tag_count
                 if tool_count and used_chars < budget * 0.92:
-                    sig = observations.strip()
+                    sig = ("\n".join(m["content"] for m in call_messages) +
+                           "\n" + observations).strip()
                     if sig and sig in seen_tool_observations:
                         self._log("WARN", f"   ↔ {what}: repeated the same workspace read — deciding with current evidence")
                     else:
@@ -339,9 +351,11 @@ class FeaturesAgentPlanningMixin:
                         reads += tool_count
                         tool_progress = True
                         self._log("INFO", f"   🧰 {what}: inspected {tool_count} workspace tool(s) ({reads} total)")
+                        if observations:
+                            convo.append({"role": "user", "content":
+                                          "Compatibility tool observations:\n\n" + observations})
                         convo.append({"role": "user", "content":
-                                      "Tool observations:\n\n" + observations +
-                                      "\n\nContinue the SAME analysis. Do not write code. Establish CURRENT, GAP, CAUSE and source EVIDENCE before naming the impact files."})
+                                      "Continue the SAME analysis from the tool results. Do not write code. Establish CURRENT, GAP, CAUSE and source EVIDENCE before naming the impact files."})
                         continue
                 break
 

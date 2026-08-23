@@ -10,6 +10,7 @@ from pathlib import Path
 from agents.builder.orchestration.agent import FileStreamParser
 from agents.core.commands import CommandRunner
 from agents.core import nextdocs
+from agents.core.workspace import READ_TOOL_NAMES, WorkspaceTools
 from .exports import (FRAMEWORK_EXPORTS, check_default_imports,
                       strip_noncode as _strip_noncode,
                        check_named_imports,
@@ -34,7 +35,7 @@ REPAIRABLE_MAJOR = frozenset({
     "UNBUILT_PROMISE", "BROKEN_CONTRACT", "MISSING_PLANNED_DATA",
     "INERT_CONTROL", "ROLE_REDIRECT", "MISSING_WORKFLOW_CONTROL",
     "MISSING_ACTION_ID", "INLINE_FILE_BYTES", "UPLOAD_NOT_MULTIPART",
-    "LAYOUT_CHROME", "LINT",
+    "LAYOUT_CHROME", "LINT", "IGNORED_QUERY_PARAM",
 })
 
 
@@ -57,6 +58,19 @@ BCRYPT_LITERAL_RE = re.compile(r"""["'](\$2[aby]?\$\d\d\$[^"']*)["']""")
 HTTP_METHOD_RE = re.compile(
     r"export\s+(?:async\s+)?(?:function\s+|const\s+)"
     r"(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b")
+
+
+def stream_with_read_tools(arch, messages, on_delta, **kwargs):
+    """Offer native workspace reads, retaining tiny legacy/fake hosts."""
+    workspace = WorkspaceTools(arch)
+    try:
+        calls = arch._stream(
+            messages, on_delta, tools=workspace.schemas(READ_TOOL_NAMES), **kwargs)
+    except TypeError as exc:
+        if "tools" not in str(exc):
+            raise
+        calls = arch._stream(messages, on_delta, **kwargs)
+    return workspace, list(calls or [])
 
 SEVERITIES = ("blocker", "major", "minor")
 

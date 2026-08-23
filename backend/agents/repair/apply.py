@@ -83,18 +83,31 @@ class BugFixerApplyMixin:
             on_file_token=lambda t: None,
             on_file_end=on_end)
         try:
+            workspace = WorkspaceTools(self.arch)
             for tool_turn in range(2):
                 turn = []
                 def feed(tok):
                     turn.append(tok)
                     parser.feed(tok)
-                self._model_stream(convo, feed, temperature=TEMPERATURE,
-                                   model=self.model, timeout=CALL_BUDGET)
+                calls = self._model_stream(
+                    convo, feed, temperature=TEMPERATURE, model=self.model,
+                    timeout=CALL_BUDGET,
+                    tools=workspace.schemas(READ_TOOL_NAMES))
                 reply = "".join(turn)
-                convo.append({"role": "assistant", "content": reply})
-                observations, used = WorkspaceTools(self.arch).serve(reply)
+                convo.append(workspace.assistant_message(reply, calls))
+                tool_messages, called = workspace.serve_calls(
+                    calls, names=READ_TOOL_NAMES, max_calls=4)
+                if tool_messages and not v.written and tool_turn == 0:
+                    convo.extend(tool_messages)
+                    self._log("INFO", f"   🧰 unit fixer inspected {called} "
+                                      "workspace function tool(s)")
+                    continue
+
+                # XML is retained for models that rejected function schemas.
+                observations, used = workspace.serve(reply)
                 if used and not v.written and tool_turn == 0:
-                    self._log("INFO", f"   🧰 unit fixer inspected {used} workspace tool(s)")
+                    self._log("INFO", f"   🧰 unit fixer inspected {used} "
+                                      "compatibility workspace tool(s)")
                     convo.append({"role": "user", "content":
                                   "Tool observations:\n\n" + observations +
                                   "\n\nContinue the same failing-test diagnosis. Emit the verdict before any write."})
@@ -177,6 +190,14 @@ class BugFixerApplyMixin:
             for p, b in list(ref.items())[:6]:
                 parts.append(f"### {p} (reference only)\n```js\n{str(b)[:6000]}\n```")
 
+        layout = project_structure(getattr(self.arch, "files", None) or {})
+        if layout:
+            parts.append("## The files this app is made of\n" + layout
+                         + "\nEvery path here is real and readable with the "
+                           "read_file / dependency_closure tools. The initial "
+                           "impact list below is a starting point, not the "
+                           "boundary of the bug — when the evidence leads "
+                           "outside it, read the file it leads to.")
         parts.append("## Initial impact files, and why each one is suspected")
         for f in planned:
             body = bodies[f["path"]]
@@ -218,29 +239,54 @@ class BugFixerApplyMixin:
         seen_observations = set()
         try:
             self.arch._e2e_privileged_paths = old_priv | set(privileged_paths or [])
+            workspace = WorkspaceTools(self.arch)
             while True:
                 turn = []
                 def feed(tok):
                     turn.append(tok); parser.feed(tok)
-                self._model_stream(convo, feed, temperature=TEMPERATURE,
-                                   model=self.model, timeout=CALL_BUDGET)
+                calls = self._model_stream(
+                    convo, feed, temperature=TEMPERATURE, model=self.model,
+                    timeout=CALL_BUDGET,
+                    tools=workspace.schemas(READ_TOOL_NAMES))
                 reply = "".join(turn)
-                convo.append({"role":"assistant", "content":reply})
-                observations, used = WorkspaceTools(self.arch).serve(reply)
+                convo.append(workspace.assistant_message(reply, calls))
+
+                context_chars = sum(len(str(m.get("content", ""))) for m in convo)
+                budget_chars = 0
+                try:
+                    budget_chars = int(self.arch._budget_chars())
+                except Exception:
+                    try:
+                        budget_chars = int(getattr(self.arch, "context_tokens", 0) or 0) * 3
+                    except Exception:
+                        budget_chars = 0
+                room = (not budget_chars or context_chars < budget_chars * 0.82)
+
+                if calls:
+                    # Every function call is answered before anything else —
+                    # an unanswered call leaves the next turn malformed.
+                    tool_messages, called = workspace.serve_calls(
+                        calls, names=READ_TOOL_NAMES, max_calls=4)
+                    convo.extend(tool_messages)
+                    if called and not written and room:
+                        self._log("INFO", f"   🧰 runtime fixer inspected {called} "
+                                          "workspace function tool(s)")
+                        convo.append({"role": "user", "content":
+                                      "Continue the SAME root-cause repair. Follow the evidence; "
+                                      "expand the source file set if the dependency chain proves "
+                                      "it is necessary. Do not repeat a tool call."})
+                        continue
+                    if not called:
+                        self._log("WARN", "   ↔ runtime fixer repeated the same inspection — deciding from current evidence")
+                    break
+
+                # XML is retained for models that rejected function schemas.
+                observations, used = workspace.serve(reply)
                 if used and not written:
                     sig = observations.strip()
-                    context_chars = sum(len(str(m.get("content", ""))) for m in convo)
-                    budget_chars = 0
-                    try:
-                        budget_chars = int(self.arch._budget_chars())
-                    except Exception:
-                        try:
-                            budget_chars = int(getattr(self.arch, "context_tokens", 0) or 0) * 3
-                        except Exception:
-                            budget_chars = 0
-                    if sig and sig not in seen_observations and (not budget_chars or context_chars < budget_chars * 0.82):
+                    if sig and sig not in seen_observations and room:
                         seen_observations.add(sig)
-                        self._log("INFO", f"   🧰 runtime fixer inspected {used} workspace tool(s)")
+                        self._log("INFO", f"   🧰 runtime fixer inspected {used} compatibility workspace tool(s)")
                         convo.append({"role":"user", "content":
                                       "Tool observations:\n\n" + observations +
                                       "\n\nContinue the SAME root-cause repair. Follow the evidence; expand the source file set if the dependency chain proves it is necessary. Do not repeat a tool call."})

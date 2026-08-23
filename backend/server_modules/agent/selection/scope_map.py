@@ -368,7 +368,8 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
     near = _neighbours(arch, path, before)
     span = _section_span(element)
     where = _where_in_file(before, element, line)
-    user = (f"## The element the user clicked\n{describe(element)}\n\n"
+    user = (structure_block(arch)
+            + f"## The element the user clicked\n{describe(element)}\n\n"
             + (f"## Where it is\n{where}\n\n" if where else "")
             + (f"## The section they selected — it runs from the first of "
                f"these to the second\n{span}\n\n" if span else "")
@@ -379,6 +380,8 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
             + (f"\n\n## The files this one is joined to — what it "
                f"renders, and what renders it\n{near}" if near else ""))
     arch._workspace_tool_cache = {}
+    from agents.core.workspace import WORKSPACE_TOOL_NAMES, WorkspaceTools
+    workspace = WorkspaceTools(arch)
     convo = [{"role": "system", "content": ELEMENT_EDIT_SYSTEM + "\n\n" + TOOL_HELP},
              {"role": "user", "content": user}]
 
@@ -409,13 +412,20 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
                 def feed_turn(tok):
                     turn_buf.append(tok)
                     feed(tok)
-                arch._stream(convo, feed_turn, temperature=0.3,
-                             timeout=arch.EDIT_TIMEOUT)
+                calls = arch._stream(
+                    convo, feed_turn, temperature=0.3,
+                    timeout=arch.EDIT_TIMEOUT,
+                    tools=workspace.schemas(WORKSPACE_TOOL_NAMES))
                 reply = "".join(turn_buf)
-                convo.append({"role": "assistant", "content": reply})
-                observations, used = WorkspaceTools(arch).serve(reply)
+                convo.append(workspace.assistant_message(reply, calls))
+                call_messages, function_count = workspace.serve_calls(
+                    calls, names=WORKSPACE_TOOL_NAMES)
+                convo.extend(call_messages)
+                observations, tag_count = workspace.serve(reply)
+                used = function_count + tag_count
                 if used and not got["writes"]:
-                    sig = observations.strip()
+                    sig = ("\n".join(m["content"] for m in call_messages) +
+                           "\n" + observations).strip()
                     used_chars = sum(len(str(m.get("content", ""))) for m in convo)
                     try:
                         budget_chars = int(arch._budget_chars())
@@ -424,9 +434,11 @@ def _element_write_round(arch, path, before, instruction, element, anchor,
                     if sig and sig not in seen_observations and (not budget_chars or used_chars < budget_chars * 0.82):
                         seen_observations.add(sig)
                         elog("INFO", f"   🧰 section editor inspected {used} workspace tool(s)")
+                        if observations:
+                            convo.append({"role": "user", "content":
+                                          "Compatibility tool observations:\n\n" + observations})
                         convo.append({"role": "user", "content":
-                                      "Tool observations:\n\n" + observations +
-                                      "\n\nContinue the same selected-element edit. Follow dependencies as far as needed; do not repeat a tool call."})
+                                      "Continue the same selected-element edit from the tool results. Follow dependencies as far as needed; do not repeat a tool call."})
                         continue
                     if sig in seen_observations:
                         elog("WARN", "   ↔ section editor repeated the same inspection — deciding with current evidence")

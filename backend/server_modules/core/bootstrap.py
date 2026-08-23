@@ -49,7 +49,8 @@ from agents.selection.picker import (ELEMENT_EDIT_SYSTEM, ElementResolver, descr
 from agents.data.mongo import MONGO, db_name_for
 from agents.repair.agent import BugFixerAgent
 from agents.core.commands import CommandRunner
-from agents.core.workspace import WorkspaceTools, TOOL_HELP
+from agents.core.workspace import (TOOL_HELP, WorkspaceTools,
+                                   project_structure, structure_block)
 from agents.core.agent_memory import AgentMemory, memory_for
 from agents.core.build_cache import already_green, mark_green
 from qa_agent import (E2EAgent, AgenticE2EDebugger, DebugNotebook,

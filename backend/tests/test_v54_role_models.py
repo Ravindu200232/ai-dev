@@ -113,7 +113,10 @@ class RoleModelWiringTests(unittest.TestCase):
     def test_qa_model_calls_follow_the_shared_thinking_switch(self):
         qa_sources = "\n".join(
             path.read_text("utf-8") for path in (ROOT / "qa_agent").glob("*.py"))
-        self.assertEqual(qa_sources.count("self.arch._stream("), 5)
+        # Six call sites: the scenario author has two — one offering the
+        # workspace read tools, one for a host that rejects them — and both
+        # stream the same `kwargs`, so the switch still reaches every call.
+        self.assertEqual(qa_sources.count("self.arch._stream("), 6)
         self.assertGreaterEqual(
             qa_sources.count("reasoning=QASession.reasoning_for"), 5)
 

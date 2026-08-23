@@ -29,8 +29,16 @@ class ArchitectDeliveryMixin:
             self.build_app()
             remaining = self.close_delivery_gaps(max_rounds=2)
             if remaining:
-                self._log("ERROR", "   ❌ Refusing a partial delivery — " + "; ".join(remaining[:8]))
-                return False
+                # A gap the builder thread could not close is a repair job, not
+                # a dead build. Aborting here threw away a nearly complete app
+                # and every downstream pass that can still write the file — the
+                # analyzer repairs exactly this (`report.missing`).
+                self.delivery_gaps_left = list(remaining)
+                self._log("WARN", "   ⚠ Delivery gaps the builder could not "
+                                  "close on its own — handing them to the "
+                                  "repair passes: " + "; ".join(remaining[:8]))
+            else:
+                self.delivery_gaps_left = []
             self._fire("on_memory", self.memory_stats())
 
             self._fire("on_progress", "Checking imports…", 80)
@@ -94,7 +102,113 @@ class ArchitectDeliveryMixin:
                 "Write complete missing/affected files, preserve all accepted contracts, and then stop.")
             self._run_write_loop(prompt)
             gaps = self.delivery_gaps()
+        if gaps:
+            # The shared thread has stalled — it is long, it has already
+            # refused, and one more "continue" reproduces the same silence.
+            # Each missing file gets its own clean room instead.
+            written = self.close_gaps_in_clean_room(gaps)
+            if written:
+                gaps = self.delivery_gaps()
         return gaps
+
+    # "missing planned file: x" / "CAP-009 missing capability file: x" /
+    # "planned file is still scaffold placeholder: x"
+    GAP_PATH_RE = re.compile(
+        r"(?:missing planned file|missing capability file|"
+        r"planned file is still scaffold placeholder):\s*(\S+)")
+
+    def gap_paths(self, gaps: list) -> list:
+        """The project-relative files a deterministic delivery gap names."""
+        out = []
+        for gap in gaps or []:
+            m = self.GAP_PATH_RE.search(str(gap or ""))
+            if not m:
+                continue
+            rel = m.group(1).strip().strip(";,").lstrip("./").replace("\\", "/")
+            if rel and rel not in out:
+                out.append(rel)
+        return out
+
+    def _planned_entry(self, rel: str) -> dict:
+        """The plan's brief for one file, or a minimal stand-in."""
+        for entry in self._planned_files():
+            if str(entry.get("path") or "") == rel:
+                return entry
+        kind = "route" if re.search(r"/route\.jsx?$", rel) else "server"
+        return {"path": rel, "kind": kind, "purpose": "", "sections": [],
+                "actions": [], "reads": [], "writes": []}
+
+    def close_gaps_in_clean_room(self, gaps: list, limit: int = 8) -> int:
+        """Write each still-missing file in its own short conversation.
+
+        The build thread carries every file written so far, so by the time it
+        stalls, another turn in it stalls the same way. One file, one small
+        prompt, the same tools — this is the pass that actually lands the
+        file the plan promised.
+        """
+        paths = [rel for rel in self.gap_paths(gaps) if not self._on_disk(rel)]
+        if not paths:
+            return 0
+        self._log("WARN", f"   🚑 clean-room closure — writing "
+                          f"{len(paths[:limit])} file(s) the build thread "
+                          f"could not produce, one at a time")
+        written = 0
+        for rel in paths[:limit]:
+            try:
+                if self.write_one_file_clean_room(rel):
+                    written += 1
+                    self._log("INFO", f"   🚑 clean room wrote {rel}")
+                else:
+                    self._log("WARN", f"   ⚠ clean room could not write {rel}")
+            except Exception as e:                              # noqa: BLE001
+                self._log("WARN", f"   ⚠ clean room failed on {rel}: {e}")
+                log.exception("clean-room closure")
+        return written
+
+    def write_one_file_clean_room(self, rel: str) -> bool:
+        """One isolated turn whose only job is this file."""
+        entry = self._planned_entry(rel)
+        parts = [f"Write exactly ONE file and nothing else: `{rel}`.",
+                 "## Its brief, from the accepted plan\n"
+                 + self._file_list_block([entry])]
+
+        contracts = self._contract_ledger([rel])
+        if contracts:
+            parts.append("## Cross-file contracts it must satisfy exactly\n"
+                         + contracts)
+        caps = self._capability_ledger([rel])
+        if caps:
+            parts.append("## Capabilities it has to prove, not merely render\n"
+                         + caps)
+
+        neighbours = sorted(self._related_context_files([rel]))
+        if neighbours:
+            parts.append("Files already on disk that this one has to agree "
+                         "with: " + ", ".join(neighbours[:8])
+                         + "\nRead any of them with the read_file tool before "
+                           "you write. Do not guess an interface that already "
+                           "exists.")
+        whitelist = self._import_whitelist_block()
+        if whitelist:
+            parts.append(whitelist)
+
+        parts.append(f"Output ONE complete <write_file path=\"{rel}\">…"
+                     "</write_file> block, starting immediately with "
+                     "'<write_file'. No narration, no second file, no summary.")
+
+        saved_convo = self.convo
+        saved_refused = dict(getattr(self, "_refused", None) or {})
+        system = (saved_convo[0] if saved_convo
+                  and saved_convo[0].get("role") == "system"
+                  else {"role": "system", "content": self._builder_sys()})
+        try:
+            self.convo = [system]
+            self._refused = {}
+            self._run_write_loop("\n\n".join(parts))
+        finally:
+            self.convo = saved_convo
+            self._refused = saved_refused
+        return self._on_disk(rel)
 
     def unfinished(self) -> list:
         """Planned files this project never produced, or `[]` if it is complete."""

@@ -352,6 +352,21 @@ def run_qa_unit_stage(arch, proj_dir: Path, qa, *, build_ok: bool,
         ephase({"phase": -15, "title": "Running unit tests", "status": "done"})
         return out
 
+    # Production code is now settled: replace only drafts invalidated by the
+    # analyzer/build/flow repairs before paying for the first full Vitest run.
+    # This turns N per-file failure-repair calls into ceil(N/4) author batches.
+    try:
+        refreshed = qa.refresh_stale(targets=scope if scope else None)
+        out["stale_refreshed"] = len(refreshed)
+        out["stale_remaining"] = sum(
+            1 for meta in (qa.manifest or {}).values()
+            if (meta or {}).get("stale")
+            and (not scope or (meta or {}).get("target") in set(scope)))
+    except Exception as exc:                                  # noqa: BLE001
+        out["stale_refreshed"] = 0
+        out["stale_refresh_error"] = str(exc)[:200]
+        elog("WARN", f"   ⚠ stale unit-test refresh failed: {exc}")
+
     runner = VitestRunner(proj_dir, cmd=qa.cmd, callbacks=_qa_callbacks(),
                           session=qa)
     fixer = BugFixerAgent(arch, proj_dir, callbacks=_qa_callbacks(), session=qa,

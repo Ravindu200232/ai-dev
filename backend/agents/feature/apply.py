@@ -85,7 +85,7 @@ class FeaturesAgentApplyMixin:
             evidence_lines = "\n".join(
                 f"  • {e.get('path', '')}: {e.get('fact', '')}"
                 for e in (reasoning.get('evidence') or []) if e.get('path'))
-            user = textwrap.dedent(f"""\
+            user = structure_block(self.arch) + textwrap.dedent(f"""\
                 ## The requested change
                 {request}
 
@@ -155,25 +155,34 @@ class FeaturesAgentApplyMixin:
                 on_file_token=lambda t: None, on_file_end=on_end)
             raw = []
             seen_obs = set()
+            workspace = WorkspaceTools(self.arch)
             try:
                 while True:
                     turn_raw = []
                     def feed_turn(tok):
                         turn_raw.append(tok); raw.append(tok); parser.feed(tok)
-                    self._model_stream(convo, feed_turn, temperature=0.35,
-                                       model=self.model)
+                    calls = self._model_stream(
+                        convo, feed_turn, temperature=0.35, model=self.model,
+                        tools=workspace.schemas(WORKSPACE_TOOL_NAMES))
                     reply = "".join(turn_raw)
-                    convo.append({"role": "assistant", "content": reply})
-                    observations, used_tools = WorkspaceTools(self.arch).serve(reply)
+                    convo.append(workspace.assistant_message(reply, calls))
+                    call_messages, function_count = workspace.serve_calls(
+                        calls, names=WORKSPACE_TOOL_NAMES)
+                    convo.extend(call_messages)
+                    observations, tag_count = workspace.serve(reply)
+                    used_tools = function_count + tag_count
                     if used_tools and not wave_written:
-                        sig = observations.strip()
+                        sig = ("\n".join(m["content"] for m in call_messages) +
+                               "\n" + observations).strip()
                         if (sig and sig not in seen_obs and
                                 sum(len(m["content"]) for m in convo) < self._budget_chars()):
                             seen_obs.add(sig)
                             self._log("INFO", f"   🧰 implementation inspected {used_tools} workspace tool(s)")
+                            if observations:
+                                convo.append({"role": "user", "content":
+                                              "Compatibility tool observations:\n\n" + observations})
                             convo.append({"role": "user", "content":
-                                          "Tool observations:\n\n" + observations +
-                                          "\n\nContinue the same change. Follow the dependency evidence and write the files this wave needs."})
+                                          "Continue the same change from the tool results. Follow the dependency evidence and write the files this wave needs."})
                             continue
                     break
             except Exception as e:
