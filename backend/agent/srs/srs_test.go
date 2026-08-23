@@ -547,7 +547,7 @@ func TestLoadTopicsResolvesEveryPredicate(t *testing.T) {
 }
 
 func TestSessionPredicates(t *testing.T) {
-	s := &Session{Pack: map[string]any{"auth_default": true}, Answers: map[string]AnswerEntry{}}
+	s := &Session{Pack: &Pack{AuthDefault: true}, Answers: map[string]AnswerEntry{}}
 
 	// With nothing answered, auth follows the app type's own default.
 	if !hasAuth(s) {
@@ -588,7 +588,7 @@ func TestBuildQueueGatesAndRepeats(t *testing.T) {
 	}
 	session := &Session{
 		AppType: "saas",
-		Pack:    map[string]any{"archetype": archetypeCRUD, "auth_default": true},
+		Pack:    &Pack{Archetype: archetypeCRUD, AuthDefault: true},
 		Answers: map[string]AnswerEntry{},
 	}
 	Record(session, "auth", true, "", nil)
@@ -616,7 +616,7 @@ func TestBuildQueueGatesAndRepeats(t *testing.T) {
 
 	// A landing-page session must not be asked the CRUD questions.
 	landing := &Session{AppType: "landing",
-		Pack:    map[string]any{"archetype": archetypeLanding},
+		Pack:    &Pack{Archetype: archetypeLanding},
 		Answers: map[string]AnswerEntry{}}
 	landingQueue := BuildQueue(topics, landing)
 	for _, slot := range landingQueue {
@@ -659,7 +659,7 @@ func TestQuestionBudget(t *testing.T) {
 func TestAskRendersBothFieldSets(t *testing.T) {
 	topics, _ := LoadTopics()
 	session := &Session{Language: "English", AppType: "saas",
-		Pack:    map[string]any{"archetype": archetypeCRUD, "roles": []any{"admin"}},
+		Pack:    &Pack{Archetype: archetypeCRUD, Roles: []string{"admin"}},
 		Answers: map[string]AnswerEntry{}}
 
 	var slot Slot

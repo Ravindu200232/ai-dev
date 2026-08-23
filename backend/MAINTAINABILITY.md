@@ -43,8 +43,9 @@ as subprocesses of it, on the ports they always used.
   largest are `server/http.go`, which is one endpoint table and has to be, and
   `core/run.go`, which is the state plus the event vocabulary every package
   emits — splitting either would cost more in indirection than it saves.
-- Twenty-one source files is the whole backend. Reach for a new one only when a
-  new concept arrives, not when an existing file gets long.
+- Reach for a new file only when a new concept arrives, not when an existing
+  one gets long. `agent/` outside `srs/` is twenty-one files and should stay
+  that way; `srs/` is growing as the Python SRS service is ported into it.
 - `core` never imports another package in this module. Everything else may
   import `core`.
 - Every phase re-runs `core.Refresh` before it decides anything. Do not carry a

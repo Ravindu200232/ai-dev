@@ -37,15 +37,15 @@ func answerOf(s *Session, key string) any {
 	return entry.Value
 }
 
-func packOf(s *Session) map[string]any {
+func packOf(s *Session) *Pack {
 	if s == nil || s.Pack == nil {
-		return map[string]any{}
+		return &Pack{}
 	}
 	return s.Pack
 }
 
 func archetypeOf(s *Session) string {
-	if v, ok := packOf(s)["archetype"].(string); ok && v != "" {
+	if v := packOf(s).Archetype; v != "" {
 		return v
 	}
 	return archetypeCRUD
@@ -73,8 +73,8 @@ func truthy(v any) bool {
 func hasAuth(s *Session) bool {
 	v := answerOf(s, "auth")
 	if v == nil {
-		if def, ok := packOf(s)["auth_default"].(bool); ok {
-			return def
+		if s != nil && s.Pack != nil {
+			return s.Pack.AuthDefault
 		}
 		return true
 	}
@@ -164,10 +164,6 @@ func selfSignupRoles(s *Session) []string {
 	return out
 }
 
-func packList(s *Session, key string) []string {
-	return stringList(packOf(s)[key])
-}
-
 // --- the predicate registry ---------------------------------------------------
 //
 // Each key is the exact source expression the Python topic carried. A topic
@@ -244,16 +240,16 @@ var sources = map[string]optionsFunc{
 		return AppTypeOptions()
 	},
 	"lambda s, item: [{'label': e, 'value': e} for e in _pack(s).get('entities') or []]": func(s *Session, _ string) []Option {
-		return labelled(packList(s, "entities"), nil)
+		return labelled(packOf(s).Entities, nil)
 	},
 	"lambda s, item: [{'label': f, 'value': f} for f in _pack(s).get('features') or []]": func(s *Session, _ string) []Option {
-		return labelled(packList(s, "features"), nil)
+		return labelled(packOf(s).Features, nil)
 	},
 	"lambda s, item: [{'label': f, 'value': _snake_value(f)} for f in _pack(s).get('features') or []]": func(s *Session, _ string) []Option {
-		return labelled(packList(s, "features"), snakeValue)
+		return labelled(packOf(s).Features, snakeValue)
 	},
 	"lambda s, item: [{'label': r.replace('_', ' ').title(), 'value': r} for r in _pack(s).get('roles') or ['admin', 'user']]": func(s *Session, _ string) []Option {
-		roles := packList(s, "roles")
+		roles := packOf(s).Roles
 		if len(roles) == 0 {
 			roles = []string{"admin", "user"}
 		}
@@ -286,13 +282,8 @@ var repeats = map[string]repeatFunc{
 func sectionOptions(s *Session, _ string) []Option {
 	var seen []string
 	known := map[string]bool{}
-	pages, _ := packOf(s)["pages"].([]any)
-	for _, raw := range pages {
-		page, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		for _, name := range stringList(page["sections"]) {
+	for _, page := range packOf(s).Pages {
+		for _, name := range page.Sections {
 			if !known[name] {
 				known[name] = true
 				seen = append(seen, name)
@@ -357,17 +348,7 @@ func matchDomainTable(s *Session, subject string) *Table {
 	return nil
 }
 
-func domainTables(s *Session) []Table {
-	raw, _ := packOf(s)["domain_tables"].([]any)
-	out := make([]Table, 0, len(raw))
-	for _, item := range raw {
-		var t Table
-		if doc, ok := item.(map[string]any); ok && fromDoc(doc, &t) == nil {
-			out = append(out, t)
-		}
-	}
-	return out
-}
+func domainTables(s *Session) []Table { return packOf(s).DomainTables }
 
 // singular is the crude de-pluralisation the matcher needs; it only has to be
 // right often enough to line a question up with a table.
@@ -468,9 +449,9 @@ func BuildQueue(topics []Topic, s *Session) []Slot {
 // questionSet is which profile's questions this session asks.
 func questionSet(s *Session) string {
 	pack := packOf(s)
-	for _, key := range []string{"question_set", "app_type"} {
-		if v, ok := pack[key].(string); ok && v != "" {
-			return v
+	for _, key := range []string{pack.QuestionSet, pack.AppType} {
+		if key != "" {
+			return key
 		}
 	}
 	if s != nil && s.AppType != "" {

@@ -356,17 +356,58 @@ func TitleFrom(idea string) string {
 type Plan struct {
 	AppName       string         `json:"app_name"`
 	ProductIntent string         `json:"product_intent"`
-	CustomerNotes []string       `json:"customer_notes"`
+	CustomerNotes string         `json:"customer_notes"`
 	LookAndFeel   string         `json:"look_and_feel"`
 	Screens       []Screen       `json:"screens"`
 	Users         []PlanUser     `json:"users"`
 	Records       []PlanRecord   `json:"records"`
-	Workflows     []Workflow     `json:"workflows"`
+	Workflows     []Journey      `json:"workflows"`
 	Features      []string       `json:"features"`
-	AccountPolicy map[string]any `json:"account_policy"`
+	AccountPolicy *AccountPolicy `json:"account_policy"`
 	Assumptions   []string       `json:"assumptions"`
 	OpenQuestions []OpenQuestion `json:"open_questions"`
 }
+
+// Journey is one whole job, start to finish. The plan calls it `name` where
+// the specification's own workflows use `workflow_name`, and PlanReview.jsx
+// reads `name` — so the two shapes stay separate types.
+type Journey struct {
+	Name  string   `json:"name"`
+	Who   string   `json:"who,omitempty"`
+	Steps []string `json:"steps"`
+}
+
+// AccountPolicy is who may hold an account and how they come to have one. It
+// is decided once, in the plan, and the SRS derives its sign-in pages, its
+// account requirements and its API from it rather than re-deciding.
+type AccountPolicy struct {
+	AccountsRequired   bool     `json:"accounts_required"`
+	SignInFields       []string `json:"sign_in_fields,omitempty"`
+	RegistrationFields []string `json:"registration_fields,omitempty"`
+	RegistrationMode   string   `json:"registration_mode"`
+	RegistrationRole   string   `json:"registration_role,omitempty"`
+	ProvisioningRole   string   `json:"provisioning_role,omitempty"`
+
+	SignInRoute string `json:"sign_in_route,omitempty"`
+	SignUpRoute string `json:"sign_up_route,omitempty"`
+
+	AccountManagementRoute    string `json:"account_management_route,omitempty"`
+	InvitationManagementRoute string `json:"invitation_management_route,omitempty"`
+	InvitationAcceptRoute     string `json:"invitation_accept_route,omitempty"`
+	RequestAccessRoute        string `json:"request_access_route,omitempty"`
+	AccessReviewRoute         string `json:"access_review_route,omitempty"`
+
+	PasswordResetRequired bool `json:"password_reset_required"`
+}
+
+// The ways an account can come to exist.
+const (
+	RegistrationNone    = "none"
+	RegistrationOpen    = "open"
+	RegistrationAdmin   = "admin_created"
+	RegistrationInvite  = "invite"
+	RegistrationRequest = "request"
+)
 
 type Screen struct {
 	Name    string   `json:"name"`
@@ -469,11 +510,11 @@ type Session struct {
 	RawIdea   string `json:"raw_idea"`
 	Language  string `json:"language"`
 
-	GuessedAppType           string         `json:"guessed_app_type"`
-	GuessedAppTypeConfidence float64        `json:"guessed_app_type_confidence"`
-	GuessedAppTypeWhy        string         `json:"guessed_app_type_why"`
-	AppType                  string         `json:"app_type"`
-	Pack                     map[string]any `json:"pack"`
+	GuessedAppType           string  `json:"guessed_app_type"`
+	GuessedAppTypeConfidence float64 `json:"guessed_app_type_confidence"`
+	GuessedAppTypeWhy        string  `json:"guessed_app_type_why"`
+	AppType                  string  `json:"app_type"`
+	Pack                     *Pack   `json:"pack"`
 
 	Answers   map[string]AnswerEntry `json:"answers"`
 	Asked     []string               `json:"asked"`

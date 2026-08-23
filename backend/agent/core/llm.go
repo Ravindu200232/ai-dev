@@ -223,6 +223,14 @@ func (l *LLM) Stream(ctx context.Context, role, system, user string, onToken fun
 // returns something unparseable it is shown the error and asked again, which is
 // the single most effective accuracy fix for small local models.
 func (l *LLM) JSON(ctx context.Context, role, system, user string, into any) error {
+	return l.JSONValid(ctx, role, system, user, into, nil)
+}
+
+// JSONValid is JSON with a check the decoded value has to pass. A failed check
+// goes back to the model through the same repair loop a parse error does,
+// which is what gets a small local model to a depth floor it missed the first
+// time. The check reads whatever `into` points at.
+func (l *LLM) JSONValid(ctx context.Context, role, system, user string, into any, check func() error) error {
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, system),
 		llms.TextParts(llms.ChatMessageTypeHuman, user),
@@ -240,6 +248,10 @@ func (l *LLM) JSON(ctx context.Context, role, system, user string, into any) err
 		if body == "" {
 			lastErr = errors.New("the reply contained no JSON object")
 		} else if err := json.Unmarshal([]byte(body), into); err != nil {
+			lastErr = err
+		} else if check == nil {
+			return nil
+		} else if err := check(); err != nil {
 			lastErr = err
 		} else {
 			return nil

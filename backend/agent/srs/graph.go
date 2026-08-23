@@ -163,8 +163,8 @@ func routeAfterIntake(_ context.Context, state any) string {
 
 // RunGeneration and RunCustomization are assembled once their nodes land:
 // generation is audit → english_plan → generate → render_diagrams, and
-// customization is customize → render_diagrams. auditNode is already written;
-// the rest are the composer, the diagram renderer and the editor.
+// customization is customize → render_diagrams. auditNode and englishPlanNode
+// are written; the rest are the composer, the diagram renderer and the editor.
 
 // invoke runs a compiled graph and unwraps the runner's error wrapper so the
 // Studio sees the real message.
