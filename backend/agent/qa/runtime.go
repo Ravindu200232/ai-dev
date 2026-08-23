@@ -70,6 +70,14 @@ func (s *Suite) Dev(ctx context.Context, run *core.Run) error {
 		return err
 	}
 
+	if portOpen(core.DevPort) {
+		// Nothing this build started can be there yet, so the preview port
+		// belongs to something else. Say so: the app will fail to bind, and
+		// "port in use" is a far better answer than a silent timeout.
+		run.Warn(fmt.Sprintf("port %d is already in use — the preview may not be this build's app",
+			core.DevPort))
+	}
+
 	dev := newDevServer(run)
 	s.mu.Lock()
 	s.dev = dev
@@ -162,7 +170,7 @@ func (s *Suite) repairRuntime(ctx context.Context, run *core.Run, problem string
 	b.WriteString(core.StructureBlock(run.Structure))
 
 	writer := core.NewFileWriter(run)
-	text, err := run.LLM.Stream(ctx, core.RoleBuilder, runtimeFixSystem, b.String(), writer.Feed)
+	text, err := run.LLM.Stream(ctx, core.RoleBuilder, runtimeFixSystem, b.String(), writer)
 	if err != nil {
 		return false, err
 	}
@@ -321,7 +329,14 @@ func (d *devServer) waitReady(ctx context.Context, timeout time.Duration) string
 		if problem != "" {
 			return problem
 		}
-		if portOpen(core.DevPort) {
+		// Our own process saying it is up is what makes the listener below
+		// ours. Without this, anything already on the port — a server this
+		// build did not start — is accepted as the application under test.
+		d.mu.Lock()
+		ready := d.ready
+		d.mu.Unlock()
+
+		if ready && portOpen(core.DevPort) {
 			// Listening is not the same as serving: ask for the page.
 			if body, err := fetchText(ctx, "http://127.0.0.1:"+strconv.Itoa(core.DevPort)+"/", 20*time.Second); err == nil {
 				if bad := errorInPage(body); bad != "" {
@@ -378,13 +393,19 @@ func (d *devServer) Output() string {
 	return strings.Join(tailFrom(d.lines, 120), "\n")
 }
 
+// stop ends the dev server and everything it started.
+//
+// `npm run dev` is a launcher: it spawns the real server and waits. Killing
+// only the launcher used to leave that server running and holding the port, so
+// the next build found something listening, took it for its own application,
+// and tested the previous one — reporting green checks against code it had
+// never touched.
 func (d *devServer) stop() {
 	if d.cancel != nil {
 		d.cancel()
 	}
-	if d.cmd != nil && d.cmd.Process != nil {
-		_ = d.cmd.Process.Kill()
-	}
+	core.KillTree(d.cmd)
+	d.cmd = nil
 }
 
 func portOpen(port int) bool {

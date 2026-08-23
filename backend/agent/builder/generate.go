@@ -81,7 +81,7 @@ func (p *Pipeline) writeTask(ctx context.Context, run *core.Run, task core.Task)
 	prompt := p.taskPrompt(run, task)
 	writer := core.NewFileWriter(run)
 
-	_, err := run.LLM.Stream(ctx, core.RoleBuilder, coderSystem, prompt, writer.Feed)
+	_, err := run.LLM.Stream(ctx, core.RoleBuilder, coderSystem, prompt, writer)
 	if err != nil {
 		return writer.Written(), fmt.Errorf("writing %s failed: %w", task.ID, err)
 	}

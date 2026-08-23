@@ -2,8 +2,13 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -421,4 +426,122 @@ func TestLsRefusesAFile(t *testing.T) {
 	if _, err := NewShell(project).Ls("../"); err == nil {
 		t.Error("listing outside the project should be refused")
 	}
+}
+
+// A started command is a launcher: `npm run dev` spawns the real server and
+// waits on it. Stopping only the launcher used to leave that server running and
+// holding the preview port, which the next build then took for its own app.
+func TestKillTreeStopsWhatTheCommandStarted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the tree is stopped through taskkill there, which needs a Windows host")
+	}
+	dir := t.TempDir()
+	port := freePort(t)
+
+	// A launcher that spawns a grandchild holding the port and then waits,
+	// which is the shape `npm run dev` has.
+	script := fmt.Sprintf(
+		"sh -c 'while true; do nc -l -p %d >/dev/null 2>&1 || sleep 0.2; done' &\nwait\n", port)
+	if err := os.WriteFile(filepath.Join(dir, "launch.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd, err := NewShell(dir).Start(ctx, nil, "sh", "launch.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !waitPort(port, true, 5*time.Second) {
+		t.Skip("nc did not take the port; nothing to prove here")
+	}
+
+	cancel()
+	KillTree(cmd)
+
+	if !waitPort(port, false, 5*time.Second) {
+		_ = exec.Command("pkill", "-f", strconv.Itoa(port)).Run()
+		t.Fatalf("port %d is still held: the dev server outlived the command that started it", port)
+	}
+}
+
+func freePort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	return port
+}
+
+// waitPort waits for a port to reach the wanted state, and reports whether it did.
+func waitPort(port int, want bool, limit time.Duration) bool {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 200*time.Millisecond)
+		open := err == nil
+		if conn != nil {
+			_ = conn.Close()
+		}
+		if open == want {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
+// A streamed call that fails part-way is retried, and the retry replays the
+// answer from its first token. Without a reset, the replay is spliced into the
+// middle of the file being written — along with the marker that opens the next.
+func TestARetriedStreamDoesNotSpliceItsReplayIntoTheFile(t *testing.T) {
+	run := runForWriter(t)
+	writer := NewFileWriter(run)
+
+	answer := "<<<FILE app/page.jsx\nexport default function Page() {\n  return <h1>Shop</h1>\n}\n>>>END\n"
+
+	// The first attempt dies after the opening of the file.
+	writer.Feed(answer[:52])
+	// The daemon returned a retryable error, so the call starts again.
+	writer.Reset()
+	for _, chunk := range chunksOf(answer, 17) {
+		writer.Feed(chunk)
+	}
+	writer.Finish()
+
+	body, err := os.ReadFile(filepath.Join(run.Shell.Dir, "app", "page.jsx"))
+	if err != nil {
+		t.Fatalf("the file was not written: %v", err)
+	}
+	got := string(body)
+	if strings.Contains(got, fileOpen) {
+		t.Errorf("a file marker was written into the source:\n%s", got)
+	}
+	if strings.Count(got, "export default") != 1 {
+		t.Errorf("the abandoned attempt was replayed into the file:\n%s", got)
+	}
+	if !strings.Contains(got, "<h1>Shop</h1>") {
+		t.Errorf("the file is not what the model sent:\n%s", got)
+	}
+}
+
+func chunksOf(text string, size int) []string {
+	var out []string
+	for len(text) > size {
+		out = append(out, text[:size])
+		text = text[size:]
+	}
+	return append(out, text)
+}
+
+func runForWriter(t *testing.T) *Run {
+	t.Helper()
+	projects := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projects, "demo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return NewRun(context.Background(), NewHub(),
+		Paths{Base: projects, Projects: projects}, NewLLM(), "demo", "build")
 }

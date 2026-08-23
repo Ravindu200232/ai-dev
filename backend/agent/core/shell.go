@@ -431,6 +431,9 @@ func (s *Shell) Start(ctx context.Context, onLine func(string), name string, arg
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = s.Dir
 	cmd.Env = s.env()
+	// Started commands are launchers — `npm run dev` spawns the real server and
+	// waits — so the whole tree has to be stoppable, not just what we spawned.
+	ownGroup(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

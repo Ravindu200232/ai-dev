@@ -248,7 +248,7 @@ func (s *Suite) authorJourney(ctx context.Context, run *core.Run, summary E2ESum
 	fmt.Fprintf(&b, "\nWrite %s.\n", spec)
 
 	writer := core.NewFileWriter(run)
-	if _, err := run.LLM.Stream(ctx, core.RoleQA, journeyAuthorSystem, b.String(), writer.Feed); err != nil {
+	if _, err := run.LLM.Stream(ctx, core.RoleQA, journeyAuthorSystem, b.String(), writer); err != nil {
 		return err
 	}
 	writer.Finish()
@@ -292,7 +292,7 @@ func (s *Suite) repairJourney(ctx context.Context, run *core.Run, journey E2EJou
 	b.WriteString(core.ReadFiles(run, dedupePaths(paths), 40000))
 
 	writer := core.NewFileWriter(run)
-	if _, err := run.LLM.Stream(ctx, core.RoleQA, journeyRepairSystem, b.String(), writer.Feed); err != nil {
+	if _, err := run.LLM.Stream(ctx, core.RoleQA, journeyRepairSystem, b.String(), writer); err != nil {
 		return err
 	}
 	writer.Finish()

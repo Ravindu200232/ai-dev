@@ -490,3 +490,38 @@ func TestPaginate(t *testing.T) {
 		t.Errorf("an empty report should still be one page, got %d", len(got))
 	}
 }
+
+// An edit re-runs the app and the unit tests and nothing else, so it has to
+// merge onto the build's report rather than replace it. Saving an empty one
+// wiped the API, browser-journey and security results — and the security panel
+// then read "0 findings" as a clean bill rather than as an empty state.
+func TestSavingAfterAnEditKeepsWhatTheBuildFound(t *testing.T) {
+	run := runIn(t, nil)
+
+	build := NewSuite()
+	build.report.Project = run.Project
+	build.report.API = StageReport{Name: "api", Passed: 7, Total: 7}
+	build.report.E2E = StageReport{Name: "e2e", Passed: 4, Total: 4}
+	build.report.Suite = StageReport{Name: "unit", Passed: 12, Total: 12}
+	build.report.Security = SecurityReport{Checked: 31, Findings: []Finding{
+		{Title: "hardcoded API key", Severity: "high"},
+	}}
+	build.Save(run)
+
+	// What an edit does: a fresh suite, the app and unit tests re-run, save.
+	edit := NewSuite()
+	edit.Restore(run)
+	edit.report.Suite = StageReport{Name: "unit", Passed: 12, Total: 12}
+	edit.Save(run)
+
+	var got Report
+	if err := core.ReadJSON(filepath.Join(run.Paths.Meta(run.Project), "qa", "report.json"), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.API.Total != 7 || got.E2E.Total != 4 {
+		t.Errorf("the build's checks were erased: api %+v e2e %+v", got.API, got.E2E)
+	}
+	if got.Security.Checked != 31 || len(got.Security.Findings) != 1 {
+		t.Errorf("a real security finding became a clean bill: %+v", got.Security)
+	}
+}

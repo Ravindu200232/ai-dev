@@ -674,6 +674,20 @@ func (w *FileWriter) closeFile() {
 	w.run.Info("   ✎ " + path)
 }
 
+// Reset throws away everything received so far, because the attempt that sent
+// it has been abandoned and is about to be replayed from the beginning.
+//
+// A file already finished and written stays written: the replay will write it
+// again with the same content. It is the half-written one that has to go.
+func (w *FileWriter) Reset() {
+	w.buf.Reset()
+	w.body.Reset()
+	if w.path != "" {
+		w.run.StreamEnd(w.path, "")
+		w.path = ""
+	}
+}
+
 // Finish closes a file the model left open, which small models sometimes do.
 func (w *FileWriter) Finish() {
 	if w.path == "" {

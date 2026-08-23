@@ -241,7 +241,7 @@ func (s *Suite) authorUnitTest(ctx context.Context, run *core.Run, target string
 		target, body, dest, core.StructureBlock(run.Structure))
 
 	writer := core.NewFileWriter(run)
-	text, err := run.LLM.Stream(ctx, core.RoleQA, unitAuthorSystem, prompt, writer.Feed)
+	text, err := run.LLM.Stream(ctx, core.RoleQA, unitAuthorSystem, prompt, writer)
 	if err != nil {
 		return err
 	}
@@ -293,7 +293,7 @@ func (s *Suite) repairUnit(ctx context.Context, run *core.Run, result vitestRun)
 	b.WriteString(core.ReadFiles(run, dedupePaths(paths), 50000))
 
 	writer := core.NewFileWriter(run)
-	if _, err := run.LLM.Stream(ctx, core.RoleQA, unitRepairSystem, b.String(), writer.Feed); err != nil {
+	if _, err := run.LLM.Stream(ctx, core.RoleQA, unitRepairSystem, b.String(), writer); err != nil {
 		return err
 	}
 	writer.Finish()

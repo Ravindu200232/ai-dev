@@ -255,7 +255,7 @@ func (s *session) apply(ctx context.Context, state any) (any, error) {
 		"\nTHE FILES\n" + core.ReadFiles(run, s.read, 60000)
 
 	writer := core.NewFileWriter(run)
-	if _, err := run.LLM.Stream(ctx, core.RoleBuilder, applySystem, prompt, writer.Feed); err != nil {
+	if _, err := run.LLM.Stream(ctx, core.RoleBuilder, applySystem, prompt, writer); err != nil {
 		return state, fmt.Errorf("the update failed: %w", err)
 	}
 	writer.Finish()
@@ -280,6 +280,11 @@ func (s *session) verify(ctx context.Context, state any) (any, error) {
 
 	suite := qa.NewSuite()
 	defer suite.Close()
+	// An edit re-runs the app and its unit tests, and nothing else. Without the
+	// build's own report to merge onto, saving below would replace it with an
+	// empty one — and the Testing tab would report zero API checks, zero
+	// browser journeys and, worse, zero security findings as a clean bill.
+	suite.Restore(run)
 
 	if err := suite.Dev(ctx, run); err != nil {
 		// The change broke the app and could not be repaired: say so and leave

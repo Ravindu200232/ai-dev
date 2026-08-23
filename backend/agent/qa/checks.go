@@ -299,7 +299,7 @@ func (s *Suite) repairAPI(ctx context.Context, run *core.Run, failures []string)
 	b.WriteString(core.ReadFiles(run, dedupePaths(paths), 40000))
 
 	writer := core.NewFileWriter(run)
-	if _, err := run.LLM.Stream(ctx, core.RoleQA, apiRepairSystem, b.String(), writer.Feed); err != nil {
+	if _, err := run.LLM.Stream(ctx, core.RoleQA, apiRepairSystem, b.String(), writer); err != nil {
 		return err
 	}
 	writer.Finish()

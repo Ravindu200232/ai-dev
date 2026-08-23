@@ -232,8 +232,20 @@ func (l *LLM) Vision(ctx context.Context, role, system, user, mime string, image
 }
 
 // Stream asks for prose and hands each token to onToken as it arrives.
-func (l *LLM) Stream(ctx context.Context, role, system, user string, onToken func(string)) (string, error) {
-	return l.generate(ctx, role, system, user, false, onToken)
+func (l *LLM) Stream(ctx context.Context, role, system, user string, into Sink) (string, error) {
+	return l.generate(ctx, role, system, user, false, into)
+}
+
+// Sink receives a streamed answer as it arrives.
+//
+// Reset is the important half. A call that fails part-way is retried, and the
+// retry replays the answer from its very first token — so everything delivered
+// before the reset came from an attempt that no longer exists. Kept, it is
+// spliced into the middle of the file being written, along with the marker that
+// opens the next one.
+type Sink interface {
+	Feed(chunk string)
+	Reset()
 }
 
 // JSON asks for one JSON object and decodes it into `into`. When the model
@@ -283,17 +295,17 @@ func (l *LLM) JSONValid(ctx context.Context, role, system, user string, into any
 	return fmt.Errorf("model could not produce valid JSON after %d attempts: %w", repairRounds, lastErr)
 }
 
-func (l *LLM) generate(ctx context.Context, role, system, user string, jsonMode bool, onToken func(string)) (string, error) {
+func (l *LLM) generate(ctx context.Context, role, system, user string, jsonMode bool, into Sink) (string, error) {
 	messages := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, system),
 		llms.TextParts(llms.ChatMessageTypeHuman, user),
 	}
-	return l.chat(ctx, role, messages, jsonMode, onToken)
+	return l.chat(ctx, role, messages, jsonMode, into)
 }
 
 // chat is the one place a request actually leaves the process, so the retry
 // policy lives here and nowhere else.
-func (l *LLM) chat(ctx context.Context, role string, messages []llms.MessageContent, jsonMode bool, onToken func(string)) (string, error) {
+func (l *LLM) chat(ctx context.Context, role string, messages []llms.MessageContent, jsonMode bool, into Sink) (string, error) {
 	model := l.ModelFor(role)
 	client, err := l.client(model)
 	if err != nil {
@@ -303,9 +315,9 @@ func (l *LLM) chat(ctx context.Context, role string, messages []llms.MessageCont
 	if jsonMode {
 		opts = append(opts, llms.WithJSONMode())
 	}
-	if onToken != nil {
+	if into != nil {
 		opts = append(opts, llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
-			onToken(string(chunk))
+			into.Feed(string(chunk))
 			return nil
 		}))
 	}
@@ -315,6 +327,10 @@ func (l *LLM) chat(ctx context.Context, role string, messages []llms.MessageCont
 	for attempt := 1; attempt <= llmAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return "", err
+		}
+		if attempt > 1 && into != nil {
+			// This attempt starts the answer again from its first token.
+			into.Reset()
 		}
 		resp, err := client.GenerateContent(ctx, messages, opts...)
 		if err == nil {
