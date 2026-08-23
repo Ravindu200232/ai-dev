@@ -1,0 +1,49 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [<%.TriggerBranches%>]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-<%.ProjectSlug%>
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: <%.Root%>
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+<%- template "toolchain" .%>
+      - name: Install dependencies
+        run: |
+          <%.Preinstall%>
+          <%.InstallCommand%>
+      - name: Install the Vercel CLI
+        run: npm install --global vercel@latest
+      - name: Pull the production environment
+        # Also supplies the production environment variables the
+        # Next.js build itself reads.
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - name: Build
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+      - id: deploy
+        name: Deploy prebuilt output
+        run: |
+          url="$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
+          echo "Deployed to $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Smoke test
+        run: |
+          curl --fail --retry 12 --retry-delay 5 \
+            "${{ steps.deploy.outputs.url }}<%.HealthPath%>"

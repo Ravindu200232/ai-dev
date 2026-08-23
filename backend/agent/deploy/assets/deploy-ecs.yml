@@ -1,0 +1,86 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [<%.TriggerBranches%>]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-<%.ProjectSlug%>
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+<%- template "mongodb" .%>
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push the image
+        # Tagged with the commit, never :latest. Rollback and the
+        # readiness commit-match both read this tag.
+        run: |
+          IMAGE="${{ vars.ECR_REPOSITORY_URI }}:${{ github.sha }}"
+          # Let Next reach MongoDB on the runner.
+          docker build --network=host -t "$IMAGE" <%.Root%>
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Render the task definition
+        run: |
+          python3 - <<'PY'
+          import json, os
+          spec = json.load(open("deploy/task-definition.json"))
+          spec["executionRoleArn"] = os.environ["EXECUTION_ROLE_ARN"]
+          spec["taskRoleArn"] = os.environ["TASK_ROLE_ARN"]
+          container = spec["containerDefinitions"][0]
+          container["image"] = os.environ["IMAGE"]
+          for item in container.get("secrets", []):
+              item["valueFrom"] = item["valueFrom"].replace(
+                  "__RUNTIME_SECRET_ARN__", os.environ["RUNTIME_SECRET_ID"])
+          container["logConfiguration"]["options"]["awslogs-region"] = \
+              os.environ["AWS_REGION"]
+          json.dump(spec, open("task-definition.rendered.json", "w"), indent=2)
+          PY
+        env:
+          EXECUTION_ROLE_ARN: ${{ vars.ECS_EXECUTION_ROLE_ARN }}
+          TASK_ROLE_ARN: ${{ vars.ECS_TASK_ROLE_ARN }}
+          RUNTIME_SECRET_ID: ${{ vars.RUNTIME_SECRET_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+      - id: register
+        name: Register the revision
+        run: |
+          ARN="$(aws ecs register-task-definition \
+            --cli-input-json file://task-definition.rendered.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)"
+          echo "Registered $ARN"
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+      - name: Roll the service
+        run: |
+          # --desired-count 1 as well as the new revision.
+          aws ecs update-service \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --service "${{ vars.ECS_SERVICE }}" \
+            --task-definition "${{ steps.register.outputs.arn }}" \
+            --desired-count 1 \
+            --no-cli-pager
+          # Wait for healthy tasks and drain old ones.
+          aws ecs wait services-stable \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}"
+      - name: Smoke test
+        run: |
+          URL="$(aws cloudformation describe-stacks \
+            --stack-name "${{ vars.PROJECT_SLUG }}-bootstrap" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApplicationUrl'].OutputValue" \
+            --output text)"
+          echo "Checking $URL"
+          curl --fail --retry 12 --retry-delay 5 "$URL<%.HealthPath%>"

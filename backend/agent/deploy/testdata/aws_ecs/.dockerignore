@@ -1,0 +1,17 @@
+# Written by the deployment agent.
+node_modules
+.next
+.git
+.github
+.agentforge
+coverage
+test-results
+playwright-report
+# Never into the build context: an image layer is readable by anyone
+# who can pull the image.
+.env
+.env.*
+!.env.example
+npm-debug.log*
+Dockerfile
+.dockerignore

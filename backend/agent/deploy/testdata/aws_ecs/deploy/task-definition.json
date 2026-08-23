@@ -1,0 +1,68 @@
+{
+  "family": "corner-shop-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "__EXECUTION_ROLE_ARN__",
+  "taskRoleArn": "__TASK_ROLE_ARN__",
+  "containerDefinitions": [
+    {
+      "name": "corner-shop-app",
+      "image": "__IMAGE__",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 4010,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "4010"
+        },
+        {
+          "name": "HOSTNAME",
+          "value": "0.0.0.0"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "BETTER_AUTH_SECRET",
+          "valueFrom": "__RUNTIME_SECRET_ARN__:BETTER_AUTH_SECRET::"
+        },
+        {
+          "name": "MONGODB_URI",
+          "valueFrom": "__RUNTIME_SECRET_ARN__:MONGODB_URI::"
+        },
+        {
+          "name": "STRIPE_SECRET_KEY",
+          "valueFrom": "__RUNTIME_SECRET_ARN__:STRIPE_SECRET_KEY::"
+        },
+        {
+          "name": "BETTER_AUTH_URL",
+          "valueFrom": "__RUNTIME_SECRET_ARN__:BETTER_AUTH_URL::"
+        },
+        {
+          "name": "BASE_URL",
+          "valueFrom": "__RUNTIME_SECRET_ARN__:BASE_URL::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/deployment-agent/corner-shop",
+          "awslogs-region": "__AWS_REGION__",
+          "awslogs-stream-prefix": "app"
+        }
+      }
+    }
+  ]
+}

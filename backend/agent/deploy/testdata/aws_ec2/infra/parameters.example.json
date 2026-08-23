@@ -1,0 +1,10 @@
+{
+  "ProjectSlug": "corner-shop",
+  "GitHubSubjects": [
+    "repo:owner/repository:ref:refs/heads/main",
+    "repo:owner@OWNER_ID/repository@REPOSITORY_ID:ref:refs/heads/main"
+  ],
+  "AppPort": 4010,
+  "InstanceType": "t3.micro",
+  "ExistingOidcProviderArn": ""
+}

@@ -1,0 +1,44 @@
+{
+  "variables": [
+    {
+      "name": "BETTER_AUTH_SECRET",
+      "targets": [
+        "production",
+        "preview"
+      ],
+      "type": "sensitive",
+      "scope": "runtime",
+      "resolution": "auto_generate"
+    },
+    {
+      "name": "MONGODB_URI",
+      "targets": [
+        "production",
+        "preview"
+      ],
+      "type": "sensitive",
+      "scope": "runtime",
+      "resolution": "user_required"
+    },
+    {
+      "name": "NEXT_PUBLIC_SITE_NAME",
+      "targets": [
+        "production",
+        "preview"
+      ],
+      "type": "plain",
+      "scope": "both",
+      "resolution": "user_required"
+    },
+    {
+      "name": "STRIPE_SECRET_KEY",
+      "targets": [
+        "production",
+        "preview"
+      ],
+      "type": "sensitive",
+      "scope": "runtime",
+      "resolution": "user_required"
+    }
+  ]
+}

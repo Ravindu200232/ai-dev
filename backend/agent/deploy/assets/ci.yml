@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [<%.Branch%>]
+    paths:
+      - '<%.Paths%>'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+<%- template "mongodb" .%>
+    defaults:
+      run:
+        working-directory: <%.Root%>
+    steps:
+      - uses: actions/checkout@v4
+<%- template "toolchain" .%>
+      - name: Install dependencies
+        run: |
+          <%.Preinstall%>
+          <%.InstallCommand%>
+      - name: Build application
+        env:
+<%- template "buildenv" .%>
+        run: <%.BuildCommand%>
+      - name: Dependency audit
+        if: ${{ always() && hashFiles('<%.Lockfile%>') != '' }}
+        continue-on-error: true
+        run: <%.AuditCommand%>
+<%- if .Standalone%>
+      - name: Verify standalone output
+        run: test -f .next/standalone/server.js
+<%- end%>

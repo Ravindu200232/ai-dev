@@ -1,0 +1,39 @@
+<%- define "mongodb"%>
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+<%- end%>
+<%- define "toolchain"%>
+<%- if eq .PackageManager "bun"%>
+      - uses: oven-sh/setup-bun@v2
+<%- else%>
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+<%- if .Cache%>
+          cache: <%.PackageManager%>
+          cache-dependency-path: <%.Lockfile%>
+<%- end%>
+<%- end%>
+<%- end%>
+<%- define "buildenv"%>
+          MONGODB_URI: mongodb://127.0.0.1:27017/deployment_agent_build
+<%- if .HasBetterAuth%>
+          BETTER_AUTH_SECRET: build-only-placeholder-real-value-injected-at-runtime
+          BETTER_AUTH_URL: http://localhost:3000
+<%- end%>
+<%- end%>
+<%- define "dockerenv"%>
+ENV MONGODB_URI=mongodb://127.0.0.1:27017/deployment_agent_build
+<%- if .HasBetterAuth%>
+ENV BETTER_AUTH_SECRET=build-only-placeholder-real-value-injected-at-runtime
+ENV BETTER_AUTH_URL=http://localhost:3000
+<%- end%>
+<%- end%>

@@ -69,9 +69,11 @@ func TestPlanCarriesTheEnvironmentContractWithoutValues(t *testing.T) {
 		if item.Name == "" || item.Scope == "" {
 			t.Errorf("incomplete: %+v", item)
 		}
-		if len(item.Sources) != 0 {
-			t.Errorf("the contract says what is needed, not where it was found: %+v", item)
-		}
+	}
+	// The plan says what is needed, never where it was found or what it is.
+	if body := SafeJSON(plan.EnvironmentContract); strings.Contains(body, "sources") ||
+		strings.Contains(body, "app/page.tsx") {
+		t.Errorf("contract = %s", body)
 	}
 	if body := SafeJSON(plan); strings.Contains(body, "hunter2") {
 		t.Error("a plan must never carry a value")

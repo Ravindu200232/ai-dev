@@ -1,0 +1,12 @@
+{
+  "score": 45,
+  "categories": {
+    "build": 0,
+    "cicd": 20,
+    "provider": 25,
+    "security": 0,
+    "monitoring": 0,
+    "api": 0
+  },
+  "phase": "review"
+}

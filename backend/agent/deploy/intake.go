@@ -68,11 +68,18 @@ const (
 // it; a test can pass a function that keeps the events in memory.
 type Emit func(event Event)
 
-func (e Emit) step(stage, status string, percent int, message string, data map[string]any) {
+// send is how every stage emits, so a caller with nowhere to report to — a
+// test, a dry run — is not a crash.
+func (e Emit) send(event Event) {
 	if e == nil {
 		return
 	}
-	e(Event{Type: EventStep, Stage: stage, Status: status, Percent: percent, Message: message, Data: data})
+	e(event)
+}
+
+func (e Emit) step(stage, status string, percent int, message string, data map[string]any) {
+	e.send(Event{Type: EventStep, Stage: stage, Status: status,
+		Percent: percent, Message: message, Data: data})
 }
 
 // Intake stages a project and works out what it is.

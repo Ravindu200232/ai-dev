@@ -1,0 +1,132 @@
+{
+  "version": 3,
+  "project": "corner-shop",
+  "project_slug": "corner-shop",
+  "primary_service": "corner-shop",
+  "service_root": "",
+  "model": "gemma4:31b-cloud",
+  "model_used": false,
+  "target": "aws_ec2",
+  "environment_contract": {
+    "entries": [
+      {
+        "name": "BETTER_AUTH_SECRET",
+        "required": true,
+        "secret": true,
+        "scope": "runtime",
+        "sources": [],
+        "resolution": "auto_generate",
+        "value_present": true,
+        "public": false,
+        "development_only": false
+      },
+      {
+        "name": "MONGODB_URI",
+        "required": true,
+        "secret": true,
+        "scope": "runtime",
+        "sources": [
+          "app/page.tsx"
+        ],
+        "resolution": "user_required",
+        "value_present": false,
+        "public": false,
+        "development_only": false
+      },
+      {
+        "name": "NEXT_PUBLIC_SITE_NAME",
+        "required": true,
+        "secret": false,
+        "scope": "both",
+        "sources": [
+          "app/page.tsx"
+        ],
+        "resolution": "user_required",
+        "value_present": false,
+        "public": true,
+        "development_only": false
+      },
+      {
+        "name": "STRIPE_SECRET_KEY",
+        "required": true,
+        "secret": true,
+        "scope": "runtime",
+        "sources": [
+          "app/api/orders/route.ts"
+        ],
+        "resolution": "user_required",
+        "value_present": false,
+        "public": false,
+        "development_only": false
+      }
+    ]
+  },
+  "generation": {
+    "service_root": "",
+    "package_manager": "npm",
+    "install_command": "npm ci",
+    "build_command": "npm run build",
+    "start_command": "npm run start",
+    "port": 4010,
+    "health_path": "/api/health",
+    "environment_contract": [
+      {
+        "name": "MONGODB_URI",
+        "secret": true,
+        "scope": "runtime"
+      },
+      {
+        "name": "NEXT_PUBLIC_SITE_NAME",
+        "secret": false,
+        "scope": "build"
+      },
+      {
+        "name": "STRIPE_SECRET_KEY",
+        "secret": true,
+        "scope": "runtime"
+      }
+    ],
+    "runtime_strategy": "nextjs-standalone",
+    "github_jobs": [
+      "validate",
+      "build",
+      "push",
+      "deploy",
+      "stabilize",
+      "smoke-test"
+    ],
+    "aws_sizing": {
+      "instance_type": "t3.micro"
+    },
+    "required_patches": [
+      "standalone-output",
+      "health-route"
+    ]
+  },
+  "artifacts": [
+    ".env.example",
+    "next.config.mjs",
+    "app/api/health/route.js",
+    ".github/workflows/ci.yml",
+    ".github/workflows/deploy.yml",
+    "infra/bootstrap.yml",
+    "infra/parameters.example.json",
+    "deploy/release.sh",
+    "deployment-report.md",
+    "readiness-score.json",
+    "deployment-manifest.json"
+  ],
+  "agent_owned_files": [
+    ".env.example",
+    "next.config.mjs",
+    "app/api/health/route.js",
+    ".github/workflows/ci.yml",
+    ".github/workflows/deploy.yml",
+    "infra/bootstrap.yml",
+    "infra/parameters.example.json",
+    "deploy/release.sh",
+    "deployment-report.md",
+    "readiness-score.json",
+    "deployment-manifest.json"
+  ]
+}

@@ -159,11 +159,11 @@ func (p *Planner) Plan(ctx context.Context, spec *Spec) *Plan {
 			"Ollama planning was unavailable; deterministic safe defaults were used.")
 		plan.Recommendations = append(plan.Recommendations,
 			"Sign in to Ollama and re-run analysis to include AI recommendations.")
-		p.Emit(Event{Type: EventLog, Stage: "planner", Status: StatusWarning, Percent: 27,
+		p.Emit.send(Event{Type: EventLog, Stage: "planner", Status: StatusWarning, Percent: 27,
 			Message: err.Error()})
 	} else {
 		plan.ModelUsed = true
-		p.Emit(Event{Type: EventPrompt, Stage: "planner", Status: StatusComplete, Percent: 27,
+		p.Emit.send(Event{Type: EventPrompt, Stage: "planner", Status: StatusComplete, Percent: 27,
 			Message: "AI deployment plan validated"})
 	}
 
@@ -282,11 +282,11 @@ func applyDetected(plan *Plan, service Service) {
 		plan.HealthPath = DefaultHealthPath
 	}
 
-	plan.EnvironmentContract = make([]EnvVar, 0, len(service.Environment))
+	plan.EnvironmentContract = make([]PlanEnv, 0, len(service.Environment))
 	for _, item := range service.Environment {
 		// The contract carries the name, whether it is a secret and when it is
 		// needed — never a value, and never where it was found.
-		plan.EnvironmentContract = append(plan.EnvironmentContract, EnvVar{
+		plan.EnvironmentContract = append(plan.EnvironmentContract, PlanEnv{
 			Name: item.Name, Secret: item.Secret, Scope: item.Scope,
 		})
 	}

@@ -147,18 +147,43 @@ type Evidence struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// EnvVar is one variable the project needs, and where it may come from.
+// EnvVar is one variable the project's own code reads, and the files it reads
+// it in. This is what intake found; what to do about it comes later.
 type EnvVar struct {
 	Name     string   `json:"name"`
 	Required bool     `json:"required"`
 	Secret   bool     `json:"secret"`
 	Scope    string   `json:"scope"`
 	Sources  []string `json:"sources"`
+}
 
-	Resolution      string `json:"resolution,omitempty"`
-	ValuePresent    bool   `json:"value_present,omitempty"`
-	Public          bool   `json:"public,omitempty"`
-	DevelopmentOnly bool   `json:"development_only,omitempty"`
+// EnvEntry is one variable in the environment contract: the same variable
+// after it has been decided who supplies it and whether it is settled.
+type EnvEntry struct {
+	Name            string   `json:"name"`
+	Required        bool     `json:"required"`
+	Secret          bool     `json:"secret"`
+	Scope           string   `json:"scope"`
+	Sources         []string `json:"sources"`
+	Resolution      string   `json:"resolution"`
+	ValuePresent    bool     `json:"value_present"`
+	Public          bool     `json:"public"`
+	DevelopmentOnly bool     `json:"development_only"`
+}
+
+// Contract is the whole environment a deployment needs, with no values in it.
+// One list, sorted by name, is the single answer to "what does this app need
+// to run" — the review screen, the generated files and every gate read it.
+type Contract struct {
+	Entries []EnvEntry `json:"entries"`
+}
+
+// PlanEnv is how the plan states the contract: the name, whether it is a
+// secret and when it is needed. Never a value, and never a source path.
+type PlanEnv struct {
+	Name   string `json:"name"`
+	Secret bool   `json:"secret"`
+	Scope  string `json:"scope"`
 }
 
 // Service is one thing in the project that can be started: its framework, how
@@ -224,7 +249,7 @@ type Plan struct {
 	Port           int    `json:"port"`
 	HealthPath     string `json:"health_path"`
 
-	EnvironmentContract []EnvVar       `json:"environment_contract"`
+	EnvironmentContract []PlanEnv      `json:"environment_contract"`
 	RuntimeStrategy     string         `json:"runtime_strategy"`
 	GitHubJobs          []string       `json:"github_jobs"`
 	AWSSizing           map[string]any `json:"aws_sizing"`
