@@ -5,11 +5,13 @@ const { spawn } = require('node:child_process')
 const path = require('node:path')
 const fs = require('node:fs')
 
-const { pythonCommand, goCommand, portOpen, reclaimPort, run } = require('./runtime')
+const { goCommand, portOpen, reclaimPort, run } = require('./runtime')
 
 const STUDIO_PORT = 3000
 // The backend's own listeners.
-const BACKEND_PORTS = [7824, 7825, 7834]
+// The backend listens on two ports now: the API and the WebSocket. The SRS
+// and deployment agents are part of it and have none of their own.
+const BACKEND_PORTS = [7824, 7825]
 const STUDIO_URL = `http://localhost:${STUDIO_PORT}/__agentforge`
 
 let shellWindow = null
@@ -93,21 +95,14 @@ async function startBackend() {
   const binary = backendBinary(backend)
   if (!fs.existsSync(binary)) await buildBackend(backend)
 
-  // The SRS and deployment agents are still Python, and the backend spawns
-  // them, so it needs to be told which interpreter works here.
-  const py = await pythonCommand()
-  if (!py) throw new Error('Python could not be found on this machine.')
-
   step('Starting the AgentForge backend…', 20)
   const child = track(spawn(binary, [], {
     cwd: backend,
     env: {
       ...process.env,
       AGENTFORGE_BASE: backend,
-      AGENTFORGE_PYTHON: [py.cmd, ...py.prefix].join(' ').trim(),
       AGENTFORGE_NODE: process.env.AGENTFORGE_NODE || '',
       AGENTFORGE_NPM: process.env.AGENTFORGE_NPM || '',
-      PYTHONUNBUFFERED: '1',
     },
     windowsHide: true,
     detached: process.platform !== 'win32',

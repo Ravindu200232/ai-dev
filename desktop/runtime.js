@@ -56,22 +56,6 @@ async function goCommand() {
   return null
 }
 
-/** The python command that actually works here, or null. */
-async function pythonCommand() {
-  const configured = String(process.env.AGENTFORGE_PYTHON || '').trim()
-  if (configured) {
-    const r = await run(configured, ['--version'], { timeout: 8000 })
-    if (r.ok && /python\s+3\./i.test(r.out)) return { cmd: configured, prefix: [] }
-  }
-
-  for (const [cmd, args] of [['py', ['-3']], ['python', []], ['python3', []]]) {
-    const r = await run(cmd, [...args, '--version'], { timeout: 8000 })
-    if (r.ok && /python\s+3\./i.test(r.out)) return { cmd, prefix: args }
-  }
-  return null
-}
-
-
 /** The pid listening on a port, or 0. */
 async function listenerPid(port) {
   if (process.platform === 'win32') {
@@ -119,6 +103,6 @@ async function reclaimPort(port, marker) {
 }
 
 module.exports = {
-  run, portOpen, pythonCommand, goCommand,
+  run, portOpen, goCommand,
   listenerPid, commandOf, killTree, reclaimPort,
 }

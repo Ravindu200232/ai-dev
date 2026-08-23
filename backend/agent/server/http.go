@@ -109,8 +109,7 @@ func (s *Server) apiGet(w http.ResponseWriter, r *http.Request, path string) {
 	case path == "/image-check":
 		writeJSON(w, 200, s.Pictures.Check())
 	case path == "/srs-status":
-		writeJSON(w, 200, map[string]any{
-			"running": true, "in_process": true, "port": core.SRSPort})
+		writeJSON(w, 200, map[string]any{"running": true, "in_process": true})
 	case path == "/deploy-status":
 		writeJSON(w, 200, s.deployStatus())
 	case strings.HasPrefix(path, "/files/"):
@@ -468,8 +467,7 @@ func (s *Server) deployStatus() map[string]any {
 	if s.Deploy == nil {
 		return map[string]any{"state": "off", "running": false, "in_process": true}
 	}
-	return map[string]any{"state": "ready", "running": true, "in_process": true,
-		"port": core.DeployPort}
+	return map[string]any{"state": "ready", "running": true, "in_process": true}
 }
 
 func (s *Server) serveSRS(w http.ResponseWriter, r *http.Request, path string) {

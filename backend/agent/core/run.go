@@ -20,12 +20,14 @@ var ErrCancelled = errors.New("run cancelled")
 
 // Ports the Studio already expects. studio/next.config.js rewrites
 // /__agentforge/api to UIPort, and studio/lib/ws.js dials WSPort.
+//
+// There are only two. The SRS and deployment agents had 7826 and 7834 when
+// they were separate services; they are part of this binary now and are
+// reached under /srs and /deploy on the API port.
 const (
-	DevPort    = 5173
-	UIPort     = 7824
-	WSPort     = 7825
-	SRSPort    = 7826
-	DeployPort = 7834
+	DevPort = 5173
+	UIPort  = 7824
+	WSPort  = 7825
 )
 
 // APIPrefix is the path the Studio proxies through.

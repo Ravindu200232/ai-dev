@@ -7,7 +7,6 @@ cd /d "%~dp0"
 
 set "NODE_VERSION=20.18.1"
 set "NODE_ARCH=x64"
-set "PYTHON_VERSION=3.12.10"
 set "RUNTIME_DIR=%CD%\.agentforge-runtime"
 
 echo.
@@ -19,25 +18,15 @@ echo.
 call :ensure_node
 if errorlevel 1 goto :failed
 
-call :ensure_python
-if errorlevel 1 goto :failed
-
-rem Pass the selected runtimes to Electron and the backend.
-set "PATH=%NODE_HOME%;%PYTHON_HOME%;%PYTHON_HOME%\Scripts;%PATH%"
+rem Pass the selected runtime to Electron and the backend.
+set "PATH=%NODE_HOME%;%PATH%"
 set "AGENTFORGE_NODE=%NODE_EXE%"
 set "AGENTFORGE_NPM=%NPM_CMD%"
-set "AGENTFORGE_PYTHON=%PYTHON_EXE%"
 
 call :ensure_npm_packages "desktop" "desktop\node_modules\electron\dist\electron.exe" "Desktop and Electron"
 if errorlevel 1 goto :failed
 
 call :ensure_npm_packages "studio" "studio\node_modules\.bin\next.cmd" "Studio"
-if errorlevel 1 goto :failed
-
-call :ensure_python_packages
-if errorlevel 1 goto :failed
-
-call :ensure_playwright
 if errorlevel 1 goto :failed
 
 call :ensure_backend
@@ -56,7 +45,7 @@ exit /b 0
 
 
 :ensure_node
-echo [1/6] Checking Node.js...
+echo [1/3] Checking Node.js...
 set "NODE_EXE="
 set "NPM_CMD="
 set "NODE_HOME="
@@ -118,73 +107,12 @@ echo       Node.js is ready.
 exit /b 0
 
 
-:ensure_python
-echo [2/6] Checking Python...
-set "PYTHON_EXE="
-set "PYTHON_HOME="
-set "PIP_SCOPE=--user"
-
-rem Reuse Python 3.10-3.13 when it is already installed.
-py.exe -3 -c "import sys; raise SystemExit(0 if (3,10) ^<= sys.version_info[:2] ^< (3,14) else 1)" >nul 2>&1
-if not errorlevel 1 (
-    for /f "usebackq delims=" %%P in (`py.exe -3 -c "import sys; print(sys.executable)" 2^>nul`) do set "PYTHON_EXE=%%P"
-)
-if defined PYTHON_EXE goto :python_found
-
-python.exe -c "import sys; raise SystemExit(0 if (3,10) ^<= sys.version_info[:2] ^< (3,14) else 1)" >nul 2>&1
-if not errorlevel 1 (
-    for /f "usebackq delims=" %%P in (`python.exe -c "import sys; print(sys.executable)" 2^>nul`) do set "PYTHON_EXE=%%P"
-)
-if defined PYTHON_EXE goto :python_found
-
-set "PYTHON_HOME=%RUNTIME_DIR%\python"
-set "PYTHON_EXE=%PYTHON_HOME%\python.exe"
-set "PYTHON_INSTALLER=%RUNTIME_DIR%\python-%PYTHON_VERSION%-amd64.exe"
-set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/python-%PYTHON_VERSION%-amd64.exe"
-set "PIP_SCOPE="
-
-if exist "%PYTHON_EXE%" goto :python_ready
-
-echo       Compatible Python was not found.
-echo       Downloading Python %PYTHON_VERSION% from python.org...
-if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
-
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%PYTHON_URL%' -OutFile '%PYTHON_INSTALLER%'"
-if errorlevel 1 (
-    echo [ERROR] Python download failed. Check the internet connection.
-    exit /b 1
-)
-
-echo       Installing a private AgentForge Python runtime...
-start /wait "" "%PYTHON_INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%PYTHON_HOME%" Include_launcher=0 Include_test=0 Include_doc=0 Include_debug=0 Include_symbols=0 Include_tcltk=0 Include_pip=1 PrependPath=0 Shortcuts=0
-if errorlevel 1 (
-    echo [ERROR] Python installation failed.
-    exit /b 1
-)
-
-if not exist "%PYTHON_EXE%" (
-    echo [ERROR] The Python runtime is missing after installation.
-    exit /b 1
-)
-
-del /q "%PYTHON_INSTALLER%" >nul 2>&1
-goto :python_ready
-
-:python_found
-for %%P in ("%PYTHON_EXE%") do set "PYTHON_HOME=%%~dpP"
-echo       Using installed Python.
-
-:python_ready
-"%PYTHON_EXE%" --version
-exit /b 0
-
-
 :ensure_npm_packages
 set "PACKAGE_DIR=%~1"
 set "READY_FILE=%~2"
 set "PACKAGE_NAME=%~3"
 
-echo [3/6] Checking %PACKAGE_NAME% packages...
+echo [2/3] Checking %PACKAGE_NAME% packages...
 if not exist "%READY_FILE%" goto :install_npm_packages
 
 pushd "%PACKAGE_DIR%"
@@ -215,52 +143,9 @@ if not exist "%READY_FILE%" (
 exit /b 0
 
 
-:ensure_python_packages
-echo [4/6] Checking Python packages...
-"%PYTHON_EXE%" -c "import boto3, fastapi, fitz, httpx, jsonschema, langchain_core, langgraph, motor, multipart, PIL, playwright, pydantic, pydantic_settings, pypdf, pymongo, pytesseract, reportlab, requests, sse_starlette, uvicorn, websockets; import faster_whisper" >nul 2>&1
-if not errorlevel 1 (
-    echo       Python packages are already installed.
-    exit /b 0
-)
-
-echo       Installing the deployment agent packages...
-"%PYTHON_EXE%" -m pip --version >nul 2>&1
-if errorlevel 1 "%PYTHON_EXE%" -m ensurepip %PIP_SCOPE% >nul 2>&1
-"%PYTHON_EXE%" -m pip --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] pip setup failed.
-    exit /b 1
-)
-
-"%PYTHON_EXE%" -m pip install %PIP_SCOPE% -r "backend\deployment-agent\requirements.txt" --disable-pip-version-check --no-warn-script-location
-if errorlevel 1 (
-    echo [ERROR] Python package installation failed.
-    exit /b 1
-)
-exit /b 0
-
-
-:ensure_playwright
-echo [5/6] Checking the Playwright browser...
-"%PYTHON_EXE%" -c "from pathlib import Path; from playwright.sync_api import sync_playwright; p=sync_playwright().start(); ok=Path(p.chromium.executable_path).exists(); p.stop(); raise SystemExit(0 if ok else 1)" >nul 2>&1
-if not errorlevel 1 (
-    echo       Playwright Chromium is already installed.
-    exit /b 0
-)
-
-echo       Downloading Playwright Chromium. This happens once...
-"%PYTHON_EXE%" -m playwright install chromium
-if errorlevel 1 (
-    echo [ERROR] Playwright Chromium download failed.
-    exit /b 1
-)
-exit /b 0
-
-
-
 :ensure_backend
 rem The backend is a Go binary. Building it needs Go once; running it does not.
-echo [6/6] Checking the AgentForge backend...
+echo [3/3] Checking the AgentForge backend...
 set "BACKEND_EXE=%CD%\backend\agent\bin\agentforge.exe"
 if exist "%BACKEND_EXE%" (
     echo       The backend is already built.

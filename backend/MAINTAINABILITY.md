@@ -1,12 +1,13 @@
 # AgentForge maintenance map
 
-The backend is a Go binary. The SRS agent is part of it. The deployment agent is
-still Python and runs as a subprocess, on the port it always used.
+The backend is one Go binary. Everything is in it: the builder, QA, the SRS
+agent and the deployment agent. There is no Python, and no subprocess but the
+database.
 
 ## Backend — `agent/` (Go module `agentforge/agent`)
 
-- `cmd/agentforge/` — process lifecycle: MongoDB, the SRS service, the Python
-  deployment sidecar, the HTTP and WebSocket listeners, shutdown.
+- `cmd/agentforge/` — process lifecycle: MongoDB, the SRS and deployment
+  agents, the HTTP and WebSocket listeners, shutdown.
 - `core/` — the shared kernel, and the only package with no internal imports.
   - `run.go` — run state, project paths, the WebSocket event vocabulary, the
     streaming file writer.
@@ -25,21 +26,40 @@ still Python and runs as a subprocess, on the port it always used.
   served in-process under `/srs/*`; `orchestrate.go` is what each endpoint
   does; `graph.go` holds the three langgraphgo graphs. `data/*.json` is the
   domain knowledge, embedded.
-- `server/` — the Studio's two surfaces: `ws.go` (7825), `http.go` (7824), plus
-  `sidecar.go` for the deployment service and `mongo.go`, which fetches and runs
-  mongod when the machine has none.
+- `deploy/` — project → plan → generated files → validation → AWS or Vercel →
+  monitoring. `service.go` is its HTTP surface, served in-process under
+  `/deploy/*`; `graph.go` is the analysis graph; `assets/` are the files it
+  generates, kept as files. See below.
+- `server/` — the Studio's two surfaces: `ws.go` (7825), `http.go` (7824),
+  `jobs.go` for slow work the Studio polls, and `mongo.go`, which fetches and
+  runs mongod when the machine has none.
 
-## Python services
+## Deployment — `agent/deploy/`
 
-- `deployment-agent/` — deployment orchestration on 7834. It reaches the rest of
-  the system only through its own `bridge.py`, which reads
-  `~/.agentforge/settings.json` and the environment the parent sets.
+Read it in the order a run happens: `intake` (what the project is) → `plan`
+(how it will be deployed) → `patch` and `generate` (the files that carry it
+out) → `validate` (whether they are safe) → `graph` (all of that, plus the
+local build) → `deployer` (the gates and the sequence) → `aws`, `github`,
+`vercel` (the world) → `monitor` (what happened) → `lifecycle` (undoing it) →
+`export` (what it leaves behind).
+
+- Every AWS call goes through the customer's own `aws` CLI, in `aws.go`. There
+  is no second credential path and no SDK: a profile is named, or an SSO
+  session's keys are handed to one process through its environment.
+- `assets/` holds the generated files as files — two CloudFormation templates,
+  three workflows, a Dockerfile, a release script, a report and the source
+  patches. They are rendered with `text/template` using `<% %>` delimiters,
+  because the output is GitHub Actions YAML (`${{ }}`) and shell (`{}`).
+- `testdata/` is what the Python agent produced for the same project, captured
+  before it was removed. `generate_test.go` regenerates and compares byte for
+  byte; `testdata/README.md` records the two files that deliberately differ.
 
 ## Ports
 
-`5173` the generated app · `7824` API · `7825` WebSocket · `7834` deploy.
-`studio/next.config.js` and `studio/lib/ws.js` depend on these. The SRS has no
-port of its own any more: it is served under `/srs/*` on 7824.
+`5173` the generated app · `7824` API · `7825` WebSocket.
+`studio/next.config.js` and `studio/lib/ws.js` depend on these. The SRS and the
+deployment agent have no port of their own any more: they are served under
+`/srs/*` and `/deploy/*` on 7824.
 
 ## Rules
 
@@ -49,15 +69,20 @@ port of its own any more: it is served under `/srs/*` on 7824.
   `core/run.go`, which is the state plus the event vocabulary every package
   emits — splitting either would cost more in indirection than it saves.
 - Reach for a new file only when a new concept arrives, not when an existing
-  one gets long. `agent/` outside `srs/` is twenty-one files and should stay
-  that way; `srs/` is growing as the Python SRS service is ported into it.
+  one gets long.
 - `core` never imports another package in this module. Everything else may
-  import `core`.
+  import `core`. `srs` and `deploy` do not import each other.
 - Nothing the SRS produces may exceed the approved plan. The plan's records
   become the tables, its users the roles, its screens the pages; a model's
   answer is merged onto that, never substituted for it.
 - A diagram the specification cannot support says so. Never draw a plausible
   one — a reader cannot tell an invented lifecycle from a real one.
+- A deployment decides nothing a model told it. The commands, the port, the
+  variables and the service root are read off disk before the model is asked
+  anything; what comes back is filtered against a list of what is allowed.
+- Nothing generated may carry a value. `.env.example` names variables and never
+  holds one, the git index is checked for `.env` files before any commit, and
+  the only place a value is ever written is Secrets Manager.
 - Every phase re-runs `core.Refresh` before it decides anything. Do not carry a
   file listing forward between phases.
 - Listing a directory runs the platform's own `ls` or `dir` and parses it. The
