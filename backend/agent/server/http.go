@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,7 +107,8 @@ func (s *Server) apiGet(w http.ResponseWriter, r *http.Request, path string) {
 	case path == "/image-check":
 		writeJSON(w, 200, s.Pictures.Check())
 	case path == "/srs-status":
-		writeJSON(w, 200, s.Sidecars.SRS.Status())
+		writeJSON(w, 200, map[string]any{
+			"running": true, "in_process": true, "port": core.SRSPort})
 	case path == "/deploy-status":
 		writeJSON(w, 200, s.Sidecars.Deploy.Status())
 	case strings.HasPrefix(path, "/files/"):
@@ -128,7 +130,7 @@ func (s *Server) apiGet(w http.ResponseWriter, r *http.Request, path string) {
 	case strings.HasPrefix(path, "/deploy/jobs/"):
 		writeJSON(w, 200, s.jobs.Poll(trimSeg(path, "/deploy/jobs/")))
 	case strings.HasPrefix(path, "/srs/"):
-		s.Sidecars.SRS.Proxy(w, r, path[len("/srs"):])
+		s.serveSRS(w, r, path)
 	case strings.HasPrefix(path, "/deploy/"):
 		s.Sidecars.Deploy.Proxy(w, r, "/api"+path[len("/deploy"):])
 	default:
@@ -231,7 +233,7 @@ func (s *Server) apiPost(w http.ResponseWriter, r *http.Request, path string) {
 			SRSID string `json:"srs_id"`
 		}
 		_ = json.Unmarshal(body, &req)
-		s.Sidecars.SRS.Proxy(w, r, "/projects/"+req.SRSID+"/discard")
+		s.serveSRS(w, withBody(r, body), "/srs/projects/"+req.SRSID+"/discard")
 
 	case "/tune":
 		s.tune(w, r, body)
@@ -313,7 +315,7 @@ func (s *Server) apiPost(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 		if strings.HasPrefix(path, "/srs/") {
-			s.Sidecars.SRS.Proxy(w, withBody(r, body), path[len("/srs"):])
+			s.serveSRS(w, withBody(r, body), path)
 			return
 		}
 		if strings.HasPrefix(path, "/deploy/") {
@@ -408,28 +410,30 @@ func (s *Server) designBrief(ctx context.Context, req app.ThemeRequest) (string,
 	return "", errors.New("describe the app, or approve a specification first")
 }
 
-// srsPlan asks the SRS agent for the approved plan in prose.
+// srsPlan reads the approved plan in prose. The SRS service is part of this
+// binary, so this is a call rather than a request.
 func (s *Server) srsPlan(ctx context.Context, srsID string) string {
-	target := "http://127.0.0.1:" + strconv.Itoa(core.SRSPort) + "/projects/" + srsID + "/plan"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
+	if s.SRS == nil {
 		return ""
 	}
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
+	envelope, err := s.SRS.PlanState(ctx, srsID)
+	if err != nil || envelope == nil {
 		return ""
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return ""
+	return strings.TrimSpace(envelope.Markdown)
+}
+
+// serveSRS hands one request to the in-process SRS service. The Studio calls
+// it under /srs/*, which is where the reverse proxy to port 7826 used to be.
+func (s *Server) serveSRS(w http.ResponseWriter, r *http.Request, path string) {
+	if s.SRS == nil {
+		writeJSON(w, 503, map[string]any{"error": "the SRS service is not running"})
+		return
 	}
-	var body struct {
-		Markdown string `json:"markdown"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&body); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(body.Markdown)
+	inner := r.Clone(r.Context())
+	inner.URL = r.URL.ResolveReference(&url.URL{Path: path[len("/srs"):]})
+	inner.RequestURI = ""
+	s.SRS.Handler().ServeHTTP(w, inner)
 }
 
 // tune rewords an edit request into something the builder can act on. The

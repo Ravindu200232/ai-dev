@@ -18,6 +18,7 @@ import (
 	"agentforge/agent/core"
 	"agentforge/agent/qa"
 	"agentforge/agent/server"
+	"agentforge/agent/srs"
 )
 
 func main() {
@@ -30,15 +31,20 @@ func main() {
 	sidecars := server.NewSidecars(paths)
 
 	srv := server.New(hub, paths, llm, sidecars, mongo)
-	srv.Agent = builder.NewAgent(srv.Pictures)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// The connection string is settled first so the sidecars know where to
-	// look, but fetching mongod can take minutes and must not hold up the
-	// Studio: it finishes in the background and /mongo reports the progress.
+	// The connection string is settled first so the SRS store and the sidecar
+	// know where to look, but fetching mongod can take minutes and must not
+	// hold up the Studio: it finishes in the background and /mongo reports it.
 	mongo.Resolve()
+
+	// The SRS service is part of this binary. A machine with no database still
+	// gets a working service, in memory, rather than a failure to start.
+	srv.SRS = srs.NewService(srs.NewRepo(srs.Connect(ctx, mongo.URI(), srs.DatabaseName)), llm, paths)
+	srv.Agent = builder.NewAgent(srv.Pictures, srv.SRS)
+
 	sidecars.Start(ctx, mongo.URI())
 	go mongo.Ensure(ctx)
 
@@ -79,7 +85,7 @@ func banner(paths core.Paths, mongo *server.Mongo) {
 	fmt.Printf("  ⚡ AgentForge backend\n")
 	fmt.Printf("  🌐 API        →  http://127.0.0.1:%d%s\n", core.UIPort, core.APIPrefix)
 	fmt.Printf("  🔌 WebSocket  →  ws://127.0.0.1:%d\n", core.WSPort)
-	fmt.Printf("  📄 SRS agent  →  http://127.0.0.1:%d\n", core.SRSPort)
+	fmt.Printf("  📄 SRS        →  http://127.0.0.1:%d%s/srs\n", core.UIPort, core.APIPrefix)
 	fmt.Printf("  🚀 Deploy     →  http://127.0.0.1:%d\n", core.DeployPort)
 	fmt.Printf("  🍃 MongoDB    →  %s\n", mongo.URI())
 	fmt.Printf("  📁 Projects   →  %s\n", paths.Projects)

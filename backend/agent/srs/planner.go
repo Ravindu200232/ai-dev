@@ -202,11 +202,11 @@ func listOf(names []string) string {
 
 // --- generating ---------------------------------------------------------------------
 
-// GeneratePlan builds the enriched plan, falling back to its skeleton. It only
+// WritePlan builds the enriched plan, falling back to its skeleton. It only
 // returns an error when the customer asked for a language the model could not
 // produce, because then there is no plan to show them at all — a plan in the
 // wrong language is worse than none.
-func (s *Service) GeneratePlan(ctx context.Context, project *Project, session *Session,
+func (s *Service) WritePlan(ctx context.Context, project *Project, session *Session,
 	brief string, previous *Plan, revision string, coverage map[string]any) (*Plan, error) {
 
 	if project == nil {

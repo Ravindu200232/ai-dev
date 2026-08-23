@@ -9,7 +9,7 @@ const { pythonCommand, goCommand, portOpen, reclaimPort, run } = require('./runt
 
 const STUDIO_PORT = 3000
 // The backend's own listeners.
-const BACKEND_PORTS = [7824, 7825, 7826, 7834]
+const BACKEND_PORTS = [7824, 7825, 7834]
 const STUDIO_URL = `http://localhost:${STUDIO_PORT}/__agentforge`
 
 let shellWindow = null

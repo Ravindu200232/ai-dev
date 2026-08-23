@@ -1,12 +1,12 @@
 # AgentForge maintenance map
 
-The backend is a Go binary. The SRS and deployment agents stay in Python and run
-as subprocesses of it, on the ports they always used.
+The backend is a Go binary. The SRS agent is part of it. The deployment agent is
+still Python and runs as a subprocess, on the port it always used.
 
 ## Backend — `agent/` (Go module `agentforge/agent`)
 
-- `cmd/agentforge/` — process lifecycle: MongoDB, the two Python sidecars, the
-  HTTP and WebSocket listeners, shutdown.
+- `cmd/agentforge/` — process lifecycle: MongoDB, the SRS service, the Python
+  deployment sidecar, the HTTP and WebSocket listeners, shutdown.
 - `core/` — the shared kernel, and the only package with no internal imports.
   - `run.go` — run state, project paths, the WebSocket event vocabulary, the
     streaming file writer.
@@ -20,21 +20,26 @@ as subprocesses of it, on the ports they always used.
 - `app/` — the app summary and the selection, pencil, feature and repair flow
   that reads it, plus `picture.go` (Fooocus, uploads, attachments) and
   `design.go` (whole-app visual directions and logo prompts).
+- `srs/` — idea → interview → approved plan → specification → diagrams → PDF →
+  builder handoff, and the edits after it. `service.go` is its HTTP surface,
+  served in-process under `/srs/*`; `orchestrate.go` is what each endpoint
+  does; `graph.go` holds the three langgraphgo graphs. `data/*.json` is the
+  domain knowledge, embedded.
 - `server/` — the Studio's two surfaces: `ws.go` (7825), `http.go` (7824), plus
-  `sidecar.go` for the Python services and `mongo.go`, which fetches and runs
+  `sidecar.go` for the deployment service and `mongo.go`, which fetches and runs
   mongod when the machine has none.
 
 ## Python services
 
-- `srs-agent/` — SRS generation. FastAPI + LangGraph on 7826.
-- `deployment-agent/` — deployment orchestration on 7834.
-- Each reaches the rest of the system only through its own `bridge.py`, which
-  reads `~/.agentforge/settings.json` and the environment the parent sets.
+- `deployment-agent/` — deployment orchestration on 7834. It reaches the rest of
+  the system only through its own `bridge.py`, which reads
+  `~/.agentforge/settings.json` and the environment the parent sets.
 
 ## Ports
 
-`5173` the generated app · `7824` API · `7825` WebSocket · `7826` SRS ·
-`7834` deploy. `studio/next.config.js` and `studio/lib/ws.js` depend on these.
+`5173` the generated app · `7824` API · `7825` WebSocket · `7834` deploy.
+`studio/next.config.js` and `studio/lib/ws.js` depend on these. The SRS has no
+port of its own any more: it is served under `/srs/*` on 7824.
 
 ## Rules
 
@@ -48,6 +53,11 @@ as subprocesses of it, on the ports they always used.
   that way; `srs/` is growing as the Python SRS service is ported into it.
 - `core` never imports another package in this module. Everything else may
   import `core`.
+- Nothing the SRS produces may exceed the approved plan. The plan's records
+  become the tables, its users the roles, its screens the pages; a model's
+  answer is merged onto that, never substituted for it.
+- A diagram the specification cannot support says so. Never draw a plausible
+  one — a reader cannot tell an invented lifecycle from a real one.
 - Every phase re-runs `core.Refresh` before it decides anything. Do not carry a
   file listing forward between phases.
 - Listing a directory runs the platform's own `ls` or `dir` and parses it. The

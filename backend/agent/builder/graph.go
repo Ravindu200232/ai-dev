@@ -30,15 +30,18 @@ const maxCoverageRounds = 3
 // Agent is what the server dispatches to.
 type Agent struct {
 	pictures *app.Pictures
+	srs      Specifications
 }
 
-func NewAgent(pictures *app.Pictures) *Agent { return &Agent{pictures: pictures} }
+func NewAgent(pictures *app.Pictures, specs Specifications) *Agent {
+	return &Agent{pictures: pictures, srs: specs}
+}
 
 // Handle runs one instruction from the Studio.
 func (a *Agent) Handle(run *core.Run, msg server.Message) (string, error) {
 	switch msg.Type {
 	case "agent_build", "agent_resume":
-		return NewPipeline(msg).Run(run)
+		return NewPipeline(msg, a.srs).Run(run)
 
 	case "agent_update", "feature", "element_edit", "pencil_edit":
 		return app.Edit(run.Context(), run, requestFor(msg))
@@ -79,14 +82,22 @@ func requestFor(msg server.Message) app.Request {
 type Pipeline struct {
 	msg   server.Message
 	suite *qa.Suite
+	srs   Specifications
 
 	gaps           []string
 	coverageRounds int
 	scaffolded     bool
 }
 
-func NewPipeline(msg server.Message) *Pipeline {
-	return &Pipeline{msg: msg, suite: qa.NewSuite()}
+func NewPipeline(msg server.Message, specs Specifications) *Pipeline {
+	return &Pipeline{msg: msg, suite: qa.NewSuite(), srs: specs}
+}
+
+// Specifications is where the build contract comes from. It is an interface so
+// the builder depends on the one call it makes rather than on the whole SRS
+// service — and so a build with no specification needs nothing at all.
+type Specifications interface {
+	LiveHandoff(ctx context.Context, projectID string) (map[string]any, error)
 }
 
 // Run compiles the graph and drives it to the end.

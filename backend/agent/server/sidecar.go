@@ -21,7 +21,7 @@ import (
 	"agentforge/agent/core"
 )
 
-// The SRS and deployment agents stay in Python. The old backend imported them
+// The deployment agent stays in Python for now. The old backend imported it
 // as threads; a Go parent cannot, so each runs as a subprocess on the port it
 // always used and every request is proxied straight through. The Studio sees
 // no difference.
@@ -72,7 +72,6 @@ type Sidecars struct {
 	// path — so this stays a slice rather than a string.
 	Python []string
 
-	SRS    *sidecarState
 	Deploy *sidecarState
 }
 
@@ -80,7 +79,6 @@ func NewSidecars(paths core.Paths) *Sidecars {
 	return &Sidecars{
 		Paths:  paths,
 		Python: pythonBin(),
-		SRS:    newSidecar("srs", core.SRSPort),
 		Deploy: newSidecar("deploy", core.DeployPort),
 	}
 }
@@ -95,7 +93,7 @@ func newSidecar(name string, port int) *sidecarState {
 				name:    s.Status(),
 			})
 		}
-		s.proxy.FlushInterval = 100 * time.Millisecond // the SRS streams SSE
+		s.proxy.FlushInterval = 100 * time.Millisecond
 	}
 	return s
 }
@@ -116,11 +114,8 @@ func pythonBin() []string {
 	return []string{"python3"}
 }
 
-// Start launches both sidecars and keeps them up until ctx is cancelled.
+// Start launches the sidecar and keeps it up until ctx is cancelled.
 func (s *Sidecars) Start(ctx context.Context, mongoURI string) {
-	go s.supervise(ctx, s.SRS,
-		filepath.Join(s.Paths.Base, "srs-agent"),
-		"from srs_agent import mount; mount.serve()", mongoURI)
 	go s.supervise(ctx, s.Deploy,
 		filepath.Join(s.Paths.Base, "deployment-agent"),
 		"from deploy_agent import mount; mount.serve()", mongoURI)

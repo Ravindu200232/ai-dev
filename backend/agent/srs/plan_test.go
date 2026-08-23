@@ -562,3 +562,33 @@ func TestCollectAndApplyTextSkipMachineKeys(t *testing.T) {
 		t.Errorf("a machine value was rewritten: %v", applied)
 	}
 }
+
+func TestPlanListsAreNeverNull(t *testing.T) {
+	// A bare project: no interview, nothing answered.
+	project := NewProject("a shop", "English")
+	plan := BuildOfflinePlan(&project, &Session{}, "")
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"screens", "users", "records", "workflows",
+		"features", "assumptions", "open_questions"} {
+		if body[key] == nil {
+			t.Errorf("%q came back as null; the Studio reads it as a list", key)
+		}
+	}
+
+	merged := mergePlan(plan, &Plan{})
+	raw, _ = json.Marshal(merged)
+	body = map[string]any{}
+	_ = json.Unmarshal(raw, &body)
+	for _, key := range []string{"screens", "records", "workflows"} {
+		if body[key] == nil {
+			t.Errorf("after a merge %q is null", key)
+		}
+	}
+}

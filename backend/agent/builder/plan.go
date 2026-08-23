@@ -79,21 +79,17 @@ func (p *Pipeline) loadHandoff(ctx context.Context, run *core.Run, srsID string)
 		return map[string]any{}, strings.TrimSpace(p.msg.Prompt), nil
 	}
 
-	base := "http://127.0.0.1:" + strconv.Itoa(core.SRSPort) + "/projects/" + srsID
-	handoff, err := getJSON(ctx, base+"/builder-handoff")
+	if p.srs == nil {
+		return nil, "", fmt.Errorf("the specification service is not available")
+	}
+	handoff, err := p.srs.LiveHandoff(ctx, srsID)
 	if err != nil {
 		return nil, "", fmt.Errorf("the specification could not be read: %w", err)
 	}
-	contract := promptOf(handoff)
-	if contract == "" {
-		if text, err := getText(ctx, base+"/builder-prompt"); err == nil {
-			contract = text
-		}
-	}
-	body := handoffBody(handoff)
-	// Stage it beside the project so a resume does not need the SRS agent.
+	// Stage it beside the project so a resume never re-reads a specification
+	// that has since been edited.
 	_ = core.WriteJSON(staged, handoff)
-	return body, contract, nil
+	return handoffBody(handoff), promptOf(handoff), nil
 }
 
 // handoffBody unwraps the envelope the SRS agent returns.

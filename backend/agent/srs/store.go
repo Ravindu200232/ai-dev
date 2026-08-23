@@ -24,6 +24,10 @@ import (
 // The collections, matching the Python names exactly so an existing database
 // keeps working.
 const (
+	// DatabaseName is the database the Python service used, so an existing
+	// installation keeps its projects.
+	DatabaseName = "agentforge_srs"
+
 	CollProjects = "projects"
 	CollSources  = "extracted_sources"
 	CollSessions = "question_sessions"

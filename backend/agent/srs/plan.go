@@ -98,7 +98,7 @@ func BuildOfflinePlan(project *Project, session *Session, brief string) *Plan {
 		}
 	}
 
-	return &Plan{
+	plan := &Plan{
 		AppName: appName, ProductIntent: intent,
 		Users: users, Screens: screens, Records: records,
 		Workflows: workflows, Features: features,
@@ -106,6 +106,8 @@ func BuildOfflinePlan(project *Project, session *Session, brief string) *Plan {
 		LookAndFeel:   look, Assumptions: assumptions,
 		OpenQuestions: []OpenQuestion{}, CustomerNotes: notes,
 	}
+	plan.normalise()
+	return plan
 }
 
 func planUsers(session *Session) []PlanUser {

@@ -60,7 +60,35 @@ func mergePlan(skeleton, plan *Plan) *Plan {
 	out.OpenQuestions = cleanQuestions(out.OpenQuestions)
 	out.CustomerNotes = skeleton.CustomerNotes
 	out.Workflows = journeysForEveryRole(&out)
+	out.normalise()
 	return &out
+}
+
+// normalise gives every list a value. A section the Studio reads as `null`
+// rather than `[]` is one more thing every caller has to guard against, and
+// the JSON is a contract with a browser.
+func (p *Plan) normalise() {
+	if p.Screens == nil {
+		p.Screens = []Screen{}
+	}
+	if p.Users == nil {
+		p.Users = []PlanUser{}
+	}
+	if p.Records == nil {
+		p.Records = []PlanRecord{}
+	}
+	if p.Workflows == nil {
+		p.Workflows = []Journey{}
+	}
+	if p.Features == nil {
+		p.Features = []string{}
+	}
+	if p.Assumptions == nil {
+		p.Assumptions = []string{}
+	}
+	if p.OpenQuestions == nil {
+		p.OpenQuestions = []OpenQuestion{}
+	}
 }
 
 // cleanQuestions drops the blank ones and caps the answers offered at four,
@@ -394,6 +422,7 @@ func (s *Service) PlanState(ctx context.Context, projectID string) (*PlanEnvelop
 	// role gained a journey should still show that journey now.
 	plan := doc.Plan
 	plan.Workflows = journeysForEveryRole(&plan)
+	plan.normalise()
 	name := strings.TrimSpace(plan.AppName)
 	if name == "" {
 		if project, err := s.Repo.GetProject(ctx, projectID); err == nil && project != nil {

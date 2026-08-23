@@ -17,6 +17,7 @@ import (
 
 	"agentforge/agent/app"
 	"agentforge/agent/core"
+	"agentforge/agent/srs"
 )
 
 // Message is one instruction from the Studio. The typed fields are the ones
@@ -84,6 +85,7 @@ type Server struct {
 	Sidecars *Sidecars
 	Mongo    *Mongo
 	Pictures *app.Pictures
+	SRS      *srs.Service
 
 	mu     sync.Mutex
 	active *core.Run
