@@ -99,6 +99,15 @@ deployment agent have no port of their own any more: they are served under
   it happens in the background and reports through `/mongo`.
 - The WebSocket event names and their fields are a contract with `studio/`.
   `server/server_test.go` pins them; add a field freely, never rename one.
+- The Deploy tab's HTTP shape is a contract too, and a silent one: a missing
+  field does not error, it just leaves the tab blank or the button grey.
+  `TestDeployTabContract` pins `agent.listening`, the `settings` block on
+  `/deploy-results`, and `/settings.deploy`. The panel reads a finished run's
+  provider block as `repo_state` and draws its pipeline from the live run's
+  `events`.
+- The database a deployment uses is `deploy_mongodb_uri`, never the
+  `mongodb_uri` AgentForge runs for itself — that one is usually on this
+  machine, and an app in a cloud cannot reach it.
 - QA rounds are sequential. A repair round has to see the failure the previous
   round left behind.
 - Prefer evidence-backed repairs over broad rewrites: read the file before
