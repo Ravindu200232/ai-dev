@@ -187,8 +187,17 @@ func (s *Store) AddEvent(id string, event Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if event.CreatedAt == "" {
-		event.CreatedAt = NowISO()
+	if event.Timestamp == "" {
+		event.Timestamp = NowISO()
+	}
+	if event.RunID == "" {
+		event.RunID = id
+	}
+	if event.Percent < 0 {
+		event.Percent = 0
+	}
+	if event.Percent > 100 {
+		event.Percent = 100
 	}
 	event.Data = object(Redact(event.Data))
 	event.Message = text(Redact(event.Message))

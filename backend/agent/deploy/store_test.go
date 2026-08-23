@@ -146,7 +146,7 @@ func TestEvents(t *testing.T) {
 
 	for i, message := range []string{"reading the project", "planning", "deploying"} {
 		if err := store.AddEvent(id, Event{
-			Stage: "stage" + itoa(i), Level: "info", Message: message,
+			Stage: "stage" + itoa(i), Type: EventStep, Status: StatusRunning, Message: message,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -158,7 +158,7 @@ func TestEvents(t *testing.T) {
 	if events[0].EventID != 1 || events[2].EventID != 3 {
 		t.Errorf("ids must be stable and ordered: %+v", events)
 	}
-	if events[0].CreatedAt == "" {
+	if events[0].Timestamp == "" {
 		t.Error("an event is stamped when it is written")
 	}
 

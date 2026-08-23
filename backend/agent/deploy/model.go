@@ -87,15 +87,40 @@ type Run struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-// Event is one line of what happened, as the Studio's console reads it.
+// Event is one line of what happened. Every field here is read by the Studio's
+// console and pipeline view, so none of them may be renamed: it groups by
+// stage, filters by type, colours by status and fills the bar from percent.
 type Event struct {
-	EventID   int64          `json:"event_id,omitempty"`
-	Stage     string         `json:"stage,omitempty"`
-	Level     string         `json:"level,omitempty"`
-	Message   string         `json:"message,omitempty"`
-	Data      map[string]any `json:"data,omitempty"`
-	CreatedAt string         `json:"created_at,omitempty"`
+	EventID   int64          `json:"event_id"`
+	RunID     string         `json:"run_id"`
+	Type      string         `json:"type"`
+	Stage     string         `json:"stage"`
+	Status    string         `json:"status"`
+	Percent   int            `json:"percent"`
+	Message   string         `json:"message"`
+	Data      map[string]any `json:"data"`
+	Timestamp string         `json:"timestamp"`
 }
+
+// The event types the console separates into channels.
+const (
+	EventStep      = "step"
+	EventState     = "state"
+	EventLog       = "log"
+	EventTerminal  = "terminal"
+	EventPrompt    = "prompt"
+	EventMonitor   = "monitor"
+	EventChangeSet = "change_set"
+	EventError     = "error"
+)
+
+// The statuses a step reports. The console reads "complete" as done and
+// "failed" as an error; anything else is in progress.
+const (
+	StatusRunning  = "running"
+	StatusComplete = "complete"
+	StatusFailed   = "failed"
+)
 
 // Artifact is one file the run generated, with the hash of what was there
 // before it — so nothing the agent wrote can be mistaken for the customer's
@@ -221,6 +246,22 @@ const (
 	GatePassed = "passed"
 	GateFailed = "failed"
 )
+
+// statusError is a failure that already knows what the HTTP surface should
+// say about it, so a rule lives with the code that enforces it rather than
+// being restated in every handler.
+type statusError struct {
+	Status  int
+	Message string
+}
+
+func (e statusError) Error() string { return e.Message }
+
+func badRequest(message string) error { return statusError{Status: 400, Message: message} }
+
+func notFound(message string) error { return statusError{Status: 404, Message: message} }
+
+func conflict(message string) error { return statusError{Status: 409, Message: message} }
 
 // NowISO is the timestamp every row is stamped with.
 func NowISO() string { return time.Now().UTC().Format(time.RFC3339Nano) }
