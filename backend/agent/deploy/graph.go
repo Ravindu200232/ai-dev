@@ -303,7 +303,8 @@ func (a *Analyzer) reviewNode(_ context.Context, value any) (any, error) {
 	}
 
 	// The report and the score are what the review screen reads, and they
-	// were written before the build ran — so they are written again.
+	// were written before the build ran — so they are written again, this
+	// time with what the build and the checks proved.
 	if records, err := a.finalize(s); err == nil {
 		s.Records = records
 	}
@@ -351,10 +352,15 @@ func (a *Analyzer) finalize(s *state) ([]Artifact, error) {
 	for index, record := range s.Records {
 		byPath[record.Path] = index
 	}
+	scored := asMap(s.Readiness)
+	if len(s.Gates) > 0 {
+		scored["gates"] = s.Gates
+	}
+
 	records := append([]Artifact{}, s.Records...)
 	for path, body := range map[string]string{
 		"deployment-report.md": report,
-		"readiness-score.json": indented(s.Readiness),
+		"readiness-score.json": indented(scored),
 	} {
 		record, err := w.write(path, body, "report")
 		if err != nil {

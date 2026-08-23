@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,5 +183,38 @@ func TestStartRefusesAProjectItCannotRead(t *testing.T) {
 	}
 	if _, err := analyzer.Start(context.Background(), t.TempDir(), "aws_lambda", false); err == nil {
 		t.Error("an unsupported target is an error")
+	}
+}
+
+func TestTheFinalScoreSaysWhatWasProved(t *testing.T) {
+	analyzer, run, _ := analyzed(t, TargetEC2)
+	body, err := os.ReadFile(filepath.Join(run.StagedPath, "readiness-score.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var readiness map[string]any
+	if err := json.Unmarshal(body, &readiness); err != nil {
+		t.Fatal(err)
+	}
+	gates, _ := readiness["gates"].(map[string]any)
+	if gates == nil {
+		t.Fatalf("the file a reviewer reads does not say what passed: %s", body)
+	}
+	for _, gate := range []string{"model_used", "artifacts_valid", "build_validation",
+		"security_validation"} {
+		if _, present := gates[gate]; !present {
+			t.Errorf("%s is missing from %v", gate, sortedKeys(gates))
+		}
+	}
+	// And it is the same score the run record carries.
+	stored := object(run.Readiness)
+	if number(stored["score"]) != number(readiness["score"]) {
+		t.Errorf("the file and the record disagree: %v vs %v", readiness["score"], stored["score"])
+	}
+	records, _ := analyzer.Store.Artifacts(run.ID)
+	for _, record := range records {
+		if record.Path == "readiness-score.json" && record.SHA256 != SHA256(body) {
+			t.Error("the recorded hash is of an older version of the file")
+		}
 	}
 }
