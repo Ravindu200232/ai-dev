@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deployment Agent bootstrap permissions role
+
+Parameters:
+  TrustedPrincipalArn:
+    Type: String
+    Default: __PRINCIPAL__
+    Description: IAM principal (user or role) allowed to assume this deployment role
+
+Resources:
+  DeploymentAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: deployment-agent-bootstrap
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {AWS: !Ref TrustedPrincipalArn}
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: DeploymentAgentBootstrap
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Resource: '*'
+                Action:
+__ACTIONS__
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt DeploymentAgentRole.Arn
