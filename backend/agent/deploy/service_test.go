@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -387,5 +388,68 @@ func TestALiveRunReportsItsProgress(t *testing.T) {
 	}
 	if events[0].Stage != "intake" || events[0].Status != StatusComplete {
 		t.Errorf("events = %+v", events)
+	}
+}
+
+func TestAFinishedDeploymentIsWrittenIntoItsProject(t *testing.T) {
+	agent := agentOn(t)
+	source := project(t)
+	run, err := agent.Store.CreateRun(NewRunID(), "corner-shop", source, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agent.Store.AddEvent(run.ID, Event{Type: EventStep, Stage: "deploy",
+		Status: StatusComplete, Message: "GitHub Actions completed"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []State{StateAnalyzing, StateReviewReady, StateBootstrapping,
+		StateCIRunning, StateDeploying, StateValidating, StateLive} {
+		if _, err := agent.Store.Transition(run.ID, step, nil); err != nil {
+			t.Fatalf("%s: %v", step, err)
+		}
+	}
+
+	// Nothing has been deployed from this project yet, as far as it knows.
+	if HasRecord(source) {
+		t.Fatal("a project with no deployment claims one")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go agent.settle(ctx, run.ID)
+
+	deadline := time.Now().Add(20 * time.Second)
+	for !HasRecord(source) && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !HasRecord(source) {
+		t.Fatal("the deployment left no record in the project")
+	}
+
+	for _, name := range []string{"run.json", "events.json", "monitor.json", "link.json"} {
+		if _, err := os.Stat(filepath.Join(source, ".agentforge", "deploy", name)); err != nil {
+			t.Errorf("%s is missing: %v", name, err)
+		}
+	}
+	link, err := os.ReadFile(filepath.Join(source, ".agentforge", "deploy", "link.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(link), run.ID) || !strings.Contains(string(link), "LIVE") {
+		t.Errorf("link.json = %s", link)
+	}
+
+	// Tearing it down files the record away rather than deleting it.
+	if err := Retire(source, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if HasRecord(source) {
+		t.Error("the record is still live after a teardown")
+	}
+	if _, err := os.Stat(filepath.Join(source, ".agentforge", "deploy-archive", run.ID, "run.json")); err != nil {
+		t.Errorf("the record was not archived: %v", err)
+	}
+	if note := Deleted(source); note == nil || note["run_id"] != run.ID {
+		t.Errorf("deleted = %v", note)
 	}
 }
