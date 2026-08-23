@@ -148,6 +148,14 @@ type Command struct {
 	Timeout time.Duration
 	Env     map[string]string
 	Stdin   string
+
+	// Plain keeps the output exactly as the program wrote it. Set it only
+	// when the caller is deciding something with the output rather than
+	// showing it to anybody: redaction rewrites text, and a decision made on
+	// rewritten text is a decision made on something that never happened.
+	// Whatever a Plain command returns is secret until it has been through
+	// RedactText.
+	Plain bool
 }
 
 // Exec runs a command and captures both streams. A program the machine does
@@ -191,9 +199,9 @@ func Exec(ctx context.Context, cmd Command) Output {
 	}
 
 	err := run.Run()
-	out := Output{
-		Stdout: RedactText(stdout.String()),
-		Stderr: RedactText(stderr.String()),
+	out := Output{Stdout: stdout.String(), Stderr: stderr.String()}
+	if !cmd.Plain {
+		out.Stdout, out.Stderr = RedactText(out.Stdout), RedactText(out.Stderr)
 	}
 	if run.ProcessState != nil {
 		out.Code = run.ProcessState.ExitCode()

@@ -31,7 +31,10 @@ var secretValues = []*regexp.Regexp{
 	regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`),
 	regexp.MustCompile(`(?i)mongodb(\+srv)?://[^\s'"<>]+`),
 	regexp.MustCompile(`(?i)https?://[^/\s:@]+:[^/\s@]+@[^\s'"<>]+`),
-	regexp.MustCompile(`(?i)Bearer\s+[A-Za-z0-9._~+/=-]{12,}`),
+	// Spaces and tabs, never a newline: a pattern that crosses a line
+	// boundary swallows whatever follows it, and something else may be
+	// reading those lines.
+	regexp.MustCompile(`(?i)\bBearer[ \t]+[A-Za-z0-9._~+/=-]{12,}`),
 }
 
 // assignment is a `NAME=value` line whose name says the value is a secret.

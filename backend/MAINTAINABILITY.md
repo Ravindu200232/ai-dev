@@ -85,6 +85,11 @@ deployment agent have no port of their own any more: they are served under
 - Nothing generated may carry a value. `.env.example` names variables and never
   holds one, the git index is checked for `.env` files before any commit, and
   the only place a value is ever written is Secrets Manager.
+- Never decide anything on redacted text. Redaction rewrites what it is given,
+  so a pattern that matches one line can swallow the next: `Command.Plain` is
+  for the reads that make a decision, and everything else is redacted. A secret
+  is passed to a program on its standard input, never as an argument — an
+  argument is readable by every process on the machine.
 - Every phase re-runs `core.Refresh` before it decides anything. Do not carry a
   file listing forward between phases.
 - Listing a directory runs the platform's own `ls` or `dir` and parses it. The

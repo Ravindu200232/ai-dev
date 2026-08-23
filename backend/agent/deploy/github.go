@@ -281,12 +281,19 @@ func within(root, path string) bool {
 // --- committing and pushing ------------------------------------------------------------------
 
 // excluded are never committed by the agent, whatever the project's own
-// .gitignore says. The .env rules are the important ones: a deployment that
+// .gitignore says. The .env rule is the important one: a deployment that
 // committed a customer's environment file would publish their database.
+//
+// It covers the whole family — .env, .env.local, .env.production.local and
+// every other variant Next.js reads — because naming them one at a time is how
+// .env.production.local came to be missing from the list. .env.example is the
+// one that is meant to be committed, and it is added back by name below.
+// A pathspec's **/ needs a directory to match against, so the project root
+// takes a pattern of its own — and the root .env is the one most likely to
+// hold the customer's real database password.
 var excluded = []string{
-	":(exclude)**/.env", ":(exclude)**/.env.local", ":(exclude)**/.env.production",
-	":(exclude)**/.env.development", ":(exclude)**/node_modules/**", ":(exclude)**/.next/**",
-	":(exclude)**/.vercel/**",
+	":(exclude).env*", ":(exclude)**/.env*",
+	":(exclude)**/node_modules/**", ":(exclude)**/.next/**", ":(exclude)**/.vercel/**",
 }
 
 // Commit stages the deployment, refuses to commit anything that holds a value,
@@ -308,14 +315,18 @@ func (g GitHub) Commit(ctx context.Context, runID, repo, branch string,
 		}
 	}
 
-	staged := g.git(ctx, "diff", "--cached", "--name-only")
+	// Read the index exactly as git wrote it. Redaction rewrites text, and
+	// this list is a security decision: a pattern that matched one path could
+	// swallow the next one, and the file it hid is the file that gets pushed.
+	staged := Exec(ctx, Command{Name: "git", Args: []string{"diff", "--cached", "--name-only"},
+		Dir: g.Dir, Timeout: gitTimeout2, Plain: true})
 	if !staged.OK() {
-		return Push{}, errors.New("git diff: " + staged.Text())
+		return Push{}, errors.New("git diff: " + RedactText(staged.Text()))
 	}
 	names := staged.Lines()
 	if leaked := environmentFiles(names); len(leaked) > 0 {
 		return Push{}, errors.New("Refusing to commit environment value files: " +
-			strings.Join(leaked, ", "))
+			RedactText(strings.Join(leaked, ", ")))
 	}
 
 	if len(names) > 0 {
