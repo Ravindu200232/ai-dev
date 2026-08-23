@@ -1,1 +1,0 @@
-"""Design-agent stage orchestration."""

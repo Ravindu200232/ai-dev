@@ -6,7 +6,7 @@ import logging
 import threading
 from http.server import ThreadingHTTPServer
 
-from . import events, state, ws
+from . import events, sidecars, state, ws
 from .http import Handler
 
 log = logging.getLogger("forge.server")
@@ -40,6 +40,7 @@ async def main() -> None:
 
     events.use_loop(asyncio.get_running_loop())
     threading.Thread(target=serve_http, daemon=True).start()
+    sidecars.start_all()
     print(BANNER.format(line="━" * 46, host=state.bind_host(),
                         ui=state.UI_PORT, socket=state.WS_PORT,
                         projects=state.projects_dir()))

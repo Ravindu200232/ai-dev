@@ -1,4 +1,4 @@
-"""The forge pipeline, reached the way the server actually reaches it."""
+"""The server: its API, its socket protocol, and the run it drives."""
 from __future__ import annotations
 
 import json
@@ -7,221 +7,240 @@ from pathlib import Path
 
 import pytest
 
-import server
-import server_runtime
 from forge.llm import ScriptedModel, tool_call
 from forge.qa import e2e, unit
-from server_modules.forge.bridge import UI_STAGE, ui_relay
+from forge.server import api, events, runs, state, ws
+from forge.server.gate import PlanGate
 
 PLAN_MD = """## Current state
 A fresh scaffold.
 
 ## Files to change
 - `lib/items.ts` — the item store
-- `components/ItemList.tsx` — renders the items
 
 ## Steps
 1. Write lib/items.ts
-2. Write components/ItemList.tsx
 
 ## Risks
-- the empty state needs a testid
+- none worth naming
 """
 
 
 def _script():
     return ScriptedModel([
         tool_call("list_files", path=""), PLAN_MD,
-        tool_call("write_file", path="lib/items.ts", content="export const items = [];"),
-        tool_call("write_file", path="components/ItemList.tsx",
-                  content='export default () => <ul data-testid="empty" />;'),
-        "Built both files.",
-        tool_call("write_file", path="tests/unit/items.test.tsx", content="// unit"),
+        tool_call("write_file", path="lib/items.ts",
+                  content="export const items = [];"),
+        "Built the store.",
+        tool_call("write_file", path="tests/unit/items.test.ts", content="// unit"),
         "Unit suite written.",
-        tool_call("write_file", path="tests/e2e/items.spec.ts", content="// e2e"),
-        "E2E suite written.",
     ])
 
 
-def _fake_shell(root, command, timeout=None):
-    """The pipeline installs dependencies for real; a test must not."""
-    return f"$ {command}\n[exit 0]"
-
-
-def _fake_unit(root, command, timeout=None):
+def _unit_report(root):
     Path(root, unit.REPORT).write_text(json.dumps({"testResults": [
-        {"name": "tests/unit/items.test.tsx", "status": "passed",
-         "assertionResults": [{"fullName": "renders", "status": "passed"}]}]}))
-    return f"$ {command}\n[exit 0]"
+        {"name": "tests/unit/items.test.ts", "status": "passed",
+         "assertionResults": [{"fullName": "works", "status": "passed"}]}]}))
 
 
-def _fake_e2e(root, command, timeout=None):
-    path = Path(root, e2e.REPORT)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"suites": [{"file": "tests/e2e/items.spec.ts",
-        "specs": [{"title": "adds an item", "ok": True, "tests": []}]}]}))
+def _shell(root, command, timeout=None):
+    if "vitest" in command:
+        _unit_report(root)
     return f"$ {command}\n[exit 0]"
 
 
 @pytest.fixture()
-def wired(tmp_path, monkeypatch):
-    """The runtime, pointed at a temp projects dir with a scripted model.
-
-    The plan gate is given a short fuse so a test never waits on a human.
-    """
+def server(tmp_path, monkeypatch):
+    """The server pointed at a temp projects dir, with nothing real running."""
     sent = []
-    monkeypatch.setattr(server, "emit", sent.append)
-    monkeypatch.setattr(server, "PROD_DIR", tmp_path)
-    monkeypatch.setattr(server, "FORGE_PLAN_TIMEOUT", 0.2)
-    monkeypatch.setattr("forge.llm.Model", lambda name, *a, **k: _script())
-    monkeypatch.setattr(unit, "run_command", _fake_unit)
-    monkeypatch.setattr(e2e, "run_command", _fake_e2e)
-    monkeypatch.setattr("forge.tools.shell.run_command", _fake_shell)
+    monkeypatch.setattr(events, "emit", sent.append)
+    monkeypatch.setattr(state, "projects_dir", lambda: tmp_path)
+    monkeypatch.setattr(runs, "PLAN_TIMEOUT", 0.2)
+    monkeypatch.setattr(runs, "Model", lambda name, *a, **k: _script())
+    monkeypatch.setattr(unit, "run_command", _shell)
+    monkeypatch.setattr(e2e, "run_command", _shell)
+    monkeypatch.setattr("forge.tools.shell.run_command", _shell)
+    runs.CURRENT.update(project="", gate=None, cancelled=False)
     return sent
 
 
-# --- the wiring itself ------------------------------------------------------
+# --- the entrypoint ---------------------------------------------------------
 
-def test_the_stage_is_loaded_by_the_runtime_assembler():
-    parts = list(server_runtime._RUNTIME_PARTS)
-    assert "server_modules/forge/stage.py" in parts
-    assert (parts.index("server_modules/forge/stage.py")
-            < parts.index("server_modules/agent/builder/project_ops.py"))
-
-
-def test_the_runtime_namespace_exposes_the_forge_entry_points():
-    for name in ("run_forge_pipeline", "forge_decide", "FORGE_GATES"):
-        assert hasattr(server, name), f"{name} is not in the runtime namespace"
+def test_the_entrypoint_starts_the_forge_server_and_nothing_else():
+    body = Path("server.py").read_text(encoding="utf-8")
+    assert "from forge.server import run" in body
+    for gone in ("server_runtime", "server_modules", "agents", "qa_agent"):
+        assert gone not in body, f"server.py still mentions {gone}"
 
 
-def test_the_websocket_handler_dispatches_the_forge_messages():
-    source = Path("server_modules/agent/builder/project_ops.py").read_text(
-        encoding="utf-8")
-    assert '"forge_build"' in source and "run_forge_pipeline" in source
-    assert '"plan_decision"' in source and "forge_decide" in source
+def test_the_old_tree_is_gone():
+    for gone in ("agents", "qa_agent", "server_modules", "server_runtime.py"):
+        assert not Path(gone).exists(), f"{gone} is still here"
 
 
-# --- the stage vocabulary ---------------------------------------------------
+# --- the JSON API -----------------------------------------------------------
 
-def test_forge_stages_collapse_onto_the_two_the_overlay_draws():
+def test_the_studio_can_list_projects(server, tmp_path):
+    (tmp_path / "shop" / "app").mkdir(parents=True)
+    status, body = api.get("/projects")
+    assert status == 200
+    assert [p["name"] for p in body["projects"]] == ["shop"]
+    assert body["projects"][0]["has_app"] is True
+
+
+def test_a_projects_source_comes_back_without_the_noise(server, tmp_path):
+    root = tmp_path / "shop"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "page.tsx").write_text("export default () => null;")
+    (root / "node_modules" / "next").mkdir(parents=True)
+    (root / "node_modules" / "next" / "index.js").write_text("// vendored")
+    status, body = api.get("/files/shop")
+    assert status == 200
+    assert list(body["files"]) == ["app/page.tsx"]
+
+
+def test_an_unknown_route_is_a_404_not_a_crash(server):
+    assert api.get("/nope")[0] == 404
+    assert api.post("/nope", {})[0] == 404
+
+
+def test_a_file_can_be_saved_back(server, tmp_path):
+    (tmp_path / "shop" / "app").mkdir(parents=True)
+    status, body = api.post("/save-file", {"project": "shop",
+                                           "path": "app/page.tsx",
+                                           "content": "export default () => 1;"})
+    assert status == 200 and body["saved"] == "app/page.tsx"
+    assert (tmp_path / "shop" / "app" / "page.tsx").read_text() == "export default () => 1;"
+
+
+def test_a_save_outside_the_project_is_refused(server, tmp_path):
+    (tmp_path / "shop").mkdir()
+    status, body = api.post("/save-file", {"project": "shop",
+                                           "path": "../escape.txt", "content": "x"})
+    assert status == 400 and "escapes" in body["error"]
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_a_project_can_be_deleted_but_not_while_it_is_building(server, tmp_path):
+    (tmp_path / "shop").mkdir()
+    runs.CURRENT["project"] = "shop"
+    assert api.post("/delete-project", {"project": "shop"})[0] == 409
+    runs.CURRENT["project"] = ""
+    assert api.post("/delete-project", {"project": "shop"})[0] == 200
+    assert not (tmp_path / "shop").exists()
+    assert api.post("/delete-project", {"project": "shop"})[0] == 404
+
+
+def test_the_api_never_echoes_the_api_key_back(server, monkeypatch):
+    monkeypatch.setattr("forge.server.state.load_settings",
+                        lambda: {"ollama_api_key": "secret-key", "model": "m"})
+    body = api.get("/settings")[1]
+    assert body == {"model": "m", "has_api_key": True}
+    assert "secret-key" not in json.dumps(body)
+
+
+# --- the socket protocol ----------------------------------------------------
+
+def test_a_build_message_starts_a_run(server, tmp_path, monkeypatch):
+    started = {}
+    monkeypatch.setattr(runs, "start",
+                        lambda prompt, **kw: started.update(prompt=prompt, **kw))
+    ws.handle({"type": "forge_build", "prompt": "an item tracker",
+               "model": "m", "qa_model": "q"})
+    assert started["prompt"] == "an item tracker"
+    assert started["model"] == "m" and started["qa_model"] == "q"
+
+
+def test_an_empty_prompt_starts_nothing(server, monkeypatch):
+    monkeypatch.setattr(runs, "start", lambda *a, **k: pytest.fail("started"))
+    ws.handle({"type": "forge_build", "prompt": "   "})
+
+
+def test_a_chat_message_edits_the_named_project(server, monkeypatch):
+    asked = {}
+    monkeypatch.setattr(runs, "edit",
+                        lambda prompt, project, **kw: asked.update(
+                            prompt=prompt, project=project))
+    ws.handle({"type": "chat", "project": "shop", "prompt": "make it blue"})
+    assert asked == {"prompt": "make it blue", "project": "shop"}
+
+
+def test_an_unknown_message_is_ignored_rather_than_fatal(server):
+    ws.handle({"type": "something_new"})
+    ws.handle({})
+
+
+def test_answering_a_plan_nobody_asked_about_says_so(server):
+    ws.handle({"type": "plan_decision", "verdict": "approve"})
+    assert any("no run is waiting" in str(m.get("text", "")) for m in server)
+
+
+def test_cancel_with_nothing_running_says_so(server):
+    ws.handle({"type": "cancel"})
+    assert any("nothing is running" in str(m.get("text", "")) for m in server)
+
+
+# --- the gate ---------------------------------------------------------------
+
+def test_the_gate_only_accepts_an_answer_to_a_question_it_asked():
+    gate = PlanGate(timeout=1, on_timeout="reject")
+    assert gate.approve() is False, "an answer before the question must not stick"
+
+    from forge.plan import parse
+    plan = parse(PLAN_MD, brief="x")
+    threading.Timer(0.05, gate.approve).start()
+    assert gate.gate(plan) is True
+
+
+def test_a_plan_nobody_answers_falls_to_the_timeout_rule_out_loud():
+    from forge.plan import parse
     sent = []
-    relay = ui_relay(sent.append)
-    for step in ("scaffold", "plan", "build", "unit", "e2e"):
-        relay({"type": "stage", "step": step, "status": "run"})
-        relay({"type": "stage", "step": step, "status": "done"})
-    relay.close()
-    assert [(m["step"], m["status"]) for m in sent] == [
-        ("build", "run"), ("build", "done"), ("test", "run"), ("test", "done")]
-    assert set(UI_STAGE.values()) == {"build", "test"}
+    assert PlanGate(sent.append, timeout=0.2, on_timeout="reject").gate(
+        parse(PLAN_MD, brief="x")) is False
+    assert "rejected by the timeout rule" in sent[-1]["text"]
 
 
-def test_a_failed_stage_is_reported_as_an_error_not_swallowed():
-    sent = []
-    relay = ui_relay(sent.append)
-    relay({"type": "stage", "step": "unit", "status": "run"})
-    relay({"type": "stage", "step": "unit", "status": "error"})
-    relay.close()
-    assert ("test", "error") in [(m["step"], m["status"]) for m in sent]
+# --- a whole run ------------------------------------------------------------
 
+def test_a_run_builds_verifies_and_reports_done(server, tmp_path):
+    runs._run("an item tracker", "test-model", "", "", ("unit",))
 
-def test_non_step_events_pass_straight_through():
-    sent = []
-    ui_relay(sent.append)({"type": "tool", "name": "read_file",
-                           "args": {"path": "a.ts"}})
-    assert sent and sent[0]["type"] == "log"
-
-
-# --- a whole run through the server entry point -----------------------------
-
-def test_a_forge_run_builds_verifies_and_reports_done(wired, tmp_path):
-    server.run_forge_pipeline("an item tracker", model="test-model")
-
-    kinds = [m["type"] for m in wired]
+    kinds = [m["type"] for m in server]
     assert "project" in kinds and "done" in kinds
-    assert "error" not in kinds, [m for m in wired if m["type"] == "error"]
+    assert "error" not in kinds, [m for m in server if m["type"] == "error"]
 
-    result = next(m for m in wired if m["type"] == "forge_result")["result"]
+    result = next(m for m in server if m["type"] == "forge_result")["result"]
     assert result["built"] and result["green"]
-    assert result["files"] == ["lib/items.ts", "components/ItemList.tsx"]
-    assert result["reports"]["unit"]["green"] and result["reports"]["e2e"]["green"]
-
-    written = {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.ts*")}
-    assert any(p.endswith("components/ItemList.tsx") for p in written)
-    assert any(p.endswith("playwright.config.ts") for p in written)
+    assert result["files"] == ["lib/items.ts"]
+    assert (tmp_path / "an-item-tracker" / "lib" / "items.ts").is_file()
 
 
-def test_the_run_reports_the_two_overlay_stages_in_order(wired):
-    server.run_forge_pipeline("an item tracker", model="test-model")
-    assert [(m["step"], m["status"]) for m in wired if m["type"] == "step"] == [
-        ("build", "run"), ("build", "done"), ("test", "run"), ("test", "done")]
+def test_a_finished_run_leaves_nothing_behind(server):
+    runs._run("an item tracker", "test-model", "", "", ("unit",))
+    assert runs.CURRENT == {"project": "", "gate": None, "cancelled": False}
+    assert runs.busy() is False
 
 
-def test_the_plan_is_put_to_the_user_before_anything_is_built(wired):
-    server.run_forge_pipeline("an item tracker", model="test-model")
-    kinds = [m["type"] for m in wired]
-    review = kinds.index("plan_review")
-    first_file = next(i for i, m in enumerate(wired)
-                      if m["type"] == "file" and m["name"] == "lib/items.ts")
-    assert review < first_file, "the plan must be reviewed before any file lands"
+def test_a_second_build_is_refused_while_one_is_running(server):
+    runs.CURRENT["project"] = "busy-one"
+    assert runs.start("another", model="m") is False
+    assert any("already running" in str(m.get("text", "")) for m in server)
 
 
-def test_a_finished_run_leaves_no_gate_behind(wired):
-    server.run_forge_pipeline("an item tracker", model="test-model")
-    assert server.FORGE_GATES == {}
+def test_a_run_can_be_cancelled(server):
+    runs.CURRENT.update(project="shop", gate=PlanGate())
+    assert runs.cancel() is True
+    assert runs.cancelled() is True
 
 
-def test_a_plan_decision_from_the_socket_reaches_the_waiting_run(
-        tmp_path, monkeypatch):
-    sent = []
-    monkeypatch.setattr(server, "emit", sent.append)
-    monkeypatch.setattr(server, "PROD_DIR", tmp_path)
-    monkeypatch.setattr(server, "FORGE_PLAN_TIMEOUT", 10)   # long: answer it
-    monkeypatch.setattr("forge.llm.Model", lambda name, *a, **k: _script())
-    monkeypatch.setattr(unit, "run_command", _fake_unit)
-    monkeypatch.setattr(e2e, "run_command", _fake_e2e)
-    monkeypatch.setattr("forge.tools.shell.run_command", _fake_shell)
-
-    answered = threading.Event()
-
-    def approve_when_asked():
-        for _ in range(1_000):
-            for name in list(server.FORGE_GATES):
-                if server.forge_decide(name, "approve"):
-                    answered.set()
-                    return
-            threading.Event().wait(0.01)
-
-    threading.Thread(target=approve_when_asked, daemon=True).start()
-    server.run_forge_pipeline("an item tracker", model="test-model")
-
-    assert answered.is_set(), "the run never registered a gate to answer"
-    result = next(m for m in sent if m["type"] == "forge_result")["result"]
-    assert result["built"] and result["plan"]["approved"]
+def test_the_project_name_comes_from_the_prompt():
+    assert runs.slug("Build me a Shop!") == "build-me-a-shop"
+    assert runs.slug("   ") == "app"
+    assert len(runs.slug("x" * 200)) <= 40
 
 
-def test_a_decision_with_no_run_waiting_is_refused_not_crashed():
-    assert server.forge_decide("nothing-is-running", "approve") is False
-
-
-def test_a_rejected_plan_writes_nothing_and_says_so(tmp_path, monkeypatch):
-    sent = []
-    monkeypatch.setattr(server, "emit", sent.append)
-    monkeypatch.setattr(server, "PROD_DIR", tmp_path)
-    monkeypatch.setattr(server, "FORGE_PLAN_TIMEOUT", 10)
-    monkeypatch.setattr("forge.llm.Model",
-                        lambda name, *a, **k: ScriptedModel([PLAN_MD] * 4))
-    monkeypatch.setattr("forge.tools.shell.run_command", _fake_shell)
-
-    def reject_when_asked():
-        for _ in range(1_000):
-            for name in list(server.FORGE_GATES):
-                if server.forge_decide(name, "reject"):
-                    return
-            threading.Event().wait(0.01)
-
-    threading.Thread(target=reject_when_asked, daemon=True).start()
-    server.run_forge_pipeline("an item tracker", model="test-model")
-
-    result = next(m for m in sent if m["type"] == "forge_result")["result"]
-    assert result["built"] is False and result["stopped_at"] == "plan"
-    assert not list(tmp_path.rglob("lib/items.ts"))
+def test_a_second_project_with_the_same_name_gets_its_own_directory(
+        server, tmp_path):
+    (tmp_path / "shop").mkdir()
+    (tmp_path / "shop" / "app").mkdir()
+    assert runs.project_dir_for("shop").name == "shop-2"

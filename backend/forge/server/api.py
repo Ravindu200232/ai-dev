@@ -20,6 +20,9 @@ def get(path: str) -> tuple:
         return 200, state.models()
     if path == "/settings":
         return 200, state.settings()
+    if path == "/srs-status":
+        from . import sidecars
+        return 200, sidecars.status()
     if path == "/build/status":
         return 200, {"running": runs.busy(), "project": runs.CURRENT["project"]}
     if path.startswith("/files/"):

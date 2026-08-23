@@ -1,41 +1,28 @@
 # AgentForge maintenance map
 
-Public entrypoints stay small. Implementation lives in focused modules and existing imports remain stable.
+The backend is the forge pipeline and the server that drives it. Everything
+else was removed in the cutover.
 
-## Backend
+## Layout
 
-- `server.py` — public backend entrypoint.
-- `server_runtime.py` — ordered runtime assembler.
-- `server_modules/core/` — startup, shutdown and dev-server lifecycle.
-- `server_modules/srs/` — SRS handoff and sidecar API.
-- `server_modules/qa/` — unit, runtime, API, security and E2E orchestration.
-- `server_modules/agent/` — build, repair, feature, image and editor workflows.
-- `server_modules/deploy/` — deployment orchestration and jobs.
-- `server_modules/ui/` — HTTP handling.
-- `server_modules/forge/` — the forge pipeline, its websocket plan gate and
-  the `forge_build` / `plan_decision` entry points.
+- `server.py` — the entrypoint. Starts `forge.server`.
+- `forge/` — the agent core and everything built on it. See `forge/README.md`.
+- `forge/server/` — HTTP for the studio's API, a websocket for a build.
+- `tests/` — the suites for all of it.
+- `production-ready/` — where built projects are written.
+- `scripts/` — desktop packaging helpers, unrelated to the backend.
 
-## Pipeline
+## Sidecars
 
-- `pipeline.py` — compatibility facade.
-- `server_modules/agent/pipeline/` — watcher, runner and dev-server logic.
-- `pipeline_core/` — compatibility imports for older callers.
-
-## Supporting packages
-
-- `forge/` — the small agent core: tools, context budget, plan mode, skills,
-  and the builder, QA and edit agents written on top of them. The feature,
-  element-select and pencil paths run on `forge/edit/`. See `forge/README.md`.
-- `agents/` — architect, analyzer, builder, repair and project helpers.
-- `qa_agent/` — test authoring, browser execution, evidence and repair support.
-- `srs-agent/` — SRS service.
-- `deployment-agent/` — deployment service.
+- `srs-agent/` and `deployment-agent/` are separate services with their own
+  dependencies. `forge/server/sidecars.py` starts each in a thread and keeps
+  going when one cannot be imported — a missing sidecar is not a reason to be
+  unable to build anything. `/__agentforge/api/srs-status` reports both.
 
 ## Rules
 
-- Keep source files below 1000 lines. New code in `forge/` stays below 180.
-- Put new code in the narrowest matching module.
-- Preserve public imports when moving implementation.
-- Keep comments short and useful.
-- Prefer evidence-backed repairs over broad rewrites.
-- Validate build, runtime and E2E behavior after structural changes.
+- Keep source files below 200 lines. Put new code in the narrowest module.
+- A change that cannot be verified is not finished: run the suite, and run
+  the pipeline against a real project when the change touches it.
+- Never report a run green when a stage did not run.
+- Prefer evidence over inference — read the file before changing it.

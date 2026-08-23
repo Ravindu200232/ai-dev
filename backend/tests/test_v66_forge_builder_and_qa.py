@@ -19,7 +19,7 @@ from forge.plan import parse
 from forge.qa import QAAgent, e2e, unit
 from forge.qa.report import classify
 from forge.tools import build_registry
-from server_modules.forge import PlanGate
+from forge.server.gate import PlanGate
 
 PLAN_MD = """## Current state
 A fresh scaffold with app/page.tsx only.
