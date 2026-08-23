@@ -100,10 +100,6 @@ def _leave_unresolved(runner, failures, why: str) -> int:
     return len(files)
 
 
-_CASE_LINE_RE = re.compile(
-    r"^(\s*)(it|test)(\s*(?:\.\s*\w+)?\s*\(\s*)(['\"`])(.+?)\4", re.M)
-
-
 def _backfill_tests(arch, proj_dir: Path, qa) -> int:
     """Author tests for every testworthy file the per-task jobs never reached."""
 

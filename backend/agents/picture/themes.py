@@ -17,75 +17,9 @@ def design_count(model: str) -> int:
     name = str(model or "").strip().lower()
     return SLOW_MODEL_COUNT if any(key in name for key in _SLOW_HTML_FAMILIES) else COUNT
 
-# Random directions Wide pools
-_PALETTES = [
-    "warm paper and ink — off-white ground, near-black text, one hot accent",
-    "cool greys with a single electric blue",
-    "deep navy surfaces with pale text, one amber accent",
-    "cream and terracotta, earthy and warm",
-    "near-black ground, white text, one acid-green accent",
-    "sage and forest greens on bone white",
-    "plum and dusty rose, low saturation",
-    "slate blue-greys with a coral accent",
-    "pure white, hairline greys, one saturated red used sparingly",
-    "sand, ochre and charcoal — desert tones",
-    "midnight and teal, glowing accents on dark",
-    "soft pastels — mint, butter, sky — on white, with charcoal text",
-    "monochrome black and white with ONE colour used as a field",
-    "olive, mustard and cream, retro and warm",
-    "ice white and cobalt, clinical and precise",
-    "chocolate browns and peach on cream",
-]
-_TYPE = [
-    "a heavy grotesque sans for headings, set tight; small plain body",
-    "a serif for headings (Georgia), sans body — editorial",
-    "everything in one sans at few sizes; weight and colour do the work",
-    "large light-weight display headings, generous body leading",
-    "condensed uppercase headings with wide tracking; roomy body",
-    "monospace labels and numbers, sans everything else — instrument panel",
-    "big friendly rounded-feeling sans, bold, high x-height",
-    "small type throughout, dense, tabular — built for daily use",
-    "serif body text (Georgia) with sans UI labels — bookish",
-    "oversized numerals and headings, tiny captions — poster-like contrast",
-]
-_SHAPE = [
-    "square corners everywhere, no radius at all",
-    "small 4px radius, restrained",
-    "generous 12-16px radius on cards and fields, pill buttons",
-    "fully round pills and circles for every interactive thing",
-    "square outer containers, rounded inner controls",
-    "hard edges with thick 2px borders as the main separator",
-    "no borders — separation by background fill and spacing only",
-    "hairline 1px rules between everything, table-like",
-]
-_DENSITY = [
-    "roomy — lots of white space, few things per screen",
-    "normal — comfortable, balanced",
-    "tight — dense rows, small padding, many things per screen",
-    "very roomy — one idea per viewport, big margins",
-    "dense data with roomy headers — magazine header, spreadsheet body",
-]
-_MOVES = [
-    "a full-bleed hero band in the accent colour",
-    "a left sidebar navigation that stays put",
-    "a top bar with the page title in enormous type",
-    "cards with an offset hard shadow (no blur)",
-    "an accent-coloured left rule on every active or important row",
-    "numbered sections, big numerals in the margin",
-    "a sticky footer bar carrying the primary action",
-    "generous photography — a large image at the top of every content page",
-    "iconless — words and rules only, no icons anywhere",
-    "chips and pills for every status and filter",
-    "two-column layout: a narrow index on the left, content on the right",
-    "underlined links and underlined active tabs, nothing filled",
-    "a coloured background field behind the whole page, white cards on it",
-    "big rounded avatars and photography as the primary visual",
-    "a dark shell (header, nav) over a light content area",
-    "boxed, centred content column no wider than 900px, like a document",
-]
-
-# Coherent studio-grade systems. Randomly combining palette/type/shape/move
-# produced directions that were different but not necessarily good together.
+# Coherent studio-grade systems. An earlier version combined palette, type,
+# shape and move at random; the results were different but not good together,
+# so each direction is now written as one coherent whole.
 _PRO_DIRECTIONS = [
     {
         "palette": "porcelain white, graphite ink, mineral grey and one precise cobalt accent",

@@ -8,7 +8,7 @@ from .spec import TestFailure
 
 log = logging.getLogger("qa.runner")
 
-from .runner_execute import RunnerExecutionMixin, REPORT, TIMEOUT, TARGET_COMMAND_CHARS
+from .runner_execute import RunnerExecutionMixin, REPORT, TARGET_COMMAND_CHARS
 
 
 _KINDS = [

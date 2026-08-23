@@ -93,9 +93,6 @@ def _target_references_api(arch, failures, route: str) -> bool:
 
 _IMG_URL_RE = re.compile(
     r"HTTP\s+(4\d\d)\s+GET\s+(\S+?\.(?:png|jpe?g|webp|gif|svg|avif))\b", re.I)
-_EMPTY_IMG_RE = re.compile(
-    r"(?:naturalWidth\s*[:=]\s*0|broken image|image failed to load)\s*[^\n]{0,120}",
-    re.I)
 
 
 def diagnose_broken_images(agent, arch, failures, packet: str) -> dict | None:

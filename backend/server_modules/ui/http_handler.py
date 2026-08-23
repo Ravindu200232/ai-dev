@@ -62,6 +62,8 @@ class UIHandler(SimpleHTTPRequestHandler):
             return self._guarded(self._api_get, path[4:])
         return self._serve_ui(path)
 
+    # http.server dispatches these by name (`do_` + the HTTP method), so
+    # nothing in this repo calls them. They are live; do not delete them.
     def do_HEAD(self):
         ours, path = self._split()
         if not ours:

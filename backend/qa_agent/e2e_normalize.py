@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from .flows import Selector, parse_selector
+from .flows import parse_selector
 
 
 _WRAPPED_ROLE = re.compile(r"^role=([a-z]+)(?:\s+name=(.+))?$", re.I)

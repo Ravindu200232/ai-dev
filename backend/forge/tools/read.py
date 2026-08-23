@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .paths import MAX_FILE_BYTES, PathError, ignored, rel, resolve, walk
+from .paths import MAX_FILE_BYTES, ignored, rel, resolve, walk
 from .spec import Param, Tool
 
 MAX_MATCHES = 40

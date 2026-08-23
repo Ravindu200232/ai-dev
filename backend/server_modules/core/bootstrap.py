@@ -239,7 +239,6 @@ def estep(s, st):
     emit({"type": "step", "step": s, "status": st})
     cancel.check()
 def efile(n, sz, c=""):   emit({"type":"file",         "name":n,     "size":sz,   "content":c})
-def edetect(t, s):        emit({"type":"detected",     "site_type":t,"strategy":s})
 def eprog(lbl, pct):
     emit({"type": "progress", "step": lbl, "pct": pct})
     cancel.check()

@@ -350,12 +350,6 @@ class E2EEvidenceMixin:
 
         return kind(visible) or kind(authored)
 
-    @classmethod
-    def _is_auth_action(cls, st) -> bool:
-        if getattr(st, "verb", "") != "CLICK":
-            return False
-        return cls._auth_action_kind(st) == "login"
-
     def role_separation(self, page) -> list:
         """Every demo role, against every other role's pages."""
         accs = [a for a in self.accounts() if a.get("role")]
