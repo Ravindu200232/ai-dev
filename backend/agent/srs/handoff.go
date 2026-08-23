@@ -785,10 +785,12 @@ func entityName(name string) string {
 	return strings.Join(parts, "")
 }
 
-var createVerb = regexp.MustCompile(`(?i)\b(create|add|register|submit|book|place)\b`)
-var editVerb = regexp.MustCompile(`(?i)\b(update|edit|modify|change|mark|approve|assign)\b`)
-var deleteVerb = regexp.MustCompile(`(?i)\b(delete|remove|cancel)\b`)
-var listVerb = regexp.MustCompile(`(?i)\b(list|browse|search|filter|view|see|show|history)\b`)
+// Inflections count: a feature the customer wrote as "adds a booking" asks for
+// the same thing as "add a booking".
+var createVerb = regexp.MustCompile(`(?i)\b(create|add|register|submit|book|place)(s|es|ed|ing)?\b`)
+var editVerb = regexp.MustCompile(`(?i)\b(update|edit|modify|change|mark|approve|assign)(s|es|ed|ing)?\b`)
+var deleteVerb = regexp.MustCompile(`(?i)\b(delete|remove|cancel)(s|es|ed|ing|led|ling)?\b`)
+var listVerb = regexp.MustCompile(`(?i)\b(list|browse|search|filter|view|see|show|history)(s|es|ed|ing)?\b`)
 
 // kindFor is what sort of thing this requirement asks to be built, which is
 // how the builder decides what a finished version of it looks like.

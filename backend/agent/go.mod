@@ -11,6 +11,7 @@ require (
 
 require (
 	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/go-pdf/fpdf v0.9.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
