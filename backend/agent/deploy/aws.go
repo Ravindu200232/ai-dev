@@ -57,6 +57,13 @@ func (a AWS) Available() bool { return Have("aws") }
 
 // exec runs one AWS command. Output is JSON unless the caller asked otherwise.
 func (a AWS) exec(ctx context.Context, timeout time.Duration, args ...string) Output {
+	return a.execWith(ctx, timeout, "", args...)
+}
+
+// execWith is exec with something on the command's standard input. A value
+// passed as an argument is readable by every other process on the machine —
+// /proc/<pid>/cmdline, ps — so anything secret goes this way instead.
+func (a AWS) execWith(ctx context.Context, timeout time.Duration, stdin string, args ...string) Output {
 	full := []string{}
 	if a.Region != "" {
 		full = append(full, "--region", a.Region)
@@ -67,7 +74,7 @@ func (a AWS) exec(ctx context.Context, timeout time.Duration, args ...string) Ou
 	full = append(full, args...)
 	full = append(full, "--output", "json", "--no-cli-pager")
 
-	return Exec(ctx, Command{Name: "aws", Args: full, Timeout: timeout, Env: a.Keys})
+	return Exec(ctx, Command{Name: "aws", Args: full, Timeout: timeout, Env: a.Keys, Stdin: stdin})
 }
 
 // call runs one AWS command and decodes what it printed.
@@ -231,9 +238,10 @@ func (a AWS) ApplyStack(ctx context.Context, emit Emit, template, stack string,
 		if exists {
 			waiter = "stack-update-complete"
 		}
+		started := time.Now().UTC()
 		if out := a.exec(ctx, stackTimeout, "cloudformation", "wait", waiter,
 			"--stack-name", stack); !out.OK() {
-			return nil, a.stackFailure(ctx, stack, out)
+			return nil, a.stackFailure(ctx, stack, out, started)
 		}
 	}
 
@@ -355,9 +363,18 @@ func (a AWS) awaitChangeSet(ctx context.Context, stack, changeSet string) ([]Sta
 
 // stackFailure turns a failed wait into the reason CloudFormation gave, which
 // is in the stack's events rather than in the command's own output.
-func (a AWS) stackFailure(ctx context.Context, stack string, out Output) error {
+//
+// Only events from this operation count. A stack carries every failure it has
+// ever had, and reporting an old one as the cause of a wait that simply ran out
+// of time sends the customer to look at the wrong resource.
+func (a AWS) stackFailure(ctx context.Context, stack string, out Output, since time.Time) error {
+	if out.TimedOut {
+		return errors.New("CloudFormation did not finish within " +
+			stackTimeout.String() + "; the stack is still changing in the account")
+	}
 	var described struct {
 		Events []struct {
+			Timestamp            string
 			LogicalResourceId    string
 			ResourceStatus       string
 			ResourceStatusReason string
@@ -365,6 +382,11 @@ func (a AWS) stackFailure(ctx context.Context, stack string, out Output) error {
 	}
 	if a.call(ctx, &described, "cloudformation", "describe-stack-events", "--stack-name", stack) == nil {
 		for _, event := range described.Events {
+			if !after(event.Timestamp, since) {
+				// Events come back newest first, so everything from here down
+				// belongs to an earlier operation.
+				break
+			}
 			if strings.HasSuffix(event.ResourceStatus, "_FAILED") && event.ResourceStatusReason != "" {
 				return errors.New("CloudFormation stopped at " + event.LogicalResourceId + ": " +
 					clip(event.ResourceStatusReason, 400))
@@ -424,13 +446,22 @@ func parameterList(parameters map[string]string) []map[string]string {
 
 // PutSecret writes the running application's whole environment into Secrets
 // Manager. It is the only place a deployment ever puts a value.
+//
+// The bundle is handed to the CLI on standard input rather than as an argument:
+// it holds the customer's database password, and an argument is world-readable
+// for as long as the process lives.
 func (a AWS) PutSecret(ctx context.Context, id string, values map[string]string) error {
 	body, err := json.Marshal(values)
 	if err != nil {
 		return err
 	}
-	return a.call(ctx, nil, "secretsmanager", "put-secret-value",
-		"--secret-id", id, "--secret-string", string(body))
+	out := a.execWith(ctx, awsTimeout, string(body),
+		"secretsmanager", "put-secret-value",
+		"--secret-id", id, "--secret-string", "file:///dev/stdin")
+	if !out.OK() {
+		return awsError([]string{"secretsmanager", "put-secret-value"}, out)
+	}
+	return nil
 }
 
 // --- the network ------------------------------------------------------------------------------
@@ -528,6 +559,21 @@ func (a AWS) publicSubnets(ctx context.Context, vpcID string) (Network, bool) {
 		}
 	}
 	return Network{}, false
+}
+
+// after reports whether a CloudFormation event timestamp is at or past a moment
+// this run recorded. An unparseable timestamp counts as recent: it is better to
+// report a possibly-old reason than none at all.
+func after(timestamp string, since time.Time) bool {
+	at, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		at, err = time.Parse("2006-01-02T15:04:05.000Z0700", timestamp)
+	}
+	if err != nil {
+		return true
+	}
+	// A second of slack: the wait starts after the change set executes.
+	return !at.Before(since.Add(-time.Second))
 }
 
 // sleep waits, and reports false if the run was cancelled while it waited.

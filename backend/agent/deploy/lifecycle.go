@@ -344,6 +344,10 @@ func (d *Deployer) drain(ctx context.Context, aws AWS, runID, stack string) {
 	}
 }
 
+// imageBatch is the most images one batch-delete-image call accepts. The CLI
+// pages the listing back as one array, so the batching has to happen here.
+const imageBatch = 100
+
 func emptyRegistry(ctx context.Context, aws AWS, repository string) error {
 	var listed struct {
 		ImageIDs []map[string]string `json:"imageIds"`
@@ -351,15 +355,22 @@ func emptyRegistry(ctx context.Context, aws AWS, repository string) error {
 	if err := aws.call(ctx, &listed, "ecr", "list-images", "--repository-name", repository); err != nil {
 		return err
 	}
-	if len(listed.ImageIDs) == 0 {
-		return nil
+
+	for from := 0; from < len(listed.ImageIDs); from += imageBatch {
+		to := from + imageBatch
+		if to > len(listed.ImageIDs) {
+			to = len(listed.ImageIDs)
+		}
+		body, err := json.Marshal(listed.ImageIDs[from:to])
+		if err != nil {
+			return err
+		}
+		if err := aws.call(ctx, nil, "ecr", "batch-delete-image",
+			"--repository-name", repository, "--image-ids", string(body)); err != nil {
+			return err
+		}
 	}
-	body, err := json.Marshal(listed.ImageIDs)
-	if err != nil {
-		return err
-	}
-	return aws.call(ctx, nil, "ecr", "batch-delete-image",
-		"--repository-name", repository, "--image-ids", string(body))
+	return nil
 }
 
 // deleteBatch is the most objects one S3 delete call takes.

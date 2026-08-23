@@ -73,10 +73,12 @@ func (m *Monitor) Snapshot(ctx context.Context, runID string) (map[string]any, e
 		"api":         []any{},
 		"errors":      []string{},
 	}
-	problems := []string{}
+	// Everything that goes wrong while collecting the snapshot lands in one
+	// place, whoever noticed it: the collectors below append to this key too,
+	// and a second list would quietly lose whichever was written first.
 	note := func(err error) {
 		if err != nil {
-			problems = append(problems, RedactText(err.Error()))
+			noteProblem(snapshot, err)
 		}
 	}
 
@@ -112,7 +114,6 @@ func (m *Monitor) Snapshot(ctx context.Context, runID string) (map[string]any, e
 		scored["gates"] = gates
 	}
 	snapshot["readiness"] = scored
-	snapshot["errors"] = problems
 
 	sanitized := object(mask(Redact(snapshot)))
 	if _, err := m.Store.Update(runID, map[string]any{
@@ -146,6 +147,13 @@ func (m *Monitor) settleLive(run *Run, readiness Readiness, snapshot map[string]
 				"export everything else this run recorded."})
 	}
 	_, _ = m.Store.Transition(run.ID, StateLive, nil)
+}
+
+// noteProblem records something that went wrong while the snapshot was being
+// collected, where the Studio's error panel reads it.
+func noteProblem(snapshot map[string]any, err error) {
+	problems, _ := snapshot["errors"].([]string)
+	snapshot["errors"] = append(problems, RedactText(err.Error()))
 }
 
 func allProbesPassed(value any) bool {
@@ -554,9 +562,7 @@ func (m *Monitor) cloudwatch(ctx context.Context, aws AWS, run *Run, snapshot ma
 	}
 	if err := aws.call(ctx, &filtered, "logs", "filter-log-events",
 		"--log-group-name", group, "--limit", "100", "--interleaved"); err != nil {
-		if problems, ok := snapshot["errors"].([]string); ok {
-			snapshot["errors"] = append(problems, RedactText(err.Error()))
-		}
+		noteProblem(snapshot, err)
 		return
 	}
 
@@ -817,6 +823,14 @@ func mask(value any) any {
 		out := make([]any, 0, len(item))
 		for _, nested := range item {
 			out = append(out, mask(nested))
+		}
+		return out
+	case []string:
+		// Redact keeps a []string a []string, so without this arm the one
+		// list made of raw provider errors would skip masking entirely.
+		out := make([]string, 0, len(item))
+		for _, nested := range item {
+			out = append(out, text(mask(nested)))
 		}
 		return out
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -193,5 +194,28 @@ func TestASnapshotKeepsWhatTheReviewProved(t *testing.T) {
 	// So the run can still be deployed after a snapshot.
 	if _, _, err := deployer.check(request(after)); err != nil {
 		t.Errorf("a snapshot made the run undeployable: %v", err)
+	}
+}
+
+func TestEverySnapshotProblemSurvivesAndIsMasked(t *testing.T) {
+	snapshot := map[string]any{"errors": []string{}}
+	noteProblem(snapshot, errorString("logs filter-log-events: AccessDenied for account 123456789012"))
+	noteProblem(snapshot, errorString("ec2 describe-instances: InvalidInstanceID.NotFound"))
+
+	problems, _ := snapshot["errors"].([]string)
+	if len(problems) != 2 {
+		t.Fatalf("problems = %v", problems)
+	}
+	// Masking has to reach inside the list, which is the one place a raw
+	// provider error is kept verbatim.
+	masked, _ := mask(problems).([]string)
+	if len(masked) != 2 {
+		t.Fatalf("masked = %v", masked)
+	}
+	if strings.Contains(masked[0], "123456789012") {
+		t.Errorf("an account number reached the snapshot: %q", masked[0])
+	}
+	if !strings.Contains(masked[0], "***ACCOUNT***") || !strings.Contains(masked[1], "NotFound") {
+		t.Errorf("masked = %v", masked)
 	}
 }

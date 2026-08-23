@@ -392,6 +392,10 @@ func scoreBuild(readiness Readiness, result buildResult, plan *Plan) Readiness {
 	}
 
 	readiness.Categories.Build = 15
+	// The build failed earlier and a bounded repair fixed it: the risk from
+	// that first attempt is no longer true, and leaving it on the review
+	// screen would contradict the gate right next to it.
+	plan.Risks = without(plan.Risks, "Local build validation failed")
 	if total := result.Findings["total"]; total > 0 {
 		// A vulnerable dependency tree is not a reason to refuse, but it is a
 		// reason not to call the deployment secure.
@@ -409,6 +413,17 @@ func scoreBuild(readiness Readiness, result buildResult, plan *Plan) Readiness {
 	}
 	readiness.Score = readiness.Categories.Total()
 	return readiness
+}
+
+// without drops every risk that mentions something no longer true.
+func without(risks []string, needle string) []string {
+	out := risks[:0:0]
+	for _, risk := range risks {
+		if !strings.Contains(risk, needle) {
+			out = append(out, risk)
+		}
+	}
+	return out
 }
 
 func warnedAbout(risks []string, needle string) bool {

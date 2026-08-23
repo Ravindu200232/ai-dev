@@ -218,3 +218,31 @@ func TestTheFinalScoreSaysWhatWasProved(t *testing.T) {
 		}
 	}
 }
+
+func TestARepairedBuildIsNotStillReportedAsFailed(t *testing.T) {
+	base := Readiness{Categories: Categories{CICD: 20, Provider: 25, Security: 20}}
+	plan := &Plan{}
+
+	// The first attempt fails and says so.
+	failed := scoreBuild(base, buildResult{Attempted: true}, plan)
+	if failed.Categories.Build != 8 || !warned(plan.Risks, "Local build validation failed") {
+		t.Fatalf("first attempt = %+v %v", failed, plan.Risks)
+	}
+
+	// The bounded repair fixes it and the second attempt passes: the review
+	// screen must not still say the build failed.
+	passed := scoreBuild(base, buildResult{Attempted: true, Passed: true}, plan)
+	if passed.Categories.Build != 15 {
+		t.Errorf("second attempt = %+v", passed)
+	}
+	if warned(plan.Risks, "Local build validation failed") {
+		t.Errorf("the withdrawn risk is still on the plan: %v", plan.Risks)
+	}
+
+	// Anything else the run recorded stays.
+	plan = &Plan{Risks: []string{"Ollama planning was unavailable; deterministic safe defaults were used."}}
+	_ = scoreBuild(base, buildResult{Attempted: true, Passed: true}, plan)
+	if len(plan.Risks) != 1 {
+		t.Errorf("an unrelated risk was dropped: %v", plan.Risks)
+	}
+}
