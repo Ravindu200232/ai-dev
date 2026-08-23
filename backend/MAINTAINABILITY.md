@@ -36,8 +36,13 @@ as subprocesses of it, on the ports they always used.
 
 ## Rules
 
-- Keep source files under 600 lines. When one grows past that, the split is
-  usually a missing concept, not a file boundary.
+- Keep source files under 850 lines, and most of them nearer 400. When one grows
+  past that the split is usually a missing concept, not a file boundary. The two
+  largest are `server/http.go`, which is one endpoint table and has to be, and
+  `core/run.go`, which is the state plus the event vocabulary every package
+  emits — splitting either would cost more in indirection than it saves.
+- Seventeen source files is the whole backend. Reach for a new one only when a
+  new concept arrives, not when an existing file gets long.
 - `core` never imports another package in this module. Everything else may
   import `core`.
 - Every phase re-runs `core.Refresh` before it decides anything. Do not carry a
