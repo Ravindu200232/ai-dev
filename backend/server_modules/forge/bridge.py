@@ -70,29 +70,41 @@ class PlanGate:
         self.on_timeout = on_timeout
         self._answered = threading.Event()
         self._verdict = None
+        # An answer is only meaningful once the plan has actually been put to
+        # the user. Before that there is nothing to answer, and accepting one
+        # would let a stale verdict decide the next plan.
+        self._asked = False
 
     def _say(self, message: dict) -> None:
         if self.emit:
             self.emit(message)
 
-    def approve(self) -> None:
-        self._verdict = True
+    def _answer(self, verdict) -> bool:
+        """Record a verdict. False when no plan is waiting for one."""
+        if not self._asked:
+            return False
+        self._verdict = verdict
         self._answered.set()
+        return True
 
-    def revise(self, note: str) -> None:
-        self._verdict = str(note or "").strip() or "revise the plan"
-        self._answered.set()
+    def approve(self) -> bool:
+        return self._answer(True)
 
-    def reject(self) -> None:
-        self._verdict = False
-        self._answered.set()
+    def revise(self, note: str) -> bool:
+        return self._answer(str(note or "").strip() or "revise the plan")
+
+    def reject(self) -> bool:
+        return self._answer(False)
 
     def gate(self, plan):
         """Ask, wait, and return True / a revision note / False."""
         self._answered.clear()
         self._verdict = None
+        self._asked = True
         self._say({"type": "plan_review", "plan": plan.as_dict()})
-        if not self._answered.wait(self.timeout):
+        answered = self._answered.wait(self.timeout)
+        self._asked = False
+        if not answered:
             approved = self.on_timeout == "approve"
             self._say({"type": "log", "level": "WARN",
                        "text": f"   🧭 no answer in {self.timeout}s — the plan "

@@ -79,6 +79,13 @@ class QAAgent:
         for round_number in range(1, max(1, rounds) + 1):
             if report.green or not report.ran:
                 break
+            if report.environmental():
+                # A missing browser or a dead dev server is not something a
+                # rewrite of the tests can fix. Say so instead of looping.
+                report.note = (f"{report.kind} could not run: "
+                               f"{report.failures[0].message[:160]}")
+                self._emit("qa_blocked", kind=kind, why=report.note)
+                break
             if self.should_stop and self.should_stop():
                 report.note = "cancelled"
                 break

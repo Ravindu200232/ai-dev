@@ -24,6 +24,8 @@ KINDS = [
     ("SYNTAX", re.compile(r"SyntaxError|Transform failed|Unexpected token", re.I)),
     ("TIMEOUT", re.compile(r"Test timed out|hook timed out|Timeout .*exceeded", re.I)),
     ("SERVER_DOWN", re.compile(r"ERR_CONNECTION_REFUSED|ECONNREFUSED", re.I)),
+    ("BROWSER_MISSING", re.compile(
+        r"Executable doesn't exist|playwright install|browserType\.launch", re.I)),
     ("HANDLER_ERROR", re.compile(r"expected 500 to be|Internal Server Error", re.I)),
     ("ASSERTION", re.compile(r"AssertionError|expected .* to |toBe|toEqual", re.I)),
 ]
@@ -83,6 +85,14 @@ class QAReport:
     @property
     def green(self) -> bool:
         return self.ran and not self.failures
+
+    # Neither of these says anything about the code under test.
+    ENVIRONMENT = ("BROWSER_MISSING", "SERVER_DOWN")
+
+    def environmental(self) -> bool:
+        """True when every failure is the environment, not the application."""
+        return bool(self.failures) and all(
+            f.kind in self.ENVIRONMENT for f in self.failures)
 
     def kinds(self) -> list:
         """`[(class, count)]`, commonest first — what to fix in what order."""

@@ -43,6 +43,11 @@ def _script():
     ])
 
 
+def _fake_shell(root, command, timeout=None):
+    """The pipeline installs dependencies for real; a test must not."""
+    return f"$ {command}\n[exit 0]"
+
+
 def _fake_unit(root, command, timeout=None):
     Path(root, unit.REPORT).write_text(json.dumps({"testResults": [
         {"name": "tests/unit/items.test.tsx", "status": "passed",
@@ -71,6 +76,7 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr("forge.llm.Model", lambda name, *a, **k: _script())
     monkeypatch.setattr(unit, "run_command", _fake_unit)
     monkeypatch.setattr(e2e, "run_command", _fake_e2e)
+    monkeypatch.setattr("forge.tools.shell.run_command", _fake_shell)
     return sent
 
 
@@ -173,6 +179,7 @@ def test_a_plan_decision_from_the_socket_reaches_the_waiting_run(
     monkeypatch.setattr("forge.llm.Model", lambda name, *a, **k: _script())
     monkeypatch.setattr(unit, "run_command", _fake_unit)
     monkeypatch.setattr(e2e, "run_command", _fake_e2e)
+    monkeypatch.setattr("forge.tools.shell.run_command", _fake_shell)
 
     answered = threading.Event()
 
@@ -203,6 +210,7 @@ def test_a_rejected_plan_writes_nothing_and_says_so(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "FORGE_PLAN_TIMEOUT", 10)
     monkeypatch.setattr("forge.llm.Model",
                         lambda name, *a, **k: ScriptedModel([PLAN_MD] * 4))
+    monkeypatch.setattr("forge.tools.shell.run_command", _fake_shell)
 
     def reject_when_asked():
         for _ in range(1_000):

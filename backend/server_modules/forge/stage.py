@@ -13,12 +13,10 @@ def forge_decide(project: str, verdict: str, note: str = "") -> bool:
     if gate is None:
         return False
     if verdict == "approve":
-        gate.approve()
-    elif verdict == "revise":
-        gate.revise(note)
-    else:
-        gate.reject()
-    return True
+        return gate.approve()
+    if verdict == "revise":
+        return gate.revise(note)
+    return gate.reject()
 
 
 def _title_for(prompt: str, name: str) -> str:

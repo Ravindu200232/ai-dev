@@ -346,3 +346,102 @@ def test_a_plan_nobody_answers_falls_to_the_timeout_rule_out_loud():
     assert PlanGate(sent.append, timeout=1, on_timeout="reject").gate(
         parse(PLAN_MD, brief="a tracker")) is False
     assert "rejected by the timeout rule" in sent[-1]["text"]
+
+
+# --- what a live run against real npm and playwright turned up --------------
+
+def test_the_pipeline_installs_before_it_tries_to_test(tmp_path):
+    """Nothing else puts node_modules there, and QA is useless without it."""
+    ran = []
+
+    def runner(root, command, timeout=None):
+        ran.append(command)
+        _unit_report(root)
+        return f"$ {command}\n[exit 0]"
+
+    model = ScriptedModel([PLAN_MD, tool_call("write_file", path="a.ts",
+                                              content="export const a = 1;"),
+                           "built", tool_call("write_file",
+                                              path="tests/unit/a.test.ts",
+                                              content="// t"), "tests"])
+    Pipeline(tmp_path, model, qa_runner=runner).run("a thing", kinds=("unit",))
+    assert any(c.startswith("npm install") for c in ran), ran
+    assert ran.index(next(c for c in ran if c.startswith("npm install"))) == 0
+
+
+def test_an_install_is_skipped_when_the_toolchain_is_already_there(tmp_path):
+    (tmp_path / "node_modules").mkdir()
+    ran = []
+    pipeline = Pipeline(tmp_path, ScriptedModel([]),
+                        qa_runner=lambda root, c, t=None: ran.append(c) or "[exit 0]")
+    assert pipeline.install() is True
+    assert ran == []
+
+
+def test_a_suite_that_could_not_run_never_reports_green(tmp_path):
+    """A blocked end-to-end stage must not leave the run looking green."""
+    def runner(root, command, timeout=None):
+        if "playwright install" in command:
+            return f"$ {command}\n[exit 1]\nFailed to download Chrome"
+        _unit_report(root)
+        return f"$ {command}\n[exit 0]"
+
+    model = ScriptedModel([PLAN_MD, tool_call("write_file", path="a.ts",
+                                              content="export const a = 1;"),
+                           "built", tool_call("write_file",
+                                              path="tests/unit/a.test.ts",
+                                              content="// t"), "tests"])
+    result = Pipeline(tmp_path, model, qa_runner=runner).run("a thing")
+    assert result.reports["unit"].green
+    assert "e2e" in result.reports, "a skipped suite still has to be reported"
+    assert not result.reports["e2e"].ran
+    assert result.green is False, "a run that never tested end to end is not green"
+    assert "could not run" in result.summary()
+
+
+def test_a_run_missing_a_requested_suite_entirely_is_not_green(tmp_path):
+    from forge.service import PipelineResult
+    from forge.qa import QAReport
+    done = PipelineResult(brief="x", built=True, requested=("unit", "e2e"),
+                          reports={"unit": QAReport(kind="unit", ran=True, passed=3)})
+    assert done.green is False
+    done.reports["e2e"] = QAReport(kind="e2e", ran=True, passed=1)
+    assert done.green is True
+
+
+def test_playwright_json_is_read_from_stdout_when_no_file_was_written(tmp_path):
+    """`--reporter=json` overrides the config's outputFile and prints instead."""
+    printed = json.dumps({"suites": [{"file": "tests/e2e/a.spec.ts", "specs": [
+        {"title": "works", "ok": True, "tests": []}]}]})
+    report = e2e.run(tmp_path, runner=lambda *a: f"Running 1 test\n{printed}")
+    assert report.ran and report.passed == 1 and report.green
+
+
+def test_a_missing_browser_is_an_environment_problem_not_a_test_failure():
+    from forge.qa.report import Failure, QAReport, classify
+    blob = "browserType.launch: Executable doesn't exist at /opt/pw-browsers"
+    assert classify(blob) == "BROWSER_MISSING"
+    report = QAReport(kind="e2e", ran=True,
+                      failures=[Failure.make("a.spec.ts", "works", blob)])
+    assert report.environmental()
+
+
+def test_qa_does_not_try_to_repair_an_environment_failure(tmp_path):
+    """Rewriting a test cannot install a browser, so it must not try."""
+    rounds = []
+
+    def runner(root, command, timeout=None):
+        rounds.append(command)
+        path = Path(root, e2e.REPORT)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"suites": [{"file": "a.spec.ts", "specs": [
+            {"title": "works", "ok": False, "tests": [{"results": [
+                {"status": "failed", "error": {
+                    "message": "browserType.launch: Executable doesn't exist"}}]}]}]}]}))
+        return f"$ {command}\n[exit 1]"
+
+    model = ScriptedModel(["I would rewrite the test"] * 10)
+    report = QAAgent(tmp_path, model, runner=runner).verify("e2e", rounds=5)
+    assert not report.green
+    assert "could not run" in report.note
+    assert len(rounds) == 1, "it must not re-run after an environment failure"

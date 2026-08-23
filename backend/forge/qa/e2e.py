@@ -62,9 +62,29 @@ def read_report(project_dir, path: str = REPORT) -> dict:
         return {}
 
 
-def browser_ready(project_dir, runner=run_command) -> bool:
+def report_from_output(output: str) -> dict:
+    """The report Playwright printed instead of writing.
+
+    `--reporter=json` on the command line overrides whatever `outputFile` the
+    project's config asked for, so the run that was told to write a file
+    prints to stdout instead. Read it from there rather than calling a run
+    that happened a run that did not.
+    """
+    text = str(output or "")
+    start = text.find("{")
+    while start >= 0:
+        try:
+            data = json.loads(text[start:])
+        except ValueError:
+            start = text.find("{", start + 1)
+            continue
+        return data if isinstance(data, dict) and "suites" in data else {}
+    return {}
+
+
+def browser_ready(project_dir, runner=None) -> bool:
     """Install Chromium once. A failure here is an environment problem."""
-    output = runner(project_dir, INSTALL, 900)
+    output = (runner or run_command)(project_dir, INSTALL, 900)
     return "[exit 0]" in output
 
 
@@ -72,7 +92,7 @@ def run(project_dir, *, command: str = COMMAND, timeout: int = TIMEOUT,
         runner=None) -> QAReport:
     """Run the e2e suite and read what came back."""
     output = (runner or run_command)(project_dir, command, timeout)
-    data = read_report(project_dir)
+    data = read_report(project_dir) or report_from_output(output)
     if not data:
         report = QAReport(kind="e2e", ran=False,
                           note="playwright wrote no report — see the output")
