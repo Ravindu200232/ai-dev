@@ -8,6 +8,48 @@ log = logging.getLogger("server.forge")
 
 APPROVAL_TIMEOUT = 900
 
+# The studio's overlay draws two stages. Forge reports five, so they are
+# grouped onto the two the UI actually renders.
+UI_STAGE = {"scaffold": "build", "plan": "build", "build": "build",
+            "unit": "test", "e2e": "test"}
+
+
+def ui_relay(emit):
+    """Forge events → this UI's messages, in its coarser stage vocabulary.
+
+    Forge opens and closes a stage per phase; the overlay wants one `run` when
+    a group starts and one `done` when it ends, so the group transitions are
+    tracked here rather than flickering the same step through run/done twice.
+    """
+    from forge.events import to_ws
+
+    state = {"open": ""}
+
+    def close(status: str = "done") -> None:
+        if state["open"]:
+            emit({"type": "step", "step": state["open"], "status": status})
+            state["open"] = ""
+
+    def sink(event: dict) -> None:
+        for message in to_ws(event):
+            if message.get("type") != "step":
+                emit(message)
+                continue
+            stage = UI_STAGE.get(message.get("step"))
+            if not stage:
+                continue                      # a phase this UI does not draw
+            if message.get("status") == "run":
+                if state["open"] != stage:
+                    close()
+                    emit({"type": "step", "step": stage, "status": "run"})
+                    state["open"] = stage
+            elif message.get("status") == "error":
+                emit({"type": "step", "step": stage, "status": "error"})
+                state["open"] = ""
+
+    sink.close = close
+    return sink
+
 
 class PlanGate:
     """The human-in-the-loop approval, driven from the websocket.

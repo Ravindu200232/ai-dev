@@ -294,6 +294,24 @@ async def ws_handler(websocket, path=None):
                             kwargs={"planner_model": pm,
                                     "design_model": dm},
                             daemon=True).start()
+                elif msg.get("type") == "forge_build":
+                    p = msg.get("prompt", "").strip()
+                    bm = (msg.get("builder_model") or msg.get("model")
+                          or default_builder_model())
+                    qm = (msg.get("qa_model") or "").strip()
+                    kinds = tuple(msg.get("kinds") or ("unit", "e2e"))
+                    if p:
+                        threading.Thread(
+                            target=run_forge_pipeline,
+                            args=(p, bm, qm,
+                                  str(msg.get("project", "")).strip(), kinds),
+                            daemon=True).start()
+                elif msg.get("type") == "plan_decision":
+                    if not forge_decide(msg.get("project", ""),
+                                        str(msg.get("verdict") or "").strip(),
+                                        str(msg.get("note") or "")):
+                        elog("WARN", "   🧭 no run is waiting for a plan "
+                                     "decision right now")
                 elif msg.get("type") == "agent_resume":
                     proj = msg.get("project", "").strip()
                     bm = (msg.get("builder_model") or msg.get("model")

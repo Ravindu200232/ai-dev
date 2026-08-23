@@ -217,6 +217,10 @@ export const useStore = create((set, get) => ({
 
   // A question the run stopped on, waiting for an answer.
   question: null,
+
+  // The plan a forge run is holding at, waiting to be approved.
+  planReview: null,
+  setPlanReview: (planReview) => set({ planReview }),
 }))
 
 function emptyTests() {

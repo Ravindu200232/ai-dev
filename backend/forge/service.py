@@ -46,11 +46,14 @@ class PipelineResult:
 class Pipeline:
     """One brief, from nothing to a tested application."""
 
-    def __init__(self, project_dir, model, *, emit=None, qa_model=None,
-                 budget: int = 24_000, should_stop=None, qa_runner=None):
+    def __init__(self, project_dir, model, *, emit=None, on_event=None,
+                 qa_model=None, budget: int = 24_000, should_stop=None,
+                 qa_runner=None):
         self.project_dir = project_dir
         self.emit = emit
-        self.on_event = relay(emit) if emit else None
+        # `emit` is the plain websocket sink; `on_event` lets a host that has
+        # its own event vocabulary translate the stream itself.
+        self.on_event = on_event or (relay(emit) if emit else None)
         self.builder = BuilderAgent(project_dir, model, on_event=self.on_event,
                                     budget=budget, should_stop=should_stop)
         self.qa = QAAgent(project_dir, qa_model or model, on_event=self.on_event,

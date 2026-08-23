@@ -25,6 +25,7 @@ _RUNTIME_PARTS = (
     'server_modules/agent/feature/actions.py',
     'server_modules/agent/selection/scope_map.py',
     'server_modules/agent/pencil/page.py',
+    'server_modules/forge/stage.py',
     'server_modules/agent/builder/project_ops.py',
     'server_modules/ui/http_base.py',
     'server_modules/ui/http_handler.py',

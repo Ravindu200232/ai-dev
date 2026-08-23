@@ -74,6 +74,21 @@ The approval gate is a callable taking the plan and returning `True` to build,
 a string to send it back with that note, or `False` to stop.
 `server_modules/forge/bridge.py` provides one driven from the websocket.
 
+## Wired into the server
+
+`server_modules/forge/stage.py` is loaded by `server_runtime.py` and puts
+`run_forge_pipeline` into the runtime namespace. The websocket accepts:
+
+| message | what it does |
+| --- | --- |
+| `{type: "forge_build", prompt, model, qa_model, kinds}` | starts a run |
+| `{type: "plan_decision", project, verdict, note}` | answers the plan review — `approve`, `revise` (with a note) or `reject` |
+
+A run emits `plan_review` when its plan is ready and blocks until the studio
+answers; the studio renders it as the *Plan ready* panel. Forge's five phases
+are grouped onto the two stages the overlay draws (`build`, `test`) by
+`bridge.ui_relay`, so the progress rail reads the same as any other build.
+
 ## Tests
 
 ```

@@ -44,6 +44,20 @@ function resetStreamQueue() {
 }
 
 
+/** Answer a forge plan review: approve it, send it back, or stop the run. */
+export function decidePlan(verdict, note = '') {
+  const { project, planReview } = useStore.getState()
+  if (!planReview) return false
+  useStore.getState().setPlanReview(null)
+  send({ type: 'plan_decision', project, verdict, note })
+  useStore.getState().addLog('INFO',
+    verdict === 'approve' ? 'plan approved — building'
+    : verdict === 'revise' ? `plan sent back — ${note}`
+    : 'plan rejected — nothing will be written')
+  return true
+}
+
+
 /** Resend the last edit with an answer or instruction. */
 export function answerQuestion(prompt) {
   const base = lastEdit
@@ -227,7 +241,18 @@ function handle(m) {
       } })
       break
 
-    case 'detected':     s.addLog('INFO', `type: ${m.site_type} · ${m.strategy}`); break
+    // A forge run has a plan and will not write anything until it is answered.
+    case 'plan_review':
+      s.setPlanReview(m.plan || null)
+      s.addLog('INFO', `plan ready — ${(m.plan?.files || []).length} files, `
+                     + `${(m.plan?.steps || []).length} steps`)
+      break
+
+    case 'forge_result':
+      s.setPlanReview(null)
+      s.addLog('INFO', m.result?.summary || 'forge run finished')
+      break
+
     case 'chat_intent':  s.addLog('INFO', `${m.intent || 'ask'} — ${m.summary || ''}`); break
     case 'agent_msg':    s.addLog('INFO', m.text); break
     case 'memory':       break

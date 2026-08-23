@@ -12,7 +12,8 @@ Public entrypoints stay small. Implementation lives in focused modules and exist
 - `server_modules/agent/` — build, repair, feature, image and editor workflows.
 - `server_modules/deploy/` — deployment orchestration and jobs.
 - `server_modules/ui/` — HTTP handling.
-- `server_modules/forge/` — the forge pipeline and its websocket plan gate.
+- `server_modules/forge/` — the forge pipeline, its websocket plan gate and
+  the `forge_build` / `plan_decision` entry points.
 
 ## Pipeline
 

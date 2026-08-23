@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Eye, Code2, FileText, FlaskConical, Plus, Rocket } from 'lucide-react'
 import { useStore } from '@/lib/store'
-import { answerQuestion, connect, send } from '@/lib/ws'
+import { answerQuestion, connect, decidePlan, send } from '@/lib/ws'
 import { consoleReport, forgetConsole } from '@/lib/console-log'
 import { api } from '@/lib/api'
 import { catalogue } from '@/lib/models'
@@ -44,6 +44,77 @@ async function retry(fn, times, waitMs) {
   }
   throw last
 }
+
+/** The plan a forge run is holding at. Nothing is written until this is answered. */
+function PlanReview() {
+  const plan = useStore(s => s.planReview)
+  const [note, setNote] = useState('')
+  if (!plan) return null
+
+  const files = plan.files || []
+  const steps = plan.steps || []
+  const risks = plan.risks || []
+
+  return (
+    <div className="mb-2 border-l-[3px] border-accent bg-tint p-2.5">
+      <p className="text-[12px] font-semibold text-ink">
+        Plan ready — {files.length} file{files.length === 1 ? '' : 's'},{' '}
+        {steps.length} step{steps.length === 1 ? '' : 's'}. Nothing is written yet.
+      </p>
+
+      {files.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {files.map(f => (
+            <li key={f.path} className="font-mono text-[10px] text-muted">
+              <span className="text-ink">{f.path}</span> — {f.purpose}
+            </li>
+          ))}
+        </ul>
+      )}
+      {steps.length > 0 && (
+        <ol className="mt-1.5 list-inside list-decimal space-y-0.5">
+          {steps.map((step, i) => (
+            <li key={i} className="text-[11px] text-muted">{step}</li>
+          ))}
+        </ol>
+      )}
+      {risks.length > 0 && (
+        <p className="mt-1.5 text-[10px] text-muted">Risks: {risks.join(' · ')}</p>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <button onClick={() => decidePlan('approve')}
+                className="border border-accent bg-panel px-2.5 py-1 text-[11px]
+                           font-semibold text-accent transition-colors
+                           hover:bg-accent hover:text-panel">
+          Build this
+        </button>
+        <input value={note} onChange={e => setNote(e.target.value)}
+               placeholder="or say what to change…"
+               onKeyDown={e => {
+                 if (e.key === 'Enter' && note.trim()) decidePlan('revise', note.trim())
+               }}
+               className="min-w-0 flex-1 border border-line2 bg-panel px-2 py-1
+                          text-[11px] text-ink placeholder:text-muted
+                          focus:border-accent focus:outline-none" />
+        <button disabled={!note.trim()}
+                onClick={() => decidePlan('revise', note.trim())}
+                className="border border-line2 bg-panel px-2.5 py-1 text-[11px]
+                           font-semibold text-ink transition-colors
+                           hover:border-accent hover:text-accent
+                           disabled:opacity-40 disabled:hover:border-line2
+                           disabled:hover:text-ink">
+          Replan
+        </button>
+        <button onClick={() => decidePlan('reject')}
+                className="px-1.5 text-[11px] text-muted hover:text-ink">
+          Stop
+        </button>
+      </div>
+    </div>
+  )
+}
+
 
 /** Show a paused picker question and its answers. */
 function ScopeQuestion({ onType }) {
@@ -418,6 +489,7 @@ export default function Studio() {
         ) : (
           <div className="flex min-h-0 flex-1 bg-bg/40">
             <div className="relative flex min-w-0 flex-1 flex-col">
+              <PlanReview />
               <ScopeQuestion onType={setAsk} />
 
               <PreviewPane key={`preview-${project}`} hidden={view !== 'preview'} />

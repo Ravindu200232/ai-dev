@@ -69,9 +69,9 @@ def browser_ready(project_dir, runner=run_command) -> bool:
 
 
 def run(project_dir, *, command: str = COMMAND, timeout: int = TIMEOUT,
-        runner=run_command) -> QAReport:
+        runner=None) -> QAReport:
     """Run the e2e suite and read what came back."""
-    output = runner(project_dir, command, timeout)
+    output = (runner or run_command)(project_dir, command, timeout)
     data = read_report(project_dir)
     if not data:
         report = QAReport(kind="e2e", ran=False,

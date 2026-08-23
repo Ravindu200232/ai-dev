@@ -8,8 +8,9 @@
 - `agent/` — build, repair and editing workflows.
 - `deploy/` — deployment logic.
 - `ui/` — HTTP handling.
-- `forge/` — the forge pipeline: model wiring, event relay and the plan gate
-  the UI answers. Unlike the parts above it is a normal importable module, not
-  a runtime fragment, so it can be tested on its own.
+- `forge/` — the forge pipeline. `bridge.py` is a normal importable module
+  (models, event relay, plan gate) so it can be tested on its own; `stage.py`
+  is the runtime fragment that `server_runtime.py` loads, and it is what puts
+  `run_forge_pipeline` and `forge_decide` in the shared namespace.
 
 Keep files focused, below 1000 lines, and preserve the public server contract.
