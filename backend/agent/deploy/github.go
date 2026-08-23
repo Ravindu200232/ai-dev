@@ -465,11 +465,14 @@ func (g GitHub) Watch(ctx context.Context, repo, headSHA, previousURL string) st
 // the run that was already there before.
 func SelectRun(runs []WorkflowRun, headSHA, previousURL string) (WorkflowRun, bool) {
 	if headSHA != "" {
+		// A commit that has no run of its own has no run: taking the newest
+		// one instead would report somebody else's push as this deployment.
 		for _, run := range runs {
 			if run.HeadSHA == headSHA {
 				return run, true
 			}
 		}
+		return WorkflowRun{}, false
 	}
 	for _, run := range runs {
 		if run.URL != "" && run.URL == previousURL {

@@ -250,6 +250,10 @@ type VercelDeployment struct {
 	State      string `json:"state"`
 	ReadyState string `json:"readyState"`
 	Created    int64  `json:"created"`
+	Meta       struct {
+		CommitSHA     string `json:"githubCommitSha"`
+		CommitMessage string `json:"githubCommitMessage"`
+	} `json:"meta"`
 }
 
 // Ready reports whether this deployment is one that could be promoted.
