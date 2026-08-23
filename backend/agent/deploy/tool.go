@@ -236,3 +236,91 @@ func baseName(path string) string {
 	name := strings.ToLower(filepath.Base(path))
 	return strings.TrimSuffix(name, ".exe")
 }
+
+// --- what the machine has, and how to sign in --------------------------------------------
+
+// ToolStatus is which of the command-line programs a deployment needs are
+// installed, and what version. The Studio's setup panel is built from this.
+func ToolStatus(ctx context.Context) map[string]any {
+	status := map[string]any{}
+	for _, name := range sortedKeys(tools) {
+		path := Resolve(name)
+		item := map[string]any{"installed": path != "", "path": path, "version": ""}
+		if path != "" {
+			out := Exec(ctx, Command{Name: tools[name][0], Args: tools[name][1:],
+				Timeout: 8 * time.Second})
+			if line := firstLine(out.Text()); line != "" {
+				item["version"] = clip(line, 160)
+			}
+			if name == "node" {
+				item["ready"] = out.OK()
+			}
+		}
+		status[name] = item
+	}
+	status["ports"] = map[string]any{"7834_available": true}
+	return status
+}
+
+func firstLine(text string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	return strings.TrimSpace(line)
+}
+
+// logins are the sign-in commands the Studio can start for the customer. Each
+// one opens the tool's own flow — the agent never handles a password.
+var logins = map[string][]string{
+	"aws-configure":     {"aws", "configure", "sso"},
+	"aws-login":         {"aws", "sso", "login"},
+	"aws-console-login": {"aws", "login", "--no-cli-pager"},
+	"vercel":            {"vercel", "login"},
+	"github": {"gh", "auth", "login", "--hostname", "github.com", "--web",
+		"--clipboard", "--git-protocol", "https"},
+	"ollama": {"ollama", "signin"},
+}
+
+// StartLogin opens a sign-in in a window of its own and returns immediately:
+// the customer finishes it in the tool, and the Studio polls to find out when
+// they have.
+func StartLogin(tool, profile, region string) (string, error) {
+	args, known := logins[tool]
+	if !known {
+		return "", badRequest("Unsupported login tool")
+	}
+	args = append([]string{}, args...)
+
+	switch tool {
+	case "aws-configure", "aws-login":
+		if profile != "" {
+			args = append(args, "--profile", profile)
+		}
+	case "aws-console-login":
+		name := profile
+		if name == "" {
+			name = "deployment-agent"
+		}
+		where := region
+		if where == "" {
+			where = DefaultRegion
+		}
+		args = append(args, "--profile", name, "--region", where)
+	}
+
+	name := Resolve(args[0])
+	if name == "" {
+		return "", badRequest(args[0] + " is not installed")
+	}
+	command := exec.Command(name, args[1:]...)
+	command.Env = append(os.Environ(), "PATH="+commandPath())
+	detach(command)
+	if err := command.Start(); err != nil {
+		return "", err
+	}
+	// Nothing waits for it: the customer's browser is where this finishes.
+	go func() { _ = command.Wait() }()
+
+	if profile == "" {
+		profile = "deployment-agent"
+	}
+	return profile, nil
+}

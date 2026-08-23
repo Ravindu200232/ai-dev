@@ -89,6 +89,7 @@ type Paths struct {
 	Base     string // backend/
 	Projects string // backend/production-ready/
 	Logs     string // backend/logs/
+	Deploy   string // backend/production-ready/.deploy/
 }
 
 // DiscoverPaths resolves the tree from the running binary, honouring the same
@@ -115,6 +116,9 @@ func DiscoverPaths() Paths {
 			p.Projects = dir
 		}
 	}
+	// Deployment state sits beside the projects it deploys, so moving the
+	// projects directory moves the runs that belong to them.
+	p.Deploy = filepath.Join(p.Projects, ".deploy")
 	_ = os.MkdirAll(p.Projects, 0o755)
 	_ = os.MkdirAll(p.Logs, 0o755)
 	return p

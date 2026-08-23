@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -42,6 +44,30 @@ var fallbackURLs = map[string]string{
 	"macos/x86_64":      "https://fastdl.mongodb.org/osx/mongodb-macos-x86_64-" + fallbackVersion + ".tgz",
 	"ubuntu2204/x86_64": "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-" + fallbackVersion + ".tgz",
 	"ubuntu2204/arm64":  "https://fastdl.mongodb.org/linux/mongodb-linux-aarch64-ubuntu2204-" + fallbackVersion + ".tgz",
+}
+
+// listening reports whether something is answering on a local port. It is
+// measured rather than believed: a process that died can leave a state behind.
+func listening(port int) bool {
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+// prefixWriter tags a child process's output so it is obvious in the console
+// which process a line came from.
+type prefixWriter struct{ tag string }
+
+func (p prefixWriter) Write(b []byte) (int, error) {
+	for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		if strings.TrimSpace(line) != "" {
+			log.Printf("%s %s", p.tag, line)
+		}
+	}
+	return len(b), nil
 }
 
 // Mongo owns the database the whole system shares.

@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
@@ -110,7 +112,7 @@ func (s *Server) apiGet(w http.ResponseWriter, r *http.Request, path string) {
 		writeJSON(w, 200, map[string]any{
 			"running": true, "in_process": true, "port": core.SRSPort})
 	case path == "/deploy-status":
-		writeJSON(w, 200, s.Sidecars.Deploy.Status())
+		writeJSON(w, 200, s.deployStatus())
 	case strings.HasPrefix(path, "/files/"):
 		writeJSON(w, 200, s.projectFiles(trimSeg(path, "/files/")))
 	case strings.HasPrefix(path, "/qa/"):
@@ -132,7 +134,7 @@ func (s *Server) apiGet(w http.ResponseWriter, r *http.Request, path string) {
 	case strings.HasPrefix(path, "/srs/"):
 		s.serveSRS(w, r, path)
 	case strings.HasPrefix(path, "/deploy/"):
-		s.Sidecars.Deploy.Proxy(w, r, "/api"+path[len("/deploy"):])
+		s.serveDeploy(w, r, path)
 	default:
 		writeJSON(w, 404, map[string]any{"error": "unknown endpoint " + path})
 	}
@@ -271,14 +273,15 @@ func (s *Server) apiPost(w http.ResponseWriter, r *http.Request, path string) {
 		if method == "" {
 			method = http.MethodPost
 		}
-		target := "/api" + req.Path
 		started := s.jobs.Start(req.Path, func() (int, any, error) {
-			return s.Sidecars.Deploy.forward(method, target, req.Body)
+			return s.deployJob(method, "/api"+req.Path, req.Body)
 		})
 		writeJSON(w, 200, map[string]any{"job_id": started.ID, "status": "running", "path": req.Path})
 
+	// The Deploy button. It used to proxy to a route with no handler, which
+	// is why it did nothing; analysis is where a deployment actually begins.
 	case "/deploy-start":
-		s.Sidecars.Deploy.Proxy(w, withBody(r, body), "/api/runs")
+		s.serveDeploy(w, withBody(r, body), "/deploy/runs/analyze")
 
 	case "/image-start":
 		writeJSON(w, 200, s.Pictures.Start(r.Context()))
@@ -319,7 +322,7 @@ func (s *Server) apiPost(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 		if strings.HasPrefix(path, "/deploy/") {
-			s.Sidecars.Deploy.Proxy(w, withBody(r, body), "/api"+path[len("/deploy"):])
+			s.serveDeploy(w, withBody(r, body), path)
 			return
 		}
 		writeJSON(w, 404, map[string]any{"error": "unknown endpoint " + path})
@@ -425,6 +428,50 @@ func (s *Server) srsPlan(ctx context.Context, srsID string) string {
 
 // serveSRS hands one request to the in-process SRS service. The Studio calls
 // it under /srs/*, which is where the reverse proxy to port 7826 used to be.
+// serveDeploy hands a /deploy/* request to the deployment agent, which is part
+// of this binary rather than a service on a port of its own.
+func (s *Server) serveDeploy(w http.ResponseWriter, r *http.Request, path string) {
+	if s.Deploy == nil {
+		writeJSON(w, 503, map[string]any{"error": "the deployment agent is not running"})
+		return
+	}
+	inner := r.Clone(r.Context())
+	inner.URL = r.URL.ResolveReference(&url.URL{Path: "/api" + path[len("/deploy"):]})
+	inner.RequestURI = ""
+	s.Deploy.Handler().ServeHTTP(w, inner)
+}
+
+// deployJob runs one deployment request as a job, because the Studio polls
+// rather than holding a request open for a deployment that takes minutes.
+func (s *Server) deployJob(method, path string, body []byte) (int, any, error) {
+	if s.Deploy == nil {
+		return 503, map[string]any{"error": "the deployment agent is not running"}, nil
+	}
+	request, err := http.NewRequest(method, path, bytes.NewReader(body))
+	if err != nil {
+		return 400, map[string]any{"error": err.Error()}, nil
+	}
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	s.Deploy.Handler().ServeHTTP(recorder, request)
+
+	var value any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &value); err != nil {
+		value = map[string]any{"raw": recorder.Body.String()}
+	}
+	return recorder.Code, value, nil
+}
+
+// deployStatus is what the Studio shows about the agent itself. It is part of
+// this process now, so it is running whenever this is.
+func (s *Server) deployStatus() map[string]any {
+	if s.Deploy == nil {
+		return map[string]any{"state": "off", "running": false, "in_process": true}
+	}
+	return map[string]any{"state": "ready", "running": true, "in_process": true,
+		"port": core.DeployPort}
+}
+
 func (s *Server) serveSRS(w http.ResponseWriter, r *http.Request, path string) {
 	if s.SRS == nil {
 		writeJSON(w, 503, map[string]any{"error": "the SRS service is not running"})
@@ -786,7 +833,7 @@ func (s *Server) deployResults(project string) map[string]any {
 	}
 	out := map[string]any{
 		"project": project,
-		"agent":   s.Sidecars.Deploy.Status(),
+		"agent":   s.deployStatus(),
 		"live":    nil,
 		"have":    map[string]bool{"last": false},
 	}
@@ -851,7 +898,7 @@ func (s *Server) settingsSummary(ctx context.Context) map[string]any {
 		"mongodb_uri_set":  uri != "",
 		"mongodb_uri_hint": redacted,
 		"mongo":            s.Mongo.Status(ctx),
-		"deploy":           s.Sidecars.Deploy.Status(),
+		"deploy":           s.deployStatus(),
 		"images":           s.Pictures.Check(),
 		"images_enabled":   s.Pictures.Check()["enabled"],
 		"image_host":       stringOf(saved, "image_host"),

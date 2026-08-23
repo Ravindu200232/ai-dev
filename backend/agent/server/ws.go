@@ -17,6 +17,7 @@ import (
 
 	"agentforge/agent/app"
 	"agentforge/agent/core"
+	"agentforge/agent/deploy"
 	"agentforge/agent/srs"
 )
 
@@ -82,10 +83,10 @@ type Server struct {
 	Paths    core.Paths
 	LLM      *core.LLM
 	Agent    Agent
-	Sidecars *Sidecars
 	Mongo    *Mongo
 	Pictures *app.Pictures
 	SRS      *srs.Service
+	Deploy   *deploy.Agent
 
 	mu     sync.Mutex
 	active *core.Run
@@ -93,10 +94,10 @@ type Server struct {
 	qaPDF  QAPDFFunc
 }
 
-func New(hub *core.Hub, paths core.Paths, llm *core.LLM, sidecars *Sidecars, mongo *Mongo) *Server {
+func New(hub *core.Hub, paths core.Paths, llm *core.LLM, mongo *Mongo) *Server {
 	return &Server{
 		Hub: hub, Paths: paths, LLM: llm,
-		Sidecars: sidecars, Mongo: mongo, Pictures: app.NewPictures(paths),
+		Mongo: mongo, Pictures: app.NewPictures(paths),
 		jobs: newJobStore(),
 	}
 }

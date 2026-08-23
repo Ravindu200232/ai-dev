@@ -1,7 +1,7 @@
 // Command agentforge is the AgentForge backend: the WebSocket the Studio
-// streams a run over, the HTTP API it calls, and the builder and QA agents that
-// do the work. The SRS and deployment services stay in Python and run as
-// supervised subprocesses.
+// streams a run over, the HTTP API it calls, and every agent behind them — the
+// builder, QA, the SRS and the deployment agent. It is one process with no
+// subprocess of its own but the database.
 package main
 
 import (
@@ -16,6 +16,7 @@ import (
 
 	"agentforge/agent/builder"
 	"agentforge/agent/core"
+	"agentforge/agent/deploy"
 	"agentforge/agent/qa"
 	"agentforge/agent/server"
 	"agentforge/agent/srs"
@@ -28,16 +29,15 @@ func main() {
 	hub := core.NewHub()
 	llm := core.NewLLM()
 	mongo := server.NewMongo(paths)
-	sidecars := server.NewSidecars(paths)
 
-	srv := server.New(hub, paths, llm, sidecars, mongo)
+	srv := server.New(hub, paths, llm, mongo)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// The connection string is settled first so the SRS store and the sidecar
-	// know where to look, but fetching mongod can take minutes and must not
-	// hold up the Studio: it finishes in the background and /mongo reports it.
+	// The connection string is settled first so the SRS store knows where to
+	// look, but fetching mongod can take minutes and must not hold up the
+	// Studio: it finishes in the background and /mongo reports it.
 	mongo.Resolve()
 
 	// The SRS service is part of this binary. A machine with no database still
@@ -45,7 +45,15 @@ func main() {
 	srv.SRS = srs.NewService(srs.NewRepo(srs.Connect(ctx, mongo.URI(), srs.DatabaseName)), llm, paths)
 	srv.Agent = builder.NewAgent(srv.Pictures, srv.SRS)
 
-	sidecars.Start(ctx, mongo.URI())
+	// The deployment agent is part of this binary too. A machine with no AWS
+	// or GitHub still gets a working service; it says so when asked to deploy.
+	if agent, err := deploy.NewAgent(paths.Deploy, llm, hub); err != nil {
+		log.Printf("the deployment agent could not start: %v", err)
+	} else {
+		srv.Deploy = agent
+		go agent.Watch(ctx)
+	}
+
 	go mongo.Ensure(ctx)
 
 	errs := make(chan error, 2)
@@ -86,7 +94,7 @@ func banner(paths core.Paths, mongo *server.Mongo) {
 	fmt.Printf("  🌐 API        →  http://127.0.0.1:%d%s\n", core.UIPort, core.APIPrefix)
 	fmt.Printf("  🔌 WebSocket  →  ws://127.0.0.1:%d\n", core.WSPort)
 	fmt.Printf("  📄 SRS        →  http://127.0.0.1:%d%s/srs\n", core.UIPort, core.APIPrefix)
-	fmt.Printf("  🚀 Deploy     →  http://127.0.0.1:%d\n", core.DeployPort)
+	fmt.Printf("  🚀 Deploy     →  http://127.0.0.1:%d%s/deploy\n", core.UIPort, core.APIPrefix)
 	fmt.Printf("  🍃 MongoDB    →  %s\n", mongo.URI())
 	fmt.Printf("  📁 Projects   →  %s\n", paths.Projects)
 	fmt.Printf("  🎛️  Studio     →  http://localhost:3000%s\n", core.APIPrefix[:len(core.APIPrefix)-4])

@@ -325,7 +325,7 @@ func TestRedactURI(t *testing.T) {
 func newTestServer(t *testing.T, agent Agent) *Server {
 	t.Helper()
 	paths := core.Paths{Base: t.TempDir(), Projects: t.TempDir()}
-	s := New(core.NewHub(), paths, core.NewLLM(), NewSidecars(paths), NewMongo(paths))
+	s := New(core.NewHub(), paths, core.NewLLM(), NewMongo(paths))
 	s.Agent = agent
 	return s
 }
