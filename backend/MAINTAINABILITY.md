@@ -12,6 +12,7 @@ Public entrypoints stay small. Implementation lives in focused modules and exist
 - `server_modules/agent/` — build, repair, feature, image and editor workflows.
 - `server_modules/deploy/` — deployment orchestration and jobs.
 - `server_modules/ui/` — HTTP handling.
+- `server_modules/forge/` — the forge pipeline and its websocket plan gate.
 
 ## Pipeline
 
@@ -21,6 +22,8 @@ Public entrypoints stay small. Implementation lives in focused modules and exist
 
 ## Supporting packages
 
+- `forge/` — the small agent core: tools, context budget, plan mode, skills,
+  and the builder and QA agents written on top of them. See `forge/README.md`.
 - `agents/` — architect, analyzer, builder, repair and project helpers.
 - `qa_agent/` — test authoring, browser execution, evidence and repair support.
 - `srs-agent/` — SRS service.
@@ -28,7 +31,7 @@ Public entrypoints stay small. Implementation lives in focused modules and exist
 
 ## Rules
 
-- Keep source files below 1000 lines.
+- Keep source files below 1000 lines. New code in `forge/` stays below 180.
 - Put new code in the narrowest matching module.
 - Preserve public imports when moving implementation.
 - Keep comments short and useful.

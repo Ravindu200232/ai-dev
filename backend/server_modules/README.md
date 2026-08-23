@@ -8,5 +8,8 @@
 - `agent/` — build, repair and editing workflows.
 - `deploy/` — deployment logic.
 - `ui/` — HTTP handling.
+- `forge/` — the forge pipeline: model wiring, event relay and the plan gate
+  the UI answers. Unlike the parts above it is a normal importable module, not
+  a runtime fragment, so it can be tested on its own.
 
 Keep files focused, below 1000 lines, and preserve the public server contract.
