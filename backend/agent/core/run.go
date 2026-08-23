@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -476,6 +477,209 @@ func itoa(n int) string {
 }
 
 // --- Meta files -------------------------------------------------------------
+
+// --- shared prompt and writing tools ----------------------------------------
+
+const surveyBudget = 120 // files named in one prompt before the list is trimmed
+
+// Refresh re-runs the `ls` survey. Every phase calls this before it decides
+// anything, so no phase is reasoning about a tree that has since changed.
+func Refresh(run *Run) {
+	st, err := run.Shell.Survey()
+	if err != nil && st == nil {
+		return
+	}
+	run.Structure = st
+}
+
+// StructureBlock renders a survey for a prompt: the shape first, then the
+// files, capped so a large project cannot crowd out the instruction.
+func StructureBlock(st *Structure) string {
+	if st == nil || len(st.Files) == 0 {
+		return "(the project directory is empty — this is a new build)\n"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d file(s) on disk.\n", len(st.Files))
+	if len(st.Routes) > 0 {
+		fmt.Fprintf(&b, "pages: %s\n", strings.Join(st.Routes, ", "))
+	}
+	if len(st.APIs) > 0 {
+		fmt.Fprintf(&b, "api routes: %s\n", strings.Join(st.APIs, ", "))
+	}
+	if len(st.Tests) > 0 {
+		fmt.Fprintf(&b, "tests: %d file(s)\n", len(st.Tests))
+	}
+	b.WriteString("files:\n")
+	for _, f := range trimForPrompt(st.Files) {
+		b.WriteString("  " + f + "\n")
+	}
+	return b.String()
+}
+
+// trimForPrompt keeps the source the agent reasons about and drops the noise.
+func trimForPrompt(files []string) []string {
+	if len(files) <= surveyBudget {
+		return files
+	}
+	var kept []string
+	for _, f := range files {
+		if strings.HasPrefix(f, "app/") || strings.HasPrefix(f, "lib/") ||
+			strings.HasPrefix(f, "components/") || strings.HasPrefix(f, "tests/") ||
+			!strings.Contains(f, "/") {
+			kept = append(kept, f)
+		}
+	}
+	if len(kept) > surveyBudget {
+		kept = kept[:surveyBudget]
+	}
+	return kept
+}
+
+// ReadFiles returns the named files as a prompt block, skipping what is not
+// there. This is the "read the code before changing it" half of the tool use.
+func ReadFiles(run *Run, paths []string, budget int) string {
+	var b strings.Builder
+	spent := 0
+	for _, rel := range paths {
+		if spent >= budget {
+			break
+		}
+		body, truncated, err := run.Shell.Read(rel)
+		if err != nil {
+			continue
+		}
+		if len(body) > budget-spent {
+			body = body[:budget-spent]
+			truncated = true
+		}
+		spent += len(body)
+		fmt.Fprintf(&b, "\n--- %s ---\n%s\n", rel, body)
+		if truncated {
+			b.WriteString("…(truncated)\n")
+		}
+	}
+	return b.String()
+}
+
+// --- streaming file writer ---------------------------------------------------
+
+// The model announces each file with a marker instead of returning JSON, because
+// JSON-escaping a whole source file is where small models lose their footing.
+const (
+	fileOpen  = "<<<FILE "
+	fileClose = ">>>END"
+)
+
+// FileWriter turns a model's token stream into files on disk, emitting the
+// stream events that make the Studio's code pane follow along live.
+type FileWriter struct {
+	run     *Run
+	buf     strings.Builder
+	path    string // the file currently open, "" between files
+	body    strings.Builder
+	written []string
+}
+
+func NewFileWriter(run *Run) *FileWriter { return &FileWriter{run: run} }
+
+// Feed accepts one chunk of model output.
+func (w *FileWriter) Feed(chunk string) {
+	w.buf.WriteString(chunk)
+	for w.step() {
+	}
+}
+
+// step consumes one complete marker, reporting whether it made progress.
+func (w *FileWriter) step() bool {
+	text := w.buf.String()
+
+	if w.path == "" {
+		start := strings.Index(text, fileOpen)
+		if start < 0 {
+			w.keepTail(text, len(fileOpen)) // a marker may be split across chunks
+			return false
+		}
+		nl := strings.IndexByte(text[start:], '\n')
+		if nl < 0 {
+			return false // the path line has not finished arriving
+		}
+		path := strings.TrimSpace(text[start+len(fileOpen) : start+nl])
+		w.replaceBuf(text[start+nl+1:])
+		if path == "" {
+			return true
+		}
+		w.path = path
+		w.body.Reset()
+		w.run.StreamStart(path)
+		return true
+	}
+
+	end := strings.Index(text, fileClose)
+	if end < 0 {
+		// Everything except a possible partial terminator is file content.
+		safe := len(text) - len(fileClose)
+		if safe <= 0 {
+			return false
+		}
+		w.emit(text[:safe])
+		w.replaceBuf(text[safe:])
+		return false
+	}
+	w.emit(text[:end])
+	w.replaceBuf(text[end+len(fileClose):])
+	w.closeFile()
+	return true
+}
+
+func (w *FileWriter) replaceBuf(rest string) {
+	w.buf.Reset()
+	w.buf.WriteString(rest)
+}
+
+func (w *FileWriter) keepTail(text string, keep int) {
+	if len(text) > keep {
+		w.replaceBuf(text[len(text)-keep:])
+	}
+}
+
+func (w *FileWriter) emit(chunk string) {
+	if chunk == "" {
+		return
+	}
+	w.body.WriteString(chunk)
+	w.run.StreamToken(chunk)
+}
+
+// closeFile writes the finished file and tells the Studio it is complete.
+func (w *FileWriter) closeFile() {
+	path := w.path
+	body := strings.TrimRight(strings.TrimLeft(w.body.String(), "\n"), " \t\n") + "\n"
+	w.path = ""
+	w.body.Reset()
+
+	if err := w.run.Shell.Write(path, body); err != nil {
+		w.run.Warn("could not write " + path + ": " + err.Error())
+		w.run.StreamEnd(path, "")
+		return
+	}
+	w.written = append(w.written, path)
+	w.run.StreamEnd(path, body)
+	w.run.File(path, len(body), body)
+	w.run.Info("   ✎ " + path)
+}
+
+// Finish closes a file the model left open, which small models sometimes do.
+func (w *FileWriter) Finish() {
+	if w.path == "" {
+		return
+	}
+	w.emit(w.buf.String())
+	w.buf.Reset()
+	w.closeFile()
+}
+
+// Written lists the files this stream put on disk.
+func (w *FileWriter) Written() []string { return w.written }
 
 // ReadJSON loads one of the agent's own notes. A missing file is not an error.
 func ReadJSON(path string, into any) error {
