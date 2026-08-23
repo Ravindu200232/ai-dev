@@ -1,0 +1,81 @@
+{
+ "bpmn_standard": "OMG BPMN 2.0.2",
+ "dfd_notation": "Yourdon/DeMarco-style DFD",
+ "diagram_notation": {
+  "activity": [
+   "Solid black circle — initial node",
+   "Rounded rectangle — action",
+   "Diamond — decision/merge only for explicit guarded alternatives",
+   "Arrow — control flow",
+   "Circle-in-circle — final node"
+  ],
+  "bpmn": [
+   "Thin circle / thick circle — start/end event",
+   "Rounded rectangle — task/activity",
+   "Diamond — gateway only for explicit branching semantics",
+   "Pool/lane — participant/responsibility boundary",
+   "Solid arrow — sequence flow; message flow is not used inside one pool"
+  ],
+  "class_object": [
+   "Compartmented rectangle — class name and attributes",
+   "+ / - — public/private visibility convention",
+   "Multiplicity at association ends — 1, 0..*, etc.",
+   "Underlined instance-name : Class — object diagram instance"
+  ],
+  "component": [
+   "Component rectangle with UML component glyph — deployable/logical component",
+   "Horizontal bands — presentation, application/domain, and data/external interfaces",
+   "Dependency arrow — one component depends on another supported SRS element"
+  ],
+  "deployment": [
+   "3-D node box — device or execution environment",
+   "Nested text — software artifacts hosted on the node",
+   "Communication path — protocol/connection between nodes",
+   "External service box — separately deployed integration"
+  ],
+  "dfd": [
+   "Rectangle — external entity",
+   "Circle/rounded process — process that transforms data",
+   "Open-ended data-store symbol — persistent data store",
+   "Labeled arrow — data flow (not control flow)"
+  ],
+  "erd": [
+   "Entity rectangle — entity/table with attributes",
+   "PK / FK — primary and foreign keys",
+   "Single bar — one; crow's foot — many",
+   "Optionality markers are shown only when the SRS provides enough information"
+  ],
+  "sequence": [
+   "Participant box + dashed vertical line — lifeline",
+   "Thin rectangle on lifeline — activation / execution occurrence",
+   "Solid arrow — synchronous call/request",
+   "Dashed open arrow — return/response",
+   "Time progresses from top to bottom"
+  ],
+  "state_machine": [
+   "Rounded rectangle — state",
+   "Solid black circle — initial pseudo-state",
+   "Circle-in-circle — final pseudo-state",
+   "Labeled arrow — transition/event",
+   "No transition is invented when the SRS does not state a legal lifecycle"
+  ],
+  "system_context": [
+   "Central system boundary — the software system in scope",
+   "Person/role box — human actor using the system",
+   "External-system box — third-party dependency or integration",
+   "Database cylinder — persistent application data",
+   "Labeled arrow — externally visible relationship"
+  ],
+  "use_case": [
+   "Stick figure — actor (person or external system)",
+   "Oval — use case (actor goal / system behavior)",
+   "System boundary — scope of the subject system",
+   "Solid line — actor/use-case association",
+   "Dashed «include» / «extend» relationships appear only when explicitly specified"
+  ]
+ },
+ "erd_notation": "Crow's Foot ERD",
+ "srs_standard": "ISO/IEC/IEEE 29148:2018",
+ "srs_standard_title": "Systems and software engineering — Life cycle processes — Requirements engineering",
+ "uml_standard": "OMG UML 2.5.1"
+}

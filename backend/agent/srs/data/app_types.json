@@ -1,0 +1,940 @@
+{
+ "app_types": {
+  "blog": {
+   "archetype": "fullstack-crud",
+   "auth_default": true,
+   "auth_policy": "required",
+   "base_entities": [
+    "Post",
+    "Category",
+    "Tag",
+    "Comment"
+   ],
+   "base_operations": [
+    "publish_post"
+   ],
+   "default_entities": [
+    "Post",
+    "Category",
+    "Tag",
+    "Comment"
+   ],
+   "default_pages": [
+    {
+     "name": "Home",
+     "route": "/",
+     "type": "marketing"
+    },
+    {
+     "name": "Post",
+     "route": "/posts/[slug]",
+     "type": "detail"
+    },
+    {
+     "name": "Category",
+     "route": "/category/[slug]",
+     "type": "catalog"
+    },
+    {
+     "name": "Admin Posts",
+     "route": "/admin/posts",
+     "type": "entity_crud"
+    }
+   ],
+   "default_roles": [
+    "admin",
+    "author"
+   ],
+   "desc": "Posts, categories, an author admin",
+   "features": [
+    "Rich text posts",
+    "Categories and tags",
+    "Draft / publish workflow",
+    "Featured image",
+    "Search",
+    "Comments",
+    "RSS feed",
+    "SEO metadata"
+   ],
+   "icon": "📝",
+   "key": "blog",
+   "keywords": [
+    "blog",
+    "article",
+    "news",
+    "magazine",
+    "journal",
+    "post",
+    "publication",
+    "editorial",
+    "cms"
+   ],
+   "label": "Blog / Content",
+   "operations": [],
+   "optional_pages": [
+    "categories",
+    "search",
+    "about",
+    "settings"
+   ],
+   "palette": "navy",
+   "prohibited_page_types": [],
+   "question_set": "blog",
+   "required_pages": [
+    "public_home",
+    "post_detail",
+    "login",
+    "admin_posts"
+   ],
+   "shell": {
+    "navbar": true,
+    "public_site": true,
+    "sidebar": true
+   }
+  },
+  "dashboard": {
+   "archetype": "fullstack-crud",
+   "auth_default": true,
+   "auth_policy": "required",
+   "base_entities": [
+    "Record",
+    "Category"
+   ],
+   "base_operations": [],
+   "default_entities": [
+    "Record",
+    "Category"
+   ],
+   "default_pages": [
+    {
+     "name": "Dashboard",
+     "route": "/admin",
+     "type": "dashboard"
+    },
+    {
+     "name": "Records",
+     "route": "/admin/records",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Reports",
+     "route": "/admin/reports",
+     "type": "report"
+    },
+    {
+     "name": "Settings",
+     "route": "/admin/settings",
+     "type": "settings"
+    }
+   ],
+   "default_roles": [
+    "admin",
+    "viewer"
+   ],
+   "desc": "Internal tool built around data tables",
+   "features": [
+    "KPI summary cards",
+    "Charts over time",
+    "Searchable data tables",
+    "Bulk actions",
+    "CSV / PDF export",
+    "Audit log",
+    "Saved filters"
+   ],
+   "icon": "📊",
+   "key": "dashboard",
+   "keywords": [
+    "dashboard",
+    "admin panel",
+    "analytics",
+    "metrics",
+    "monitor",
+    "internal tool",
+    "back office",
+    "records",
+    "tracker",
+    "booking system",
+    "appointments",
+    "bookings",
+    "attendance",
+    "rota",
+    "job sheet",
+    "keep track",
+    "who owes",
+    "front desk",
+    "in one place",
+    "log every"
+   ],
+   "label": "Dashboard / Admin",
+   "operations": [],
+   "optional_pages": [
+    "reports",
+    "settings",
+    "users"
+   ],
+   "palette": "business",
+   "prohibited_page_types": [
+    "marketing"
+   ],
+   "question_set": "dashboard",
+   "required_pages": [
+    "login",
+    "dashboard"
+   ],
+   "shell": {
+    "navbar": false,
+    "public_site": false,
+    "sidebar": true
+   }
+  },
+  "ecommerce": {
+   "archetype": "fullstack-crud",
+   "auth_default": true,
+   "auth_policy": "required",
+   "base_entities": [
+    "Product",
+    "Category",
+    "Order",
+    "OrderItem",
+    "Customer"
+   ],
+   "base_operations": [
+    "place_order"
+   ],
+   "default_entities": [
+    "Product",
+    "Category",
+    "Order",
+    "OrderItem",
+    "Customer"
+   ],
+   "default_pages": [
+    {
+     "name": "Storefront",
+     "route": "/",
+     "type": "marketing"
+    },
+    {
+     "name": "Products",
+     "route": "/products",
+     "type": "catalog"
+    },
+    {
+     "name": "Product Detail",
+     "route": "/products/[id]",
+     "type": "detail"
+    },
+    {
+     "name": "Cart",
+     "route": "/cart",
+     "type": "custom"
+    },
+    {
+     "name": "Checkout",
+     "route": "/checkout",
+     "type": "custom"
+    },
+    {
+     "name": "My Orders",
+     "route": "/orders",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Admin Products",
+     "route": "/admin/products",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Admin Orders",
+     "route": "/admin/orders",
+     "type": "entity_crud"
+    }
+   ],
+   "default_roles": [
+    "admin",
+    "customer"
+   ],
+   "desc": "Storefront, cart, checkout, orders",
+   "features": [
+    "Product catalogue with filters",
+    "Shopping cart",
+    "Guest checkout",
+    "Order tracking",
+    "Product reviews",
+    "Discount codes",
+    "Stock management",
+    "Order status emails"
+   ],
+   "icon": "🛒",
+   "key": "ecommerce",
+   "keywords": [
+    "cart",
+    "checkout",
+    "product",
+    "ecommerce",
+    "e-commerce",
+    "buy",
+    "retail store",
+    "order online",
+    "online shop",
+    "online store",
+    "pay online",
+    "order and pay",
+    "click and collect",
+    "pre-order",
+    "pay for them",
+    "posted out"
+   ],
+   "label": "Online Store",
+   "operations": [
+    {
+     "effects": [
+      "create Order",
+      "create OrderItem rows",
+      "decrement Product.stock"
+     ],
+     "id": "place_order",
+     "method": "POST",
+     "name": "Place order",
+     "path": "/api/ops/place-order"
+    }
+   ],
+   "optional_pages": [
+    "account",
+    "orders",
+    "wishlist",
+    "login",
+    "register"
+   ],
+   "palette": "indigo",
+   "prohibited_page_types": [],
+   "question_set": "ecommerce",
+   "required_pages": [
+    "storefront",
+    "product_detail",
+    "cart",
+    "checkout",
+    "admin_products",
+    "admin_orders"
+   ],
+   "shell": {
+    "navbar": true,
+    "public_site": true,
+    "sidebar": true
+   }
+  },
+  "landing": {
+   "archetype": "landing-single-page",
+   "auth_default": false,
+   "auth_policy": "disabled",
+   "base_entities": [
+    "Lead"
+   ],
+   "base_operations": [
+    "submit_enquiry"
+   ],
+   "default_entities": [
+    "Lead"
+   ],
+   "default_pages": [
+    {
+     "name": "Home",
+     "route": "/",
+     "sections": [
+      "Hero",
+      "Features",
+      "Services",
+      "Pricing",
+      "Process",
+      "Testimonials",
+      "FAQ",
+      "Contact"
+     ],
+     "type": "marketing"
+    }
+   ],
+   "default_roles": [],
+   "desc": "One-page marketing site",
+   "features": [
+    "Hero with call to action",
+    "Feature grid",
+    "Pricing table",
+    "Testimonials",
+    "FAQ accordion",
+    "Contact / quote form",
+    "Sticky navigation",
+    "SEO metadata and sitemap"
+   ],
+   "icon": "🚀",
+   "key": "landing",
+   "keywords": [
+    "landing",
+    "one page",
+    "single page",
+    "marketing site",
+    "brochure",
+    "coming soon",
+    "waitlist",
+    "leave their email",
+    "leave their name",
+    "tell them when we open"
+   ],
+   "label": "Landing Page",
+   "operations": [
+    {
+     "effects": [
+      "create Lead"
+     ],
+     "id": "submit_lead",
+     "method": "POST",
+     "name": "Submit enquiry",
+     "path": "/api/ops/submit-lead"
+    }
+   ],
+   "optional_pages": [
+    "thank_you"
+   ],
+   "palette": "navy",
+   "prohibited_page_types": [
+    "dashboard",
+    "entity_crud",
+    "settings",
+    "auth"
+   ],
+   "question_set": "landing",
+   "required_pages": [
+    "marketing_home"
+   ],
+   "shell": {
+    "navbar": true,
+    "public_site": true,
+    "sidebar": false
+   }
+  },
+  "other": {
+   "archetype": "fullstack-crud",
+   "auth_default": true,
+   "auth_policy": "optional",
+   "base_entities": [
+    "Record"
+   ],
+   "base_operations": [],
+   "default_entities": [
+    "Record"
+   ],
+   "default_pages": [
+    {
+     "name": "Dashboard",
+     "route": "/admin",
+     "type": "dashboard"
+    }
+   ],
+   "default_roles": [
+    "admin",
+    "user"
+   ],
+   "desc": "Something else — tell us what it does",
+   "features": [],
+   "icon": "✨",
+   "key": "other",
+   "keywords": [],
+   "label": "Other",
+   "operations": [],
+   "optional_pages": [],
+   "palette": "indigo",
+   "prohibited_page_types": [],
+   "question_set": "other",
+   "required_pages": [],
+   "shell": {
+    "navbar": true,
+    "public_site": false,
+    "sidebar": true
+   }
+  },
+  "portfolio": {
+   "archetype": "landing-single-page",
+   "auth_default": false,
+   "auth_policy": "disabled",
+   "base_entities": [
+    "Project",
+    "Inquiry"
+   ],
+   "base_operations": [
+    "submit_enquiry"
+   ],
+   "default_entities": [
+    "Project",
+    "Inquiry"
+   ],
+   "default_pages": [
+    {
+     "name": "Home",
+     "route": "/",
+     "sections": [
+      "Hero",
+      "About",
+      "Featured work",
+      "Services",
+      "Contact"
+     ],
+     "type": "marketing"
+    },
+    {
+     "name": "Gallery",
+     "route": "/gallery",
+     "type": "catalog"
+    },
+    {
+     "name": "Packages",
+     "route": "/packages",
+     "type": "catalog"
+    },
+    {
+     "name": "Contact",
+     "route": "/contact",
+     "type": "custom"
+    }
+   ],
+   "default_roles": [],
+   "desc": "Personal or studio showcase",
+   "features": [
+    "Image gallery with lightbox",
+    "Project case studies",
+    "About / bio",
+    "Service packages with pricing",
+    "Contact form",
+    "Social links",
+    "Downloadable CV",
+    "Dark theme"
+   ],
+   "icon": "🎨",
+   "key": "portfolio",
+   "keywords": [
+    "portfolio",
+    "resume",
+    "cv",
+    "showcase",
+    "my work",
+    "photography",
+    "gallery",
+    "freelance",
+    "personal site"
+   ],
+   "label": "Portfolio",
+   "operations": [
+    {
+     "effects": [
+      "create Inquiry"
+     ],
+     "id": "submit_inquiry",
+     "method": "POST",
+     "name": "Submit inquiry",
+     "path": "/api/ops/submit-inquiry"
+    }
+   ],
+   "optional_pages": [
+    "project_detail",
+    "services",
+    "contact",
+    "about"
+   ],
+   "palette": "gold",
+   "prohibited_page_types": [
+    "dashboard",
+    "settings",
+    "auth"
+   ],
+   "question_set": "portfolio",
+   "required_pages": [
+    "marketing_home",
+    "work"
+   ],
+   "shell": {
+    "navbar": true,
+    "public_site": true,
+    "sidebar": false
+   }
+  },
+  "pos": {
+   "archetype": "fullstack-crud",
+   "auth_default": true,
+   "auth_policy": "required",
+   "base_entities": [
+    "Product",
+    "Category",
+    "Customer",
+    "Sale",
+    "Supplier",
+    "StockMovement"
+   ],
+   "base_operations": [
+    "pos_checkout"
+   ],
+   "default_entities": [
+    "Product",
+    "Category",
+    "Customer",
+    "Sale",
+    "Supplier",
+    "StockMovement"
+   ],
+   "default_pages": [
+    {
+     "name": "Dashboard",
+     "route": "/admin",
+     "type": "dashboard"
+    },
+    {
+     "name": "Sale Terminal",
+     "route": "/admin/sale",
+     "type": "custom"
+    },
+    {
+     "name": "Sales History",
+     "route": "/admin/sales",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Products",
+     "route": "/admin/products",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Stock",
+     "route": "/admin/stock",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Customers",
+     "route": "/admin/customers",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Categories",
+     "route": "/admin/categories",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Suppliers",
+     "route": "/admin/suppliers",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Employees",
+     "route": "/admin/employees",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Reports",
+     "route": "/admin/reports",
+     "type": "report"
+    },
+    {
+     "name": "Settings",
+     "route": "/admin/settings",
+     "type": "settings"
+    }
+   ],
+   "default_roles": [
+    "admin",
+    "cashier"
+   ],
+   "desc": "Point of sale, stock, invoices — no landing page",
+   "features": [
+    "Barcode / quick product search",
+    "Cart with line discounts",
+    "Multiple payment methods",
+    "Printable receipt",
+    "Daily sales summary",
+    "Low-stock alerts",
+    "Stock receiving (GRN)",
+    "Customer credit accounts"
+   ],
+   "icon": "🧾",
+   "key": "pos",
+   "keywords": [
+    "pos",
+    "point of sale",
+    "cashier",
+    "billing",
+    "invoice",
+    "grn",
+    "stock",
+    "inventory",
+    "till",
+    "counter",
+    "receipt",
+    "barcode",
+    "take payment",
+    "card payment",
+    "at the counter"
+   ],
+   "label": "POS / Retail",
+   "operations": [
+    {
+     "effects": [
+      "create Sale",
+      "decrement Product.stock",
+      "create StockMovement"
+     ],
+     "id": "pos_checkout",
+     "method": "POST",
+     "name": "POS checkout",
+     "path": "/api/ops/pos-checkout"
+    }
+   ],
+   "optional_pages": [
+    "products",
+    "inventory",
+    "sales_history",
+    "customers",
+    "suppliers",
+    "reports",
+    "settings"
+   ],
+   "palette": "business",
+   "prohibited_page_types": [
+    "marketing"
+   ],
+   "question_set": "pos",
+   "required_pages": [
+    "login",
+    "dashboard",
+    "sale_terminal"
+   ],
+   "shell": {
+    "navbar": false,
+    "public_site": false,
+    "sidebar": true
+   }
+  },
+  "saas": {
+   "archetype": "fullstack-crud",
+   "auth_default": true,
+   "auth_policy": "required",
+   "base_entities": [
+    "Project",
+    "Member",
+    "Activity"
+   ],
+   "base_operations": [],
+   "default_entities": [
+    "Project",
+    "Member",
+    "Activity"
+   ],
+   "default_pages": [
+    {
+     "name": "Landing",
+     "route": "/",
+     "type": "marketing"
+    },
+    {
+     "name": "Login",
+     "route": "/login",
+     "type": "auth"
+    },
+    {
+     "name": "Register",
+     "route": "/register",
+     "type": "auth"
+    },
+    {
+     "name": "Dashboard",
+     "route": "/app",
+     "type": "dashboard"
+    },
+    {
+     "name": "Settings",
+     "route": "/app/settings",
+     "type": "settings"
+    }
+   ],
+   "default_roles": [
+    "admin",
+    "user"
+   ],
+   "desc": "Subscription product with accounts and a dashboard",
+   "features": [
+    "Email + password accounts",
+    "Role-based permissions",
+    "Team workspaces",
+    "Dashboard with KPIs",
+    "Search and filtering",
+    "CSV export",
+    "Activity log",
+    "Email notifications"
+   ],
+   "icon": "☁️",
+   "key": "saas",
+   "keywords": [
+    "saas",
+    "platform",
+    "subscription",
+    "b2b",
+    "crm",
+    "workspace",
+    "management system",
+    "portal",
+    "tenant",
+    "sign up and pay",
+    "other businesses",
+    "a month for",
+    "per month",
+    "monthly fee"
+   ],
+   "label": "SaaS Platform",
+   "operations": [],
+   "optional_pages": [
+    "settings",
+    "team",
+    "billing",
+    "reports"
+   ],
+   "palette": "mint",
+   "prohibited_page_types": [],
+   "question_set": "saas",
+   "required_pages": [
+    "marketing_home",
+    "login",
+    "register",
+    "dashboard"
+   ],
+   "shell": {
+    "navbar": true,
+    "public_site": true,
+    "sidebar": true
+   }
+  },
+  "utility": {
+   "archetype": "single-tool",
+   "auth_default": false,
+   "auth_policy": "disabled",
+   "base_entities": [
+    "Entry"
+   ],
+   "base_operations": [],
+   "default_entities": [
+    "Entry"
+   ],
+   "default_pages": [
+    {
+     "name": "Tool",
+     "route": "/",
+     "type": "custom"
+    },
+    {
+     "name": "History",
+     "route": "/history",
+     "type": "entity_crud"
+    },
+    {
+     "name": "Settings",
+     "route": "/settings",
+     "type": "settings"
+    }
+   ],
+   "default_roles": [],
+   "desc": "Single-purpose tool — calculator, calendar",
+   "features": [
+    "Core tool interaction",
+    "Keyboard shortcuts",
+    "Saved history",
+    "Light / dark theme",
+    "Mobile-first layout",
+    "Offline support"
+   ],
+   "icon": "🔧",
+   "key": "utility",
+   "keywords": [
+    "calculator",
+    "converter",
+    "timer",
+    "clock",
+    "weather",
+    "currency",
+    "generator",
+    "calendar",
+    "tool",
+    "utility",
+    "planner",
+    "stopwatch",
+    "works out",
+    "nothing is kept",
+    "on the spot"
+   ],
+   "label": "Utility / Tool",
+   "operations": [],
+   "optional_pages": [
+    "history",
+    "settings"
+   ],
+   "palette": "indigo",
+   "prohibited_page_types": [
+    "dashboard",
+    "marketing",
+    "auth"
+   ],
+   "question_set": "utility",
+   "required_pages": [
+    "tool"
+   ],
+   "shell": {
+    "navbar": true,
+    "public_site": false,
+    "sidebar": false
+   }
+  }
+ },
+ "archetypes": [
+  "fullstack-crud",
+  "public-content",
+  "landing-single-page",
+  "single-tool"
+ ],
+ "guess_floor": 0.6,
+ "palettes": {
+  "business": {
+   "accent": "#0854A1",
+   "canvas": "#F5F7FB",
+   "danger": "#D9534F",
+   "ink": "#0A294F",
+   "primary": "#0A6ED1"
+  },
+  "gold": {
+   "accent": "#FBBF24",
+   "canvas": "#0A0A0A",
+   "danger": "#EF4444",
+   "ink": "#0A0A0A",
+   "primary": "#F59E0B"
+  },
+  "indigo": {
+   "accent": "#A855F7",
+   "canvas": "#F9FAFB",
+   "danger": "#EF4444",
+   "ink": "#111827",
+   "primary": "#6366F1"
+  },
+  "mint": {
+   "accent": "#0EA5A0",
+   "canvas": "#FFFFFF",
+   "danger": "#EF4444",
+   "ink": "#0F172A",
+   "primary": "#1DD1A1"
+  },
+  "navy": {
+   "accent": "#38BDF8",
+   "canvas": "#FBFCFE",
+   "danger": "#DC2626",
+   "ink": "#0B1727",
+   "primary": "#063970"
+  }
+ },
+ "placeholder_entities": [
+  "Activity",
+  "Entry",
+  "Member",
+  "Project",
+  "Record"
+ ]
+}

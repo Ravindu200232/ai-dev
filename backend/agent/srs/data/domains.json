@@ -1,0 +1,4500 @@
+{
+ "custom": {
+  "app_type_primary": "Custom SaaS Web Application",
+  "feature_options": [
+   "User accounts & roles",
+   "Core record management",
+   "Dashboard & reports",
+   "Notifications",
+   "File uploads",
+   "Public landing site",
+   "Online payments"
+  ],
+  "integrations": [
+   {
+    "description": "Transactional email.",
+    "name": "Email Provider",
+    "required": false,
+    "type": "messaging"
+   }
+  ],
+  "keywords": [],
+  "label": "Custom SaaS",
+  "modules": [
+   "Public Website",
+   "Authentication",
+   "User Management",
+   "Core Records",
+   "Dashboard & Reports",
+   "Notifications",
+   "Settings"
+  ],
+  "nfr_focus": [
+   "Role-based access control on all protected endpoints"
+  ],
+  "notifications": [
+   {
+    "channels": [
+     "in_app",
+     "email"
+    ],
+    "event": "Record Created",
+    "recipients": [
+     "admin",
+     "staff"
+    ]
+   },
+   {
+    "channels": [
+     "in_app"
+    ],
+    "event": "Record Updated",
+    "recipients": [
+     "member"
+    ]
+   }
+  ],
+  "protected_pages": [
+   {
+    "allowed_roles": [
+     "member"
+    ],
+    "functions": [
+     "View/manage own records",
+     "Profile"
+    ],
+    "page_name": "Member Dashboard",
+    "page_type": "portal",
+    "route": "/app"
+   },
+   {
+    "allowed_roles": [
+     "admin",
+     "super_admin",
+     "staff"
+    ],
+    "functions": [
+     "Manage records",
+     "Manage users",
+     "Reports",
+     "Settings"
+    ],
+    "page_name": "Admin Dashboard",
+    "page_type": "dashboard",
+    "route": "/admin"
+   }
+  ],
+  "public_pages": [
+   {
+    "page_name": "Home",
+    "route": "/",
+    "sections": [
+     "Hero",
+     "Features",
+     "How it works",
+     "Pricing",
+     "Footer"
+    ]
+   },
+   {
+    "page_name": "Contact",
+    "route": "/contact",
+    "sections": [
+     "Form",
+     "Details"
+    ]
+   }
+  ],
+  "relationships": [
+   {
+    "description": "A category groups many records.",
+    "from": "categories.id",
+    "to": "records.category_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A record has many comments.",
+    "from": "records.id",
+    "to": "comments.record_id",
+    "type": "one_to_many"
+   }
+  ],
+  "reports": [
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "status"
+    ],
+    "report_name": "Activity Report"
+   }
+  ],
+  "risks": [
+   {
+    "area": "Scope",
+    "mitigation": "Refine via the requirement questions and prompt customization.",
+    "reason": "Idea is generic, so the model is a sensible default.",
+    "risk": "Under-specified domain",
+    "severity": "Medium"
+   }
+  ],
+  "roles": [
+   {
+    "description": "Full system owner with access to all settings, users, and audit logs.",
+    "role_key": "super_admin",
+    "role_name": "Super Admin"
+   },
+   {
+    "description": "Manages users, records, and settings.",
+    "role_key": "admin",
+    "role_name": "Administrator"
+   },
+   {
+    "description": "Performs day-to-day operations on records.",
+    "role_key": "staff",
+    "role_name": "Staff"
+   },
+   {
+    "description": "Self-service access to their own data.",
+    "role_key": "member",
+    "role_name": "Member"
+   },
+   {
+    "description": "Browses public pages and submits inquiries without login.",
+    "role_key": "guest",
+    "role_name": "Public Guest"
+   }
+  ],
+  "system_category": "Custom Web Application with Admin Dashboard",
+  "tables": [
+   {
+    "description": "Primary domain records managed by the app.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "title",
+      "type": "string"
+     },
+     {
+      "name": "description",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "name": "owner_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "draft",
+       "active",
+       "archived"
+      ]
+     },
+     {
+      "name": "created_at",
+      "nullable": false,
+      "type": "datetime"
+     },
+     {
+      "name": "updated_at",
+      "nullable": false,
+      "type": "datetime"
+     }
+    ],
+    "table_name": "records"
+   },
+   {
+    "description": "Categorisation for records.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "categories"
+   },
+   {
+    "description": "Comments / activity on records.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "record_id",
+      "nullable": false,
+      "references": "records.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "user_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "body",
+      "type": "text"
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "comments"
+   }
+  ],
+  "workflows": [
+   {
+    "steps": [
+     "User creates a record",
+     "Staff reviews/updates it",
+     "Record moves through statuses",
+     "System notifies stakeholders",
+     "Record is archived when done"
+    ],
+    "workflow_name": "Core Record Lifecycle"
+   }
+  ]
+ },
+ "hospital": {
+  "app_type_primary": "Clinic Management with Appointments, EMR and Admin Dashboard",
+  "feature_options": [
+   "Online appointment booking",
+   "Doctor consultation / EMR",
+   "Prescriptions",
+   "Billing & invoices",
+   "Lab tests",
+   "Pharmacy",
+   "Patient portal"
+  ],
+  "integrations": [
+   {
+    "description": "Consultation/billing payments.",
+    "name": "Payment Gateway",
+    "required": false,
+    "type": "payment"
+   },
+   {
+    "description": "Appointment reminders.",
+    "name": "SMS Reminders",
+    "required": false,
+    "type": "messaging"
+   }
+  ],
+  "keywords": [
+   "hospital",
+   "clinic",
+   "patient",
+   "doctor",
+   "appointment",
+   "healthcare",
+   "medical",
+   "pharmacy",
+   "diagnosis",
+   "prescription",
+   "emr",
+   "nurse",
+   "ward",
+   "lab",
+   "treatment"
+  ],
+  "label": "Healthcare / Clinic",
+  "modules": [
+   "Public Website",
+   "Authentication",
+   "Patient Management",
+   "Appointments",
+   "Consultations / EMR",
+   "Prescriptions",
+   "Pharmacy & Billing",
+   "Lab Tests",
+   "Reports & Analytics",
+   "Notifications",
+   "Settings"
+  ],
+  "nfr_focus": [
+   "Patient medical records are sensitive and must be access-controlled and encrypted at rest",
+   "All record access must be audit-logged for compliance"
+  ],
+  "notifications": [
+   {
+    "channels": [
+     "email",
+     "sms",
+     "in_app"
+    ],
+    "event": "Appointment Confirmed",
+    "recipients": [
+     "patient"
+    ]
+   },
+   {
+    "channels": [
+     "sms",
+     "in_app"
+    ],
+    "event": "Appointment Reminder",
+    "recipients": [
+     "patient"
+    ]
+   }
+  ],
+  "protected_pages": [
+   {
+    "allowed_roles": [
+     "patient"
+    ],
+    "functions": [
+     "Book/cancel appointment",
+     "View prescriptions",
+     "View invoices",
+     "Download records"
+    ],
+    "page_name": "Patient Portal",
+    "page_type": "portal",
+    "route": "/patient"
+   },
+   {
+    "allowed_roles": [
+     "doctor"
+    ],
+    "functions": [
+     "View schedule",
+     "Start consultation",
+     "Write diagnosis",
+     "Prescribe"
+    ],
+    "page_name": "Doctor Console",
+    "page_type": "dashboard",
+    "route": "/doctor"
+   },
+   {
+    "allowed_roles": [
+     "receptionist",
+     "admin"
+    ],
+    "functions": [
+     "Register patient",
+     "Book appointment",
+     "Take payment"
+    ],
+    "page_name": "Reception",
+    "page_type": "dashboard",
+    "route": "/reception"
+   },
+   {
+    "allowed_roles": [
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Manage staff",
+     "Schedules",
+     "Billing",
+     "Reports"
+    ],
+    "page_name": "Admin Dashboard",
+    "page_type": "dashboard",
+    "route": "/admin"
+   }
+  ],
+  "public_pages": [
+   {
+    "page_name": "Home",
+    "route": "/",
+    "sections": [
+     "Hero + book appointment",
+     "Specialties",
+     "Doctors",
+     "Footer"
+    ]
+   },
+   {
+    "page_name": "Doctors",
+    "route": "/doctors",
+    "sections": [
+     "Doctor list",
+     "Filter by specialty",
+     "Availability"
+    ]
+   },
+   {
+    "page_name": "Book Appointment",
+    "route": "/book",
+    "sections": [
+     "Select doctor/slot",
+     "Patient details",
+     "Confirm"
+    ]
+   }
+  ],
+  "relationships": [
+   {
+    "description": "A patient has many appointments.",
+    "from": "patients.id",
+    "to": "appointments.patient_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A doctor has many appointments.",
+    "from": "doctors.id",
+    "to": "appointments.doctor_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "An appointment yields one consultation.",
+    "from": "appointments.id",
+    "to": "consultations.appointment_id",
+    "type": "one_to_one"
+   },
+   {
+    "description": "A consultation has many prescriptions.",
+    "from": "consultations.id",
+    "to": "prescriptions.consultation_id",
+    "type": "one_to_many"
+   }
+  ],
+  "reports": [
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "doctor",
+     "status"
+    ],
+    "report_name": "Appointments Report"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "doctor"
+    ],
+    "report_name": "Revenue Report"
+   }
+  ],
+  "risks": [
+   {
+    "area": "Compliance",
+    "mitigation": "Encryption at rest, strict RBAC, full audit trail.",
+    "reason": "Medical data is highly sensitive.",
+    "risk": "PHI exposure",
+    "severity": "High"
+   }
+  ],
+  "roles": [
+   {
+    "description": "Full system owner with access to all settings, users, and audit logs.",
+    "role_key": "super_admin",
+    "role_name": "Super Admin"
+   },
+   {
+    "description": "Manages staff, schedules, billing, and settings.",
+    "role_key": "admin",
+    "role_name": "Clinic Admin"
+   },
+   {
+    "description": "Manages appointments, consultations, and prescriptions.",
+    "role_key": "doctor",
+    "role_name": "Doctor"
+   },
+   {
+    "description": "Records vitals and assists consultations.",
+    "role_key": "nurse",
+    "role_name": "Nurse"
+   },
+   {
+    "description": "Registers patients and books appointments.",
+    "role_key": "receptionist",
+    "role_name": "Receptionist"
+   },
+   {
+    "description": "Books appointments and views records/prescriptions.",
+    "role_key": "patient",
+    "role_name": "Patient"
+   },
+   {
+    "description": "Browses public pages and submits inquiries without login.",
+    "role_key": "guest",
+    "role_name": "Public Guest"
+   }
+  ],
+  "system_category": "Hospital / Clinic Management Web Application",
+  "tables": [
+   {
+    "description": "Patient demographic and medical profile.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "user_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "mrn",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "full_name",
+      "type": "string"
+     },
+     {
+      "name": "date_of_birth",
+      "nullable": true,
+      "type": "date"
+     },
+     {
+      "name": "gender",
+      "nullable": true,
+      "type": "enum",
+      "values": [
+       "male",
+       "female",
+       "other"
+      ]
+     },
+     {
+      "name": "blood_group",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "patients"
+   },
+   {
+    "description": "Doctor profiles and specialties.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "user_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "specialty",
+      "type": "string"
+     },
+     {
+      "name": "license_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "default": 0,
+      "name": "consultation_fee",
+      "type": "decimal"
+     }
+    ],
+    "table_name": "doctors"
+   },
+   {
+    "description": "Patient appointments with doctors.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "patient_id",
+      "nullable": false,
+      "references": "patients.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "doctor_id",
+      "nullable": false,
+      "references": "doctors.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "scheduled_at",
+      "type": "datetime"
+     },
+     {
+      "name": "reason",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "default": "booked",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "booked",
+       "confirmed",
+       "in_consultation",
+       "completed",
+       "cancelled",
+       "no_show"
+      ]
+     }
+    ],
+    "table_name": "appointments"
+   },
+   {
+    "description": "EMR consultation notes.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "appointment_id",
+      "nullable": false,
+      "references": "appointments.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "patient_id",
+      "nullable": false,
+      "references": "patients.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "symptoms",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "name": "diagnosis",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "name": "notes",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "consultations"
+   },
+   {
+    "description": "Medications prescribed during a consultation.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "consultation_id",
+      "nullable": false,
+      "references": "consultations.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "medication",
+      "type": "string"
+     },
+     {
+      "name": "dosage",
+      "type": "string"
+     },
+     {
+      "name": "frequency",
+      "type": "string"
+     },
+     {
+      "name": "duration",
+      "type": "string"
+     }
+    ],
+    "table_name": "prescriptions"
+   },
+   {
+    "description": "Patient billing.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "invoice_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "patient_id",
+      "nullable": false,
+      "references": "patients.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "total_amount",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "paid_amount",
+      "type": "decimal"
+     },
+     {
+      "default": "unpaid",
+      "name": "payment_status",
+      "type": "enum",
+      "values": [
+       "unpaid",
+       "partial",
+       "paid"
+      ]
+     }
+    ],
+    "table_name": "invoices"
+   }
+  ],
+  "workflows": [
+   {
+    "steps": [
+     "Patient books an appointment",
+     "Receptionist confirms and collects details",
+     "Nurse records vitals",
+     "Doctor consults and records diagnosis",
+     "Doctor issues prescription",
+     "System bills the patient and updates records"
+    ],
+    "workflow_name": "Appointment & Consultation Workflow"
+   }
+  ]
+ },
+ "hotel": {
+  "app_type_primary": "Hotel Management System with Booking Portal and Admin Dashboard",
+  "feature_options": [
+   "Online booking & payments",
+   "Front desk check-in/out",
+   "Housekeeping board",
+   "Channel manager / OTA sync",
+   "Loyalty programme",
+   "Reviews & ratings",
+   "Multi-property support",
+   "Dynamic / seasonal pricing"
+  ],
+  "integrations": [
+   {
+    "description": "Online card payments for bookings.",
+    "name": "Payment Gateway",
+    "required": false,
+    "type": "payment"
+   },
+   {
+    "description": "Sync availability with OTAs (Booking.com, Expedia).",
+    "name": "Channel Manager / OTA",
+    "required": false,
+    "type": "distribution"
+   }
+  ],
+  "keywords": [
+   "hotel",
+   "room",
+   "booking",
+   "guest",
+   "reservation",
+   "hospitality",
+   "check-in",
+   "checkout",
+   "stay",
+   "resort",
+   "lodge",
+   "suite",
+   "occupancy"
+  ],
+  "label": "Hospitality SaaS",
+  "modules": [
+   "Public Website",
+   "Authentication",
+   "Room & Inventory Management",
+   "Booking Engine",
+   "Front Desk Operations",
+   "Housekeeping",
+   "Payments & Invoicing",
+   "Guest Management",
+   "Reviews & Ratings",
+   "Reports & Analytics",
+   "Notifications",
+   "Settings"
+  ],
+  "nfr_focus": [
+   "Prevent double-booking of the same room/date (concurrency control)",
+   "Online payments must be PCI-DSS compliant via a hosted gateway"
+  ],
+  "notifications": [
+   {
+    "channels": [
+     "email",
+     "in_app"
+    ],
+    "event": "Booking Confirmed",
+    "recipients": [
+     "guest_user"
+    ]
+   },
+   {
+    "channels": [
+     "in_app",
+     "email"
+    ],
+    "event": "Upcoming Arrival",
+    "recipients": [
+     "front_desk"
+    ]
+   },
+   {
+    "channels": [
+     "email",
+     "in_app"
+    ],
+    "event": "Payment Received",
+    "recipients": [
+     "guest_user",
+     "admin"
+    ]
+   },
+   {
+    "channels": [
+     "in_app"
+    ],
+    "event": "Room Needs Cleaning",
+    "recipients": [
+     "housekeeping"
+    ]
+   }
+  ],
+  "protected_pages": [
+   {
+    "allowed_roles": [
+     "guest_user"
+    ],
+    "functions": [
+     "View bookings",
+     "Modify/cancel booking",
+     "Download invoice",
+     "Leave review"
+    ],
+    "page_name": "Guest Dashboard",
+    "page_type": "portal",
+    "route": "/account"
+   },
+   {
+    "allowed_roles": [
+     "front_desk",
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Check-in",
+     "Check-out",
+     "Create walk-in booking",
+     "Assign room",
+     "Take payment"
+    ],
+    "page_name": "Front Desk",
+    "page_type": "dashboard",
+    "route": "/desk"
+   },
+   {
+    "allowed_roles": [
+     "housekeeping",
+     "admin"
+    ],
+    "functions": [
+     "View room status",
+     "Mark clean/dirty",
+     "Flag maintenance"
+    ],
+    "page_name": "Housekeeping Board",
+    "page_type": "dashboard",
+    "route": "/housekeeping"
+   },
+   {
+    "allowed_roles": [
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Manage room types",
+     "Manage rooms",
+     "Manage rate plans"
+    ],
+    "page_name": "Rooms & Rates",
+    "page_type": "dashboard",
+    "route": "/admin/rooms"
+   },
+   {
+    "allowed_roles": [
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Occupancy",
+     "Revenue (ADR/RevPAR)",
+     "Booking source mix"
+    ],
+    "page_name": "Reports",
+    "page_type": "dashboard",
+    "route": "/admin/reports"
+   }
+  ],
+  "public_pages": [
+   {
+    "page_name": "Home",
+    "route": "/",
+    "sections": [
+     "Hero with search (dates, guests)",
+     "Featured room types",
+     "Amenities",
+     "Gallery",
+     "Guest reviews",
+     "Location map",
+     "Footer"
+    ]
+   },
+   {
+    "page_name": "Rooms",
+    "route": "/rooms",
+    "sections": [
+     "Room type list",
+     "Filters (price, occupancy, amenities)",
+     "Availability calendar"
+    ]
+   },
+   {
+    "page_name": "Room Details",
+    "route": "/rooms/[id]",
+    "sections": [
+     "Photos",
+     "Amenities",
+     "Rate plans",
+     "Book now"
+    ]
+   },
+   {
+    "page_name": "Contact",
+    "route": "/contact",
+    "sections": [
+     "Inquiry form",
+     "Map",
+     "Phone/email"
+    ]
+   }
+  ],
+  "relationships": [
+   {
+    "description": "A room type has many rooms.",
+    "from": "room_types.id",
+    "to": "rooms.room_type_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A room can have many bookings over time.",
+    "from": "rooms.id",
+    "to": "bookings.room_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A booking can have many payments/refunds.",
+    "from": "bookings.id",
+    "to": "payments.booking_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A completed booking can have one review.",
+    "from": "bookings.id",
+    "to": "reviews.booking_id",
+    "type": "one_to_one"
+   }
+  ],
+  "reports": [
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "room type"
+    ],
+    "report_name": "Occupancy Report"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "source",
+     "room type"
+    ],
+    "report_name": "Revenue Report"
+   }
+  ],
+  "risks": [
+   {
+    "area": "Bookings",
+    "mitigation": "Optimistic locking + idempotent reservation creation.",
+    "reason": "Race conditions on the same room/date.",
+    "risk": "Concurrent Bookings",
+    "severity": "Medium"
+   },
+   {
+    "area": "Payments",
+    "mitigation": "Use a hosted checkout (Stripe/PayHere) to reduce scope.",
+    "reason": "PCI-DSS compliance complexity.",
+    "risk": "Payment Processing",
+    "severity": "High"
+   }
+  ],
+  "roles": [
+   {
+    "description": "Full system owner with access to all settings, users, and audit logs.",
+    "role_key": "super_admin",
+    "role_name": "Super Admin"
+   },
+   {
+    "description": "Manages property, rooms, rates, staff, and settings.",
+    "role_key": "admin",
+    "role_name": "Hotel Admin"
+   },
+   {
+    "description": "Handles check-in, check-out, walk-ins, and guest requests.",
+    "role_key": "front_desk",
+    "role_name": "Front Desk"
+   },
+   {
+    "description": "Updates room cleaning status and maintenance flags.",
+    "role_key": "housekeeping",
+    "role_name": "Housekeeping"
+   },
+   {
+    "description": "Searches rooms, books stays, pays online, and manages reservations.",
+    "role_key": "guest_user",
+    "role_name": "Guest"
+   },
+   {
+    "description": "Browses public pages and submits inquiries without login.",
+    "role_key": "guest",
+    "role_name": "Public Guest"
+   }
+  ],
+  "system_category": "Hotel Management and Booking Web Application",
+  "tables": [
+   {
+    "description": "Categories of rooms with base rate and capacity.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "name",
+      "nullable": false,
+      "type": "string"
+     },
+     {
+      "name": "description",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "name": "base_rate",
+      "nullable": false,
+      "type": "decimal"
+     },
+     {
+      "default": 2,
+      "name": "max_occupancy",
+      "type": "integer"
+     },
+     {
+      "name": "amenities",
+      "nullable": true,
+      "type": "json"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "room_types"
+   },
+   {
+    "description": "Physical rooms belonging to a room type.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "room_type_id",
+      "nullable": false,
+      "references": "room_types.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "room_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "floor",
+      "nullable": true,
+      "type": "integer"
+     },
+     {
+      "default": "clean",
+      "name": "housekeeping_status",
+      "type": "enum",
+      "values": [
+       "clean",
+       "dirty",
+       "inspected",
+       "out_of_service"
+      ]
+     },
+     {
+      "default": "available",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "available",
+       "occupied",
+       "maintenance"
+      ]
+     }
+    ],
+    "table_name": "rooms"
+   },
+   {
+    "description": "Guest reservations across stay dates.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "booking_reference",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "guest_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "room_id",
+      "nullable": true,
+      "references": "rooms.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "room_type_id",
+      "nullable": false,
+      "references": "room_types.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "check_in",
+      "nullable": false,
+      "type": "date"
+     },
+     {
+      "name": "check_out",
+      "nullable": false,
+      "type": "date"
+     },
+     {
+      "default": 1,
+      "name": "adults",
+      "type": "integer"
+     },
+     {
+      "default": 0,
+      "name": "children",
+      "type": "integer"
+     },
+     {
+      "name": "total_amount",
+      "type": "decimal"
+     },
+     {
+      "default": "website",
+      "name": "source",
+      "type": "enum",
+      "values": [
+       "website",
+       "walk_in",
+       "phone",
+       "ota"
+      ]
+     },
+     {
+      "default": "pending",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "pending",
+       "confirmed",
+       "checked_in",
+       "checked_out",
+       "cancelled",
+       "no_show"
+      ]
+     }
+    ],
+    "table_name": "bookings"
+   },
+   {
+    "description": "Seasonal / promotional pricing for room types.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "room_type_id",
+      "nullable": false,
+      "references": "room_types.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "name": "price",
+      "type": "decimal"
+     },
+     {
+      "name": "start_date",
+      "type": "date"
+     },
+     {
+      "name": "end_date",
+      "type": "date"
+     },
+     {
+      "default": 1,
+      "name": "min_nights",
+      "type": "integer"
+     }
+    ],
+    "table_name": "rate_plans"
+   },
+   {
+    "description": "Payments and refunds against bookings.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "booking_id",
+      "nullable": false,
+      "references": "bookings.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "amount",
+      "type": "decimal"
+     },
+     {
+      "name": "method",
+      "type": "enum",
+      "values": [
+       "card",
+       "cash",
+       "bank_transfer",
+       "online_gateway"
+      ]
+     },
+     {
+      "name": "transaction_reference",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "default": "pending",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "pending",
+       "paid",
+       "failed",
+       "refunded"
+      ]
+     },
+     {
+      "name": "paid_at",
+      "nullable": true,
+      "type": "datetime"
+     }
+    ],
+    "table_name": "payments"
+   },
+   {
+    "description": "Guest reviews after checkout.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "booking_id",
+      "nullable": false,
+      "references": "bookings.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "guest_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "rating",
+      "type": "integer"
+     },
+     {
+      "name": "comment",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "reviews"
+   }
+  ],
+  "workflows": [
+   {
+    "steps": [
+     "Guest searches by dates and occupancy",
+     "System shows available room types and rates",
+     "Guest selects room type and rate plan",
+     "Guest enters details and pays online",
+     "System creates confirmed booking",
+     "System emails confirmation and invoice",
+     "Front desk sees upcoming arrival"
+    ],
+    "workflow_name": "Online Booking Workflow"
+   },
+   {
+    "steps": [
+     "Front desk opens arrival",
+     "Front desk verifies ID and assigns room",
+     "System marks booking checked_in and room occupied",
+     "On departure front desk records charges",
+     "System marks checked_out and room dirty",
+     "Housekeeping is notified to clean room"
+    ],
+    "workflow_name": "Check-in / Check-out Workflow"
+   }
+  ]
+ },
+ "restaurant": {
+  "app_type_primary": "Food Ordering & Restaurant Management with Kitchen and Admin Dashboard",
+  "feature_options": [
+   "Online ordering (delivery/pickup)",
+   "Table QR ordering",
+   "Kitchen display board",
+   "Menu & modifier management",
+   "Online payments",
+   "Own delivery / driver app",
+   "Table reservations",
+   "Loyalty & promotions",
+   "Live order tracking",
+   "Ingredient stock alerts"
+  ],
+  "integrations": [
+   {
+    "description": "Online card/wallet payments at checkout.",
+    "name": "Payment Gateway",
+    "required": false,
+    "type": "payment"
+   },
+   {
+    "description": "Address autocomplete + delivery distance/ETA.",
+    "name": "Google Maps",
+    "required": false,
+    "type": "maps"
+   },
+   {
+    "description": "Order status updates to customers.",
+    "name": "SMS / WhatsApp",
+    "required": false,
+    "type": "messaging"
+   },
+   {
+    "description": "Push orders to aggregator couriers.",
+    "name": "Third-party Delivery (Uber Eats/Deliveroo)",
+    "required": false,
+    "type": "delivery"
+   }
+  ],
+  "keywords": [
+   "restaurant",
+   "food",
+   "menu",
+   "dish",
+   "meal",
+   "cuisine",
+   "cafe",
+   "kitchen",
+   "order",
+   "ordering",
+   "delivery",
+   "takeaway",
+   "dine",
+   "dine-in",
+   "table",
+   "reservation",
+   "recipe",
+   "pizza",
+   "burger",
+   "bakery",
+   "catering",
+   "waiter",
+   "chef"
+  ],
+  "label": "Food & Restaurant",
+  "modules": [
+   "Public Website",
+   "Authentication",
+   "Menu Management",
+   "Online Ordering & Cart",
+   "Table QR Ordering",
+   "Kitchen Display (KDS)",
+   "Order Management",
+   "Payments",
+   "Delivery Management",
+   "Reservations",
+   "Promotions & Loyalty",
+   "Reports & Analytics",
+   "Notifications",
+   "Settings"
+  ],
+  "nfr_focus": [
+   "The kitchen display must update in near real-time (websockets) so new orders appear within ~2 seconds",
+   "Online payments must use a PCI-DSS compliant hosted gateway"
+  ],
+  "notifications": [
+   {
+    "channels": [
+     "in_app",
+     "email",
+     "sms"
+    ],
+    "event": "Order Placed",
+    "recipients": [
+     "customer",
+     "kitchen_staff"
+    ]
+   },
+   {
+    "channels": [
+     "sms",
+     "in_app"
+    ],
+    "event": "Order Ready / Out for Delivery",
+    "recipients": [
+     "customer",
+     "delivery_driver"
+    ]
+   },
+   {
+    "channels": [
+     "in_app"
+    ],
+    "event": "New Order (Kitchen)",
+    "recipients": [
+     "kitchen_staff"
+    ]
+   },
+   {
+    "channels": [
+     "email"
+    ],
+    "event": "Daily Sales Summary",
+    "recipients": [
+     "manager"
+    ]
+   }
+  ],
+  "protected_pages": [
+   {
+    "allowed_roles": [
+     "customer"
+    ],
+    "functions": [
+     "Order history",
+     "Reorder",
+     "Saved addresses",
+     "Loyalty points",
+     "My reservations"
+    ],
+    "page_name": "Customer Account",
+    "page_type": "portal",
+    "route": "/account"
+   },
+   {
+    "allowed_roles": [
+     "kitchen_staff",
+     "manager",
+     "admin"
+    ],
+    "functions": [
+     "See new orders live",
+     "Accept order",
+     "Mark preparing/ready",
+     "Bump completed tickets"
+    ],
+    "page_name": "Kitchen Display",
+    "page_type": "dashboard",
+    "route": "/kds"
+   },
+   {
+    "allowed_roles": [
+     "manager",
+     "cashier",
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "View all orders",
+     "Refund/cancel",
+     "Assign driver",
+     "Reprint receipt"
+    ],
+    "page_name": "Order Management",
+    "page_type": "dashboard",
+    "route": "/admin/orders"
+   },
+   {
+    "allowed_roles": [
+     "manager",
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Create/edit items",
+     "Manage categories & modifiers",
+     "Set availability/sold-out",
+     "Pricing"
+    ],
+    "page_name": "Menu Management",
+    "page_type": "dashboard",
+    "route": "/admin/menu"
+   },
+   {
+    "allowed_roles": [
+     "manager",
+     "delivery_driver",
+     "admin"
+    ],
+    "functions": [
+     "Assign deliveries",
+     "Update status",
+     "Driver view of route"
+    ],
+    "page_name": "Delivery Board",
+    "page_type": "dashboard",
+    "route": "/admin/delivery"
+   },
+   {
+    "allowed_roles": [
+     "manager",
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Sales by day/item/channel",
+     "Peak hours",
+     "Average order value",
+     "Top dishes"
+    ],
+    "page_name": "Reports",
+    "page_type": "dashboard",
+    "route": "/admin/reports"
+   }
+  ],
+  "public_pages": [
+   {
+    "page_name": "Home",
+    "route": "/",
+    "sections": [
+     "Hero with order CTA",
+     "Featured dishes",
+     "How it works",
+     "Offers",
+     "Reviews",
+     "Location & hours",
+     "Footer"
+    ]
+   },
+   {
+    "page_name": "Menu",
+    "route": "/menu",
+    "sections": [
+     "Category tabs",
+     "Dish cards with photo/price",
+     "Add to cart",
+     "Search & filters (veg, spicy)"
+    ]
+   },
+   {
+    "page_name": "Cart & Checkout",
+    "route": "/checkout",
+    "sections": [
+     "Cart summary",
+     "Delivery/pickup choice",
+     "Address & time",
+     "Payment",
+     "Place order"
+    ]
+   },
+   {
+    "page_name": "Track Order",
+    "route": "/track/[order]",
+    "sections": [
+     "Live status timeline",
+     "ETA",
+     "Driver location"
+    ]
+   },
+   {
+    "page_name": "Reserve a Table",
+    "route": "/reserve",
+    "sections": [
+     "Date/time/party size",
+     "Confirm reservation"
+    ]
+   }
+  ],
+  "relationships": [
+   {
+    "description": "A category has many menu items.",
+    "from": "menu_categories.id",
+    "to": "menu_items.category_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "An item has many modifiers.",
+    "from": "menu_items.id",
+    "to": "item_modifiers.menu_item_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "An order has many line items.",
+    "from": "orders.id",
+    "to": "order_items.order_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A menu item appears in many order lines.",
+    "from": "menu_items.id",
+    "to": "order_items.menu_item_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "An order can have payments/refunds.",
+    "from": "orders.id",
+    "to": "payments.order_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A delivery order has one delivery record.",
+    "from": "orders.id",
+    "to": "deliveries.order_id",
+    "type": "one_to_one"
+   },
+   {
+    "description": "A table can have many QR orders over time.",
+    "from": "dining_tables.id",
+    "to": "orders.dining_table_id",
+    "type": "one_to_many"
+   }
+  ],
+  "reports": [
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "channel",
+     "item",
+     "branch"
+    ],
+    "report_name": "Sales Report"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "category"
+    ],
+    "report_name": "Top Items Report"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "driver"
+    ],
+    "report_name": "Delivery Performance"
+   }
+  ],
+  "risks": [
+   {
+    "area": "Realtime",
+    "mitigation": "WebSocket push + audible alert + auto-retry polling.",
+    "reason": "Orders that don't appear promptly delay food.",
+    "risk": "Kitchen board lag",
+    "severity": "Medium"
+   },
+   {
+    "area": "Payments",
+    "mitigation": "Use a hosted/tokenised gateway; never store card data.",
+    "reason": "Card handling carries PCI-DSS obligations.",
+    "risk": "Payment Processing",
+    "severity": "High"
+   }
+  ],
+  "roles": [
+   {
+    "description": "Full system owner with access to all settings, users, and audit logs.",
+    "role_key": "super_admin",
+    "role_name": "Super Admin"
+   },
+   {
+    "description": "Manages menu, branches, staff, pricing, and settings.",
+    "role_key": "admin",
+    "role_name": "Restaurant Admin"
+   },
+   {
+    "description": "Oversees daily orders, staff, promotions, and views sales reports.",
+    "role_key": "manager",
+    "role_name": "Manager"
+   },
+   {
+    "description": "Sees incoming orders on a live board and updates cooking status.",
+    "role_key": "kitchen_staff",
+    "role_name": "Kitchen Staff"
+   },
+   {
+    "description": "Takes counter orders and processes payments.",
+    "role_key": "cashier",
+    "role_name": "Cashier / Counter"
+   },
+   {
+    "description": "Receives assigned deliveries and updates delivery status.",
+    "role_key": "delivery_driver",
+    "role_name": "Delivery Driver"
+   },
+   {
+    "description": "Browses the menu, orders (QR/online), pays, and tracks the order.",
+    "role_key": "customer",
+    "role_name": "Customer"
+   },
+   {
+    "description": "Browses public pages and submits inquiries without login.",
+    "role_key": "guest",
+    "role_name": "Public Guest"
+   }
+  ],
+  "system_category": "Online Food Ordering and Restaurant Management Web Application",
+  "tables": [
+   {
+    "description": "Groups of menu items (Starters, Mains, Drinks).",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "name",
+      "nullable": false,
+      "type": "string"
+     },
+     {
+      "default": 0,
+      "name": "display_order",
+      "type": "integer"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "menu_categories"
+   },
+   {
+    "description": "Individual dishes/products on the menu.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "category_id",
+      "nullable": false,
+      "references": "menu_categories.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "name",
+      "nullable": false,
+      "type": "string"
+     },
+     {
+      "name": "description",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "name": "price",
+      "nullable": false,
+      "type": "decimal"
+     },
+     {
+      "name": "image_url",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "default": false,
+      "name": "is_veg",
+      "type": "boolean"
+     },
+     {
+      "default": "none",
+      "name": "spice_level",
+      "type": "enum",
+      "values": [
+       "none",
+       "mild",
+       "medium",
+       "hot"
+      ]
+     },
+     {
+      "default": 15,
+      "name": "prep_minutes",
+      "type": "integer"
+     },
+     {
+      "default": "available",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "available",
+       "sold_out",
+       "hidden"
+      ]
+     }
+    ],
+    "table_name": "menu_items"
+   },
+   {
+    "description": "Add-ons / options for an item (extra cheese, size).",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "menu_item_id",
+      "nullable": false,
+      "references": "menu_items.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "default": 0,
+      "name": "price_delta",
+      "type": "decimal"
+     },
+     {
+      "name": "group",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "default": false,
+      "name": "required",
+      "type": "boolean"
+     }
+    ],
+    "table_name": "item_modifiers"
+   },
+   {
+    "description": "Physical tables with QR codes for in-restaurant ordering.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "table_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "default": 4,
+      "name": "seats",
+      "type": "integer"
+     },
+     {
+      "name": "qr_code",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "default": "free",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "free",
+       "occupied",
+       "reserved"
+      ]
+     }
+    ],
+    "table_name": "dining_tables"
+   },
+   {
+    "description": "Customer orders across channels.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "order_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "customer_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "dining_table_id",
+      "nullable": true,
+      "references": "dining_tables.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": "online_delivery",
+      "name": "channel",
+      "type": "enum",
+      "values": [
+       "dine_in_qr",
+       "online_delivery",
+       "online_pickup",
+       "counter"
+      ]
+     },
+     {
+      "name": "subtotal",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "delivery_fee",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "tax_total",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "tip",
+      "type": "decimal"
+     },
+     {
+      "name": "grand_total",
+      "type": "decimal"
+     },
+     {
+      "name": "notes",
+      "nullable": true,
+      "type": "text"
+     },
+     {
+      "default": "placed",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "placed",
+       "accepted",
+       "preparing",
+       "ready",
+       "out_for_delivery",
+       "completed",
+       "cancelled"
+      ]
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "orders"
+   },
+   {
+    "description": "Line items within an order.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "order_id",
+      "nullable": false,
+      "references": "orders.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "menu_item_id",
+      "nullable": false,
+      "references": "menu_items.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": 1,
+      "name": "quantity",
+      "type": "integer"
+     },
+     {
+      "name": "unit_price",
+      "type": "decimal"
+     },
+     {
+      "name": "selected_modifiers",
+      "nullable": true,
+      "type": "json"
+     },
+     {
+      "name": "line_total",
+      "type": "decimal"
+     },
+     {
+      "name": "notes",
+      "nullable": true,
+      "type": "string"
+     }
+    ],
+    "table_name": "order_items"
+   },
+   {
+    "description": "Payments against orders.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "order_id",
+      "nullable": false,
+      "references": "orders.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "amount",
+      "type": "decimal"
+     },
+     {
+      "name": "method",
+      "type": "enum",
+      "values": [
+       "card",
+       "cash",
+       "online_gateway",
+       "wallet"
+      ]
+     },
+     {
+      "name": "transaction_reference",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "default": "pending",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "pending",
+       "paid",
+       "failed",
+       "refunded"
+      ]
+     },
+     {
+      "name": "paid_at",
+      "nullable": true,
+      "type": "datetime"
+     }
+    ],
+    "table_name": "payments"
+   },
+   {
+    "description": "Delivery assignments and tracking.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "order_id",
+      "nullable": false,
+      "references": "orders.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "driver_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "address",
+      "type": "text"
+     },
+     {
+      "name": "lat",
+      "nullable": true,
+      "type": "decimal"
+     },
+     {
+      "name": "lng",
+      "nullable": true,
+      "type": "decimal"
+     },
+     {
+      "default": "assigned",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "assigned",
+       "picked_up",
+       "delivered",
+       "failed"
+      ]
+     },
+     {
+      "name": "eta_minutes",
+      "nullable": true,
+      "type": "integer"
+     }
+    ],
+    "table_name": "deliveries"
+   },
+   {
+    "description": "Table reservations.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "customer_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "dining_table_id",
+      "nullable": true,
+      "references": "dining_tables.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "party_size",
+      "type": "integer"
+     },
+     {
+      "name": "reserved_at",
+      "type": "datetime"
+     },
+     {
+      "default": "booked",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "booked",
+       "seated",
+       "completed",
+       "cancelled",
+       "no_show"
+      ]
+     }
+    ],
+    "table_name": "reservations"
+   },
+   {
+    "description": "Discounts, coupons, and loyalty offers.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "code",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "description",
+      "type": "string"
+     },
+     {
+      "name": "discount_type",
+      "type": "enum",
+      "values": [
+       "percent",
+       "amount",
+       "free_item"
+      ]
+     },
+     {
+      "name": "value",
+      "type": "decimal"
+     },
+     {
+      "name": "starts_at",
+      "nullable": true,
+      "type": "date"
+     },
+     {
+      "name": "ends_at",
+      "nullable": true,
+      "type": "date"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "expired",
+       "disabled"
+      ]
+     }
+    ],
+    "table_name": "promotions"
+   }
+  ],
+  "workflows": [
+   {
+    "steps": [
+     "Customer browses the menu and adds items + modifiers to cart",
+     "Customer chooses delivery or pickup and a time",
+     "Customer pays online",
+     "System creates the order and shows it on the Kitchen Display",
+     "Kitchen accepts and marks preparing → ready",
+     "Driver is assigned (for delivery) and delivers",
+     "Customer is notified at each step and the order is completed"
+    ],
+    "workflow_name": "Online Order Workflow"
+   },
+   {
+    "steps": [
+     "Guest scans the QR code on their table",
+     "System opens the menu for that table",
+     "Guest adds items and places the order",
+     "Order appears on the Kitchen Display tagged with the table",
+     "Kitchen prepares and serves to the table",
+     "Guest pays at the table or counter",
+     "Table is marked free"
+    ],
+    "workflow_name": "Table QR Ordering Workflow"
+   }
+  ]
+ },
+ "retail": {
+  "app_type_primary": "Retail POS with Inventory, E-commerce and Admin Dashboard",
+  "feature_options": [
+   "In-store POS",
+   "Online storefront",
+   "Barcode scanning",
+   "Multi-warehouse stock",
+   "Supplier purchase orders",
+   "Loyalty points",
+   "Discounts & promotions",
+   "Tax management"
+  ],
+  "integrations": [
+   {
+    "description": "Card payments for POS and online checkout.",
+    "name": "Payment Gateway",
+    "required": false,
+    "type": "payment"
+   },
+   {
+    "description": "USB/Bluetooth barcode scanning at POS.",
+    "name": "Barcode Scanner",
+    "required": false,
+    "type": "hardware"
+   },
+   {
+    "description": "Thermal receipt printing.",
+    "name": "Receipt Printer",
+    "required": false,
+    "type": "hardware"
+   }
+  ],
+  "keywords": [
+   "retail",
+   "pos",
+   "point of sale",
+   "inventory",
+   "stock",
+   "product",
+   "sku",
+   "cashier",
+   "store",
+   "warehouse",
+   "supplier",
+   "barcode",
+   "ecommerce",
+   "shop",
+   "cart",
+   "checkout"
+  ],
+  "label": "Retail / POS",
+  "modules": [
+   "Public Storefront",
+   "Authentication",
+   "Product Catalog",
+   "Inventory Management",
+   "Point of Sale (POS)",
+   "Orders & Cart",
+   "Suppliers & Purchasing",
+   "Payments",
+   "Customers & Loyalty",
+   "Reports & Analytics",
+   "Notifications",
+   "Settings"
+  ],
+  "nfr_focus": [
+   "POS must keep working briefly offline and sync when reconnected",
+   "Inventory decrements must be atomic to avoid overselling"
+  ],
+  "notifications": [
+   {
+    "channels": [
+     "in_app",
+     "email"
+    ],
+    "event": "Low Stock",
+    "recipients": [
+     "inventory_clerk",
+     "store_manager"
+    ]
+   },
+   {
+    "channels": [
+     "email",
+     "in_app"
+    ],
+    "event": "Order Placed (Online)",
+    "recipients": [
+     "customer",
+     "store_manager"
+    ]
+   },
+   {
+    "channels": [
+     "email"
+    ],
+    "event": "Refund Issued",
+    "recipients": [
+     "customer",
+     "store_manager"
+    ]
+   }
+  ],
+  "protected_pages": [
+   {
+    "allowed_roles": [
+     "cashier",
+     "store_manager",
+     "super_admin"
+    ],
+    "functions": [
+     "Scan/search product",
+     "Add to ticket",
+     "Apply discount",
+     "Take payment",
+     "Print receipt",
+     "Open/close till"
+    ],
+    "page_name": "POS Terminal",
+    "page_type": "pos",
+    "route": "/pos"
+   },
+   {
+    "allowed_roles": [
+     "inventory_clerk",
+     "store_manager",
+     "super_admin"
+    ],
+    "functions": [
+     "Receive stock",
+     "Stock adjustments",
+     "Low-stock alerts",
+     "Stock transfer"
+    ],
+    "page_name": "Inventory",
+    "page_type": "dashboard",
+    "route": "/admin/inventory"
+   },
+   {
+    "allowed_roles": [
+     "store_manager",
+     "super_admin"
+    ],
+    "functions": [
+     "Create/edit product",
+     "Manage categories",
+     "Manage pricing & tax"
+    ],
+    "page_name": "Products",
+    "page_type": "dashboard",
+    "route": "/admin/products"
+   },
+   {
+    "allowed_roles": [
+     "store_manager",
+     "super_admin"
+    ],
+    "functions": [
+     "Manage suppliers",
+     "Create purchase orders",
+     "Receive PO"
+    ],
+    "page_name": "Purchasing",
+    "page_type": "dashboard",
+    "route": "/admin/purchasing"
+   },
+   {
+    "allowed_roles": [
+     "store_manager",
+     "super_admin"
+    ],
+    "functions": [
+     "Sales by day/product",
+     "Inventory valuation",
+     "Profit margin"
+    ],
+    "page_name": "Reports",
+    "page_type": "dashboard",
+    "route": "/admin/reports"
+   }
+  ],
+  "public_pages": [
+   {
+    "page_name": "Storefront Home",
+    "route": "/",
+    "sections": [
+     "Hero",
+     "Featured products",
+     "Categories",
+     "Promotions",
+     "Footer"
+    ]
+   },
+   {
+    "page_name": "Shop",
+    "route": "/shop",
+    "sections": [
+     "Product grid",
+     "Filters (category, price)",
+     "Search",
+     "Add to cart"
+    ]
+   },
+   {
+    "page_name": "Product Details",
+    "route": "/product/[sku]",
+    "sections": [
+     "Gallery",
+     "Price/stock",
+     "Add to cart",
+     "Related products"
+    ]
+   },
+   {
+    "page_name": "Cart & Checkout",
+    "route": "/checkout",
+    "sections": [
+     "Cart summary",
+     "Address",
+     "Payment",
+     "Place order"
+    ]
+   }
+  ],
+  "relationships": [
+   {
+    "description": "A category has many products.",
+    "from": "categories.id",
+    "to": "products.category_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A product has stock across warehouses.",
+    "from": "products.id",
+    "to": "inventory.product_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A sale has many line items.",
+    "from": "sales_orders.id",
+    "to": "sales_order_items.sales_order_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A supplier receives many purchase orders.",
+    "from": "suppliers.id",
+    "to": "purchase_orders.supplier_id",
+    "type": "one_to_many"
+   }
+  ],
+  "reports": [
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "channel",
+     "cashier",
+     "product"
+    ],
+    "report_name": "Sales Report"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "warehouse",
+     "category"
+    ],
+    "report_name": "Inventory Valuation"
+   }
+  ],
+  "risks": [
+   {
+    "area": "Inventory",
+    "mitigation": "Atomic stock decrement with reservation + transaction.",
+    "reason": "Concurrent POS + online sales of last unit.",
+    "risk": "Overselling",
+    "severity": "High"
+   },
+   {
+    "area": "POS",
+    "mitigation": "Local queue with sync on reconnect.",
+    "reason": "Network drops at the till stop sales.",
+    "risk": "Offline Resilience",
+    "severity": "Medium"
+   }
+  ],
+  "roles": [
+   {
+    "description": "Full system owner with access to all settings, users, and audit logs.",
+    "role_key": "super_admin",
+    "role_name": "Super Admin"
+   },
+   {
+    "description": "Manages store inventory, pricing, staff, and reports.",
+    "role_key": "store_manager",
+    "role_name": "Store Manager"
+   },
+   {
+    "description": "Operates the POS, scans products, and takes payments.",
+    "role_key": "cashier",
+    "role_name": "Cashier"
+   },
+   {
+    "description": "Receives stock, adjusts quantities, and manages suppliers.",
+    "role_key": "inventory_clerk",
+    "role_name": "Inventory Clerk"
+   },
+   {
+    "description": "Browses the online store, places orders, and tracks delivery.",
+    "role_key": "customer",
+    "role_name": "Customer"
+   },
+   {
+    "description": "Browses public pages and submits inquiries without login.",
+    "role_key": "guest",
+    "role_name": "Public Guest"
+   }
+  ],
+  "system_category": "Retail POS, Inventory and E-commerce Web Application",
+  "tables": [
+   {
+    "description": "Product categories / departments.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "name": "parent_id",
+      "nullable": true,
+      "references": "categories.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "categories"
+   },
+   {
+    "description": "Sellable products / SKUs.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "sku",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "name",
+      "nullable": false,
+      "type": "string"
+     },
+     {
+      "name": "category_id",
+      "nullable": true,
+      "references": "categories.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "barcode",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "name": "cost_price",
+      "type": "decimal"
+     },
+     {
+      "name": "sell_price",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "tax_rate",
+      "type": "decimal"
+     },
+     {
+      "default": 5,
+      "name": "reorder_level",
+      "type": "integer"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "discontinued"
+      ]
+     }
+    ],
+    "table_name": "products"
+   },
+   {
+    "description": "Per-warehouse stock levels.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "product_id",
+      "nullable": false,
+      "references": "products.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "warehouse_id",
+      "nullable": false,
+      "references": "warehouses.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": 0,
+      "name": "quantity_on_hand",
+      "type": "integer"
+     },
+     {
+      "default": 0,
+      "name": "quantity_reserved",
+      "type": "integer"
+     }
+    ],
+    "table_name": "inventory"
+   },
+   {
+    "description": "Stores / stock locations.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "name": "location",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "warehouses"
+   },
+   {
+    "description": "POS + online sales transactions.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "order_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "customer_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "cashier_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": "pos",
+      "name": "channel",
+      "type": "enum",
+      "values": [
+       "pos",
+       "online"
+      ]
+     },
+     {
+      "name": "subtotal",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "tax_total",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "discount_total",
+      "type": "decimal"
+     },
+     {
+      "name": "grand_total",
+      "type": "decimal"
+     },
+     {
+      "default": "draft",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "draft",
+       "paid",
+       "fulfilled",
+       "refunded",
+       "cancelled"
+      ]
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "sales_orders"
+   },
+   {
+    "description": "Line items of a sale.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "sales_order_id",
+      "nullable": false,
+      "references": "sales_orders.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "product_id",
+      "nullable": false,
+      "references": "products.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "quantity",
+      "type": "integer"
+     },
+     {
+      "name": "unit_price",
+      "type": "decimal"
+     },
+     {
+      "name": "line_total",
+      "type": "decimal"
+     }
+    ],
+    "table_name": "sales_order_items"
+   },
+   {
+    "description": "Vendors for purchasing stock.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "name": "email",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "name": "phone",
+      "nullable": true,
+      "type": "string"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "suppliers"
+   },
+   {
+    "description": "Restock orders to suppliers.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "po_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "supplier_id",
+      "nullable": false,
+      "references": "suppliers.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "total_amount",
+      "type": "decimal"
+     },
+     {
+      "default": "draft",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "draft",
+       "ordered",
+       "received",
+       "cancelled"
+      ]
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "purchase_orders"
+   }
+  ],
+  "workflows": [
+   {
+    "steps": [
+     "Cashier scans products into a ticket",
+     "System prices items and applies tax/discounts",
+     "Cashier selects payment method",
+     "Customer pays (cash/card)",
+     "System decrements inventory",
+     "System prints receipt and records the sale"
+    ],
+    "workflow_name": "POS Sale Workflow"
+   },
+   {
+    "steps": [
+     "System flags products below reorder level",
+     "Manager creates a purchase order to a supplier",
+     "Supplier ships goods",
+     "Clerk receives stock against the PO",
+     "System increases quantity on hand",
+     "Low-stock alert clears"
+    ],
+    "workflow_name": "Stock Replenishment Workflow"
+   }
+  ]
+ },
+ "school": {
+  "app_type_primary": "School Management System and LMS with Parent Portal and Admin Dashboard",
+  "feature_options": [
+   "Online admissions",
+   "Attendance",
+   "LMS lessons & assignments",
+   "Exams & grading",
+   "Fee management & online payment",
+   "Transport management",
+   "Parent portal",
+   "Library"
+  ],
+  "integrations": [
+   {
+    "description": "Online fee payments for parents.",
+    "name": "Payment Gateway",
+    "required": false,
+    "type": "payment"
+   },
+   {
+    "description": "Absence + result SMS alerts.",
+    "name": "SMS Gateway",
+    "required": false,
+    "type": "messaging"
+   }
+  ],
+  "keywords": [
+   "school",
+   "student",
+   "class",
+   "teacher",
+   "lms",
+   "education",
+   "exam",
+   "attendance",
+   "parent",
+   "fees",
+   "tuition",
+   "course",
+   "lesson",
+   "grade",
+   "academic",
+   "transport",
+   "library"
+  ],
+  "label": "Education / LMS",
+  "modules": [
+   "Public Website",
+   "Authentication",
+   "Admission Management",
+   "Student Management",
+   "Class & Subject Management",
+   "Attendance",
+   "LMS (Lessons & Assignments)",
+   "Exams & Grading",
+   "Fee Management",
+   "Transport Management",
+   "Parent Portal",
+   "Reports & Analytics",
+   "Notifications",
+   "Settings"
+  ],
+  "nfr_focus": [
+   "Students/parents must only access their own records",
+   "Marks and fee changes must be recorded in audit logs"
+  ],
+  "notifications": [
+   {
+    "channels": [
+     "sms",
+     "email",
+     "in_app"
+    ],
+    "event": "Student Absent",
+    "recipients": [
+     "parent"
+    ]
+   },
+   {
+    "channels": [
+     "email",
+     "in_app"
+    ],
+    "event": "Exam Result Published",
+    "recipients": [
+     "student",
+     "parent"
+    ]
+   },
+   {
+    "channels": [
+     "email",
+     "in_app"
+    ],
+    "event": "Fee Invoice Created",
+    "recipients": [
+     "parent"
+    ]
+   }
+  ],
+  "protected_pages": [
+   {
+    "allowed_roles": [
+     "student"
+    ],
+    "functions": [
+     "View timetable",
+     "View lessons",
+     "Submit assignments",
+     "View results",
+     "View fees"
+    ],
+    "page_name": "Student Dashboard",
+    "page_type": "portal",
+    "route": "/student"
+   },
+   {
+    "allowed_roles": [
+     "parent"
+    ],
+    "functions": [
+     "View child attendance/marks",
+     "View & pay fees",
+     "View notices",
+     "Contact teacher"
+    ],
+    "page_name": "Parent Dashboard",
+    "page_type": "portal",
+    "route": "/parent"
+   },
+   {
+    "allowed_roles": [
+     "teacher"
+    ],
+    "functions": [
+     "Mark attendance",
+     "Create lessons/assignments",
+     "Grade submissions",
+     "Enter exam marks"
+    ],
+    "page_name": "Teacher Dashboard",
+    "page_type": "dashboard",
+    "route": "/teacher"
+   },
+   {
+    "allowed_roles": [
+     "accountant",
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Generate invoices",
+     "Record payments",
+     "Print receipts",
+     "Fee reports"
+    ],
+    "page_name": "Fee Management",
+    "page_type": "dashboard",
+    "route": "/admin/fees"
+   },
+   {
+    "allowed_roles": [
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Manage students/teachers",
+     "Manage classes/subjects",
+     "Manage transport",
+     "Reports"
+    ],
+    "page_name": "Admin Dashboard",
+    "page_type": "dashboard",
+    "route": "/admin"
+   }
+  ],
+  "public_pages": [
+   {
+    "page_name": "Home",
+    "route": "/",
+    "sections": [
+     "Hero + admission CTA",
+     "Programs",
+     "Why choose us",
+     "Notices",
+     "Footer"
+    ]
+   },
+   {
+    "page_name": "Admissions",
+    "route": "/admissions",
+    "sections": [
+     "Process",
+     "Required documents",
+     "Inquiry form",
+     "FAQ"
+    ]
+   },
+   {
+    "page_name": "Academics",
+    "route": "/academics",
+    "sections": [
+     "Curriculum",
+     "Streams",
+     "Calendar"
+    ]
+   },
+   {
+    "page_name": "Contact",
+    "route": "/contact",
+    "sections": [
+     "Form",
+     "Map",
+     "Phone/email"
+    ]
+   }
+  ],
+  "relationships": [
+   {
+    "description": "A class has many sections.",
+    "from": "classes.id",
+    "to": "sections.class_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A section has many students.",
+    "from": "sections.id",
+    "to": "students.section_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A student has many attendance records.",
+    "from": "students.id",
+    "to": "attendance_records.student_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A student has many fee invoices.",
+    "from": "students.id",
+    "to": "fee_invoices.student_id",
+    "type": "one_to_many"
+   }
+  ],
+  "reports": [
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "class",
+     "section"
+    ],
+    "report_name": "Attendance Report"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "class",
+     "status"
+    ],
+    "report_name": "Fee Collection Report"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "exam",
+     "class",
+     "subject"
+    ],
+    "report_name": "Exam Result Report"
+   }
+  ],
+  "risks": [
+   {
+    "area": "Privacy",
+    "mitigation": "Strict row-level authorization on every query.",
+    "reason": "A parent could view another child's data.",
+    "risk": "Cross-student data leakage",
+    "severity": "High"
+   },
+   {
+    "area": "Fees",
+    "mitigation": "Idempotent webhooks + daily reconciliation report.",
+    "reason": "Online + manual payments can desync.",
+    "risk": "Payment reconciliation",
+    "severity": "Medium"
+   }
+  ],
+  "roles": [
+   {
+    "description": "Full system owner with access to all settings, users, and audit logs.",
+    "role_key": "super_admin",
+    "role_name": "Super Admin"
+   },
+   {
+    "description": "Manages school setup, users, classes, fees, and configuration.",
+    "role_key": "admin",
+    "role_name": "School Admin"
+   },
+   {
+    "description": "Manages lessons, attendance, assignments, and marks.",
+    "role_key": "teacher",
+    "role_name": "Teacher"
+   },
+   {
+    "description": "Views lessons, submits assignments, and views results.",
+    "role_key": "student",
+    "role_name": "Student"
+   },
+   {
+    "description": "Views child attendance, marks, fees, and pays online.",
+    "role_key": "parent",
+    "role_name": "Parent"
+   },
+   {
+    "description": "Manages fee invoices, payments, and financial reports.",
+    "role_key": "accountant",
+    "role_name": "Accountant"
+   },
+   {
+    "description": "Browses public pages and submits inquiries without login.",
+    "role_key": "guest",
+    "role_name": "Public Guest"
+   }
+  ],
+  "system_category": "School Management, LMS, Fees and Transport Web Application",
+  "tables": [
+   {
+    "description": "Grades / classes such as Grade 6.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "class_name",
+      "type": "string"
+     },
+     {
+      "name": "class_level",
+      "nullable": true,
+      "type": "integer"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "classes"
+   },
+   {
+    "description": "Sections within a class (6-A, 6-B).",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "class_id",
+      "nullable": false,
+      "references": "classes.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "section_name",
+      "type": "string"
+     },
+     {
+      "name": "class_teacher_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "capacity",
+      "nullable": true,
+      "type": "integer"
+     }
+    ],
+    "table_name": "sections"
+   },
+   {
+    "description": "Subjects taught at the school.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "subject_code",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "subject_name",
+      "type": "string"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "subjects"
+   },
+   {
+    "description": "Student profiles.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "user_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "admission_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "full_name",
+      "type": "string"
+     },
+     {
+      "name": "date_of_birth",
+      "nullable": true,
+      "type": "date"
+     },
+     {
+      "name": "class_id",
+      "nullable": false,
+      "references": "classes.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "section_id",
+      "nullable": false,
+      "references": "sections.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "graduated",
+       "transferred"
+      ]
+     }
+    ],
+    "table_name": "students"
+   },
+   {
+    "description": "Daily attendance.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "student_id",
+      "nullable": false,
+      "references": "students.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "attendance_date",
+      "type": "date"
+     },
+     {
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "present",
+       "absent",
+       "late",
+       "excused"
+      ]
+     },
+     {
+      "name": "marked_by",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     }
+    ],
+    "table_name": "attendance_records"
+   },
+   {
+    "description": "LMS assignments.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "title",
+      "type": "string"
+     },
+     {
+      "name": "subject_id",
+      "nullable": false,
+      "references": "subjects.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "teacher_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "due_date",
+      "type": "datetime"
+     },
+     {
+      "default": 100,
+      "name": "total_marks",
+      "type": "decimal"
+     },
+     {
+      "default": "draft",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "draft",
+       "published",
+       "closed"
+      ]
+     }
+    ],
+    "table_name": "assignments"
+   },
+   {
+    "description": "Student marks per subject.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "student_id",
+      "nullable": false,
+      "references": "students.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "subject_id",
+      "nullable": false,
+      "references": "subjects.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "marks_obtained",
+      "type": "decimal"
+     },
+     {
+      "default": 100,
+      "name": "total_marks",
+      "type": "decimal"
+     },
+     {
+      "name": "grade",
+      "nullable": true,
+      "type": "string"
+     }
+    ],
+    "table_name": "exam_results"
+   },
+   {
+    "description": "Student fee invoices.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "invoice_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "student_id",
+      "nullable": false,
+      "references": "students.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "fee_type",
+      "type": "enum",
+      "values": [
+       "admission",
+       "tuition",
+       "exam",
+       "transport",
+       "other"
+      ]
+     },
+     {
+      "name": "grand_total",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "paid_amount",
+      "type": "decimal"
+     },
+     {
+      "default": "unpaid",
+      "name": "payment_status",
+      "type": "enum",
+      "values": [
+       "unpaid",
+       "partial",
+       "paid"
+      ]
+     },
+     {
+      "name": "due_date",
+      "type": "date"
+     }
+    ],
+    "table_name": "fee_invoices"
+   },
+   {
+    "description": "School bus routes.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "route_name",
+      "type": "string"
+     },
+     {
+      "default": 0,
+      "name": "monthly_fee",
+      "type": "decimal"
+     },
+     {
+      "default": "active",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "active",
+       "inactive"
+      ]
+     }
+    ],
+    "table_name": "transport_routes"
+   }
+  ],
+  "workflows": [
+   {
+    "steps": [
+     "Teacher selects class/section",
+     "System lists students",
+     "Teacher marks present/absent/late",
+     "System saves records",
+     "System notifies parents of absentees",
+     "Attendance report updates"
+    ],
+    "workflow_name": "Daily Attendance Workflow"
+   },
+   {
+    "steps": [
+     "Accountant generates invoice",
+     "Parent views invoice in portal",
+     "Parent pays online or school records manual payment",
+     "System updates payment status",
+     "System generates receipt",
+     "Fee report updates"
+    ],
+    "workflow_name": "Fee Payment Workflow"
+   }
+  ]
+ },
+ "vehicle": {
+  "app_type_primary": "Vehicle Sales / Rental / Service Center with Admin Dashboard",
+  "feature_options": [
+   "Vehicle sales CRM",
+   "Rental management",
+   "Service workshop",
+   "Spare parts POS",
+   "Test drive booking",
+   "Online enquiries",
+   "Financing quotes",
+   "Fleet tracking"
+  ],
+  "integrations": [
+   {
+    "description": "Deposits and service payments.",
+    "name": "Payment Gateway",
+    "required": false,
+    "type": "payment"
+   },
+   {
+    "description": "Vehicle financing quotes.",
+    "name": "Finance / Leasing API",
+    "required": false,
+    "type": "finance"
+   }
+  ],
+  "keywords": [
+   "vehicle",
+   "car",
+   "auto",
+   "automobile",
+   "dealership",
+   "rental",
+   "service center",
+   "spare parts",
+   "garage",
+   "mechanic",
+   "fleet",
+   "test drive",
+   "motorbike",
+   "showroom"
+  ],
+  "label": "Automotive Platform",
+  "modules": [
+   "Public Website",
+   "Authentication",
+   "Vehicle Inventory",
+   "Sales & Leads",
+   "Rental Management",
+   "Service & Workshop",
+   "Spare Parts (POS)",
+   "Payments",
+   "Customers",
+   "Reports & Analytics",
+   "Notifications",
+   "Settings"
+  ],
+  "nfr_focus": [
+   "A vehicle must not be double-sold or double-booked across sales/rental/service"
+  ],
+  "notifications": [
+   {
+    "channels": [
+     "in_app",
+     "email"
+    ],
+    "event": "New Lead",
+    "recipients": [
+     "sales_agent"
+    ]
+   },
+   {
+    "channels": [
+     "email",
+     "in_app"
+    ],
+    "event": "Test Drive Scheduled",
+    "recipients": [
+     "customer",
+     "sales_agent"
+    ]
+   },
+   {
+    "channels": [
+     "sms",
+     "email"
+    ],
+    "event": "Service Ready for Pickup",
+    "recipients": [
+     "customer"
+    ]
+   }
+  ],
+  "protected_pages": [
+   {
+    "allowed_roles": [
+     "customer"
+    ],
+    "functions": [
+     "My enquiries",
+     "My rentals",
+     "My service jobs",
+     "Invoices"
+    ],
+    "page_name": "Customer Account",
+    "page_type": "portal",
+    "route": "/account"
+   },
+   {
+    "allowed_roles": [
+     "sales_agent",
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Manage leads",
+     "Schedule test drives",
+     "Create quotes",
+     "Close sale"
+    ],
+    "page_name": "Sales CRM",
+    "page_type": "dashboard",
+    "route": "/admin/sales"
+   },
+   {
+    "allowed_roles": [
+     "service_advisor",
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Manage service jobs",
+     "Assign mechanics",
+     "Add parts/labour",
+     "Invoice"
+    ],
+    "page_name": "Workshop",
+    "page_type": "dashboard",
+    "route": "/admin/service"
+   },
+   {
+    "allowed_roles": [
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Add/edit vehicles",
+     "Manage rental fleet",
+     "Pricing"
+    ],
+    "page_name": "Inventory",
+    "page_type": "dashboard",
+    "route": "/admin/vehicles"
+   },
+   {
+    "allowed_roles": [
+     "admin",
+     "super_admin"
+    ],
+    "functions": [
+     "Sales pipeline",
+     "Rental utilization",
+     "Service revenue"
+    ],
+    "page_name": "Reports",
+    "page_type": "dashboard",
+    "route": "/admin/reports"
+   }
+  ],
+  "public_pages": [
+   {
+    "page_name": "Home",
+    "route": "/",
+    "sections": [
+     "Hero search",
+     "Featured vehicles",
+     "Sell/Rent/Service tabs",
+     "Why us",
+     "Footer"
+    ]
+   },
+   {
+    "page_name": "Inventory",
+    "route": "/vehicles",
+    "sections": [
+     "Vehicle grid",
+     "Filters (make, model, year, price)",
+     "Compare"
+    ]
+   },
+   {
+    "page_name": "Vehicle Details",
+    "route": "/vehicles/[id]",
+    "sections": [
+     "Gallery",
+     "Specs",
+     "Book test drive",
+     "Enquire / Finance"
+    ]
+   },
+   {
+    "page_name": "Book Service",
+    "route": "/service",
+    "sections": [
+     "Service types",
+     "Booking form",
+     "Locations"
+    ]
+   }
+  ],
+  "relationships": [
+   {
+    "description": "A vehicle attracts many leads.",
+    "from": "vehicles.id",
+    "to": "leads.vehicle_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "A vehicle is sold once.",
+    "from": "vehicles.id",
+    "to": "sales_orders.vehicle_id",
+    "type": "one_to_one"
+   },
+   {
+    "description": "A vehicle can be rented many times.",
+    "from": "vehicles.id",
+    "to": "rentals.vehicle_id",
+    "type": "one_to_many"
+   },
+   {
+    "description": "Service jobs consume parts.",
+    "from": "service_jobs.id",
+    "to": "parts.id",
+    "type": "many_to_many",
+    "via": "service_job_parts"
+   }
+  ],
+  "reports": [
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "agent",
+     "status"
+    ],
+    "report_name": "Sales Pipeline"
+   },
+   {
+    "exports": [
+     "PDF",
+     "Excel"
+    ],
+    "filters": [
+     "date range",
+     "advisor"
+    ],
+    "report_name": "Service Revenue"
+   }
+  ],
+  "risks": [
+   {
+    "area": "Inventory",
+    "mitigation": "Single source-of-truth status with locking.",
+    "reason": "Same vehicle sold and rented simultaneously.",
+    "risk": "Double allocation",
+    "severity": "High"
+   }
+  ],
+  "roles": [
+   {
+    "description": "Full system owner with access to all settings, users, and audit logs.",
+    "role_key": "super_admin",
+    "role_name": "Super Admin"
+   },
+   {
+    "description": "Manages inventory, staff, pricing, and settings.",
+    "role_key": "admin",
+    "role_name": "Dealership Admin"
+   },
+   {
+    "description": "Handles leads, test drives, quotes, and sales.",
+    "role_key": "sales_agent",
+    "role_name": "Sales Agent"
+   },
+   {
+    "description": "Manages service bookings, jobs, and parts.",
+    "role_key": "service_advisor",
+    "role_name": "Service Advisor"
+   },
+   {
+    "description": "Browses vehicles, books test drives/service, and rents vehicles.",
+    "role_key": "customer",
+    "role_name": "Customer"
+   },
+   {
+    "description": "Browses public pages and submits inquiries without login.",
+    "role_key": "guest",
+    "role_name": "Public Guest"
+   }
+  ],
+  "system_category": "Vehicle Sales, Rental, Service and Spare Parts Web Application",
+  "tables": [
+   {
+    "description": "Vehicles for sale or rent.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "vin",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "make",
+      "type": "string"
+     },
+     {
+      "name": "model",
+      "type": "string"
+     },
+     {
+      "name": "year",
+      "type": "integer"
+     },
+     {
+      "name": "mileage",
+      "nullable": true,
+      "type": "integer"
+     },
+     {
+      "name": "price",
+      "type": "decimal"
+     },
+     {
+      "default": "sale",
+      "name": "listing_type",
+      "type": "enum",
+      "values": [
+       "sale",
+       "rental",
+       "both"
+      ]
+     },
+     {
+      "default": "available",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "available",
+       "reserved",
+       "sold",
+       "rented",
+       "in_service"
+      ]
+     }
+    ],
+    "table_name": "vehicles"
+   },
+   {
+    "description": "Sales leads and inquiries.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "vehicle_id",
+      "nullable": true,
+      "references": "vehicles.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "customer_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "default": "website",
+      "name": "source",
+      "type": "enum",
+      "values": [
+       "website",
+       "walk_in",
+       "phone",
+       "referral"
+      ]
+     },
+     {
+      "default": "new",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "new",
+       "contacted",
+       "test_drive",
+       "negotiating",
+       "won",
+       "lost"
+      ]
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "leads"
+   },
+   {
+    "description": "Vehicle sales transactions.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "order_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "vehicle_id",
+      "nullable": false,
+      "references": "vehicles.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "customer_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "sales_agent_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "sale_price",
+      "type": "decimal"
+     },
+     {
+      "default": "quoted",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "quoted",
+       "deposit_paid",
+       "completed",
+       "cancelled"
+      ]
+     },
+     {
+      "name": "created_at",
+      "type": "datetime"
+     }
+    ],
+    "table_name": "sales_orders"
+   },
+   {
+    "description": "Vehicle rental agreements.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "vehicle_id",
+      "nullable": false,
+      "references": "vehicles.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "customer_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "start_date",
+      "type": "date"
+     },
+     {
+      "name": "end_date",
+      "type": "date"
+     },
+     {
+      "name": "daily_rate",
+      "type": "decimal"
+     },
+     {
+      "name": "total_amount",
+      "type": "decimal"
+     },
+     {
+      "default": "booked",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "booked",
+       "active",
+       "returned",
+       "cancelled"
+      ]
+     }
+    ],
+    "table_name": "rentals"
+   },
+   {
+    "description": "Workshop service jobs.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "job_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "vehicle_id",
+      "nullable": true,
+      "references": "vehicles.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "customer_id",
+      "nullable": false,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "service_advisor_id",
+      "nullable": true,
+      "references": "users.id",
+      "type": "foreign_key"
+     },
+     {
+      "name": "description",
+      "type": "text"
+     },
+     {
+      "name": "scheduled_at",
+      "nullable": true,
+      "type": "datetime"
+     },
+     {
+      "default": 0,
+      "name": "total_cost",
+      "type": "decimal"
+     },
+     {
+      "default": "booked",
+      "name": "status",
+      "type": "enum",
+      "values": [
+       "booked",
+       "in_progress",
+       "ready",
+       "completed",
+       "cancelled"
+      ]
+     }
+    ],
+    "table_name": "service_jobs"
+   },
+   {
+    "description": "Spare parts inventory.",
+    "fields": [
+     {
+      "name": "id",
+      "nullable": false,
+      "primary_key": true,
+      "type": "uuid"
+     },
+     {
+      "name": "part_number",
+      "type": "string",
+      "unique": true
+     },
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "name": "price",
+      "type": "decimal"
+     },
+     {
+      "default": 0,
+      "name": "quantity_on_hand",
+      "type": "integer"
+     },
+     {
+      "default": 3,
+      "name": "reorder_level",
+      "type": "integer"
+     }
+    ],
+    "table_name": "parts"
+   }
+  ],
+  "workflows": [
+   {
+    "steps": [
+     "Customer enquires on a vehicle",
+     "Sales agent contacts and books a test drive",
+     "Agent prepares a quote",
+     "Customer pays deposit",
+     "Paperwork and financing completed",
+     "Vehicle marked sold and invoice issued"
+    ],
+    "workflow_name": "Vehicle Sales Workflow"
+   },
+   {
+    "steps": [
+     "Customer books a service slot",
+     "Service advisor creates a job card",
+     "Mechanic performs work and adds parts/labour",
+     "Advisor reviews and prices the job",
+     "Customer pays and collects the vehicle",
+     "Job marked completed"
+    ],
+    "workflow_name": "Service Booking Workflow"
+   }
+  ]
+ }
+}
