@@ -134,13 +134,13 @@ type TopicDef struct {
 
 // Standards is the ISO/IEC/IEEE 29148 profile the document declares.
 type Standards struct {
-	SRSStandard      string            `json:"srs_standard"`
-	SRSStandardTitle string            `json:"srs_standard_title"`
-	UMLStandard      string            `json:"uml_standard"`
-	BPMNStandard     string            `json:"bpmn_standard"`
-	ERDNotation      string            `json:"erd_notation"`
-	DFDNotation      string            `json:"dfd_notation"`
-	DiagramNotation  map[string]string `json:"diagram_notation"`
+	SRSStandard      string              `json:"srs_standard"`
+	SRSStandardTitle string              `json:"srs_standard_title"`
+	UMLStandard      string              `json:"uml_standard"`
+	BPMNStandard     string              `json:"bpmn_standard"`
+	ERDNotation      string              `json:"erd_notation"`
+	DFDNotation      string              `json:"dfd_notation"`
+	DiagramNotation  map[string][]string `json:"diagram_notation"`
 }
 
 // knowledge is everything loaded from the embedded files, parsed once.

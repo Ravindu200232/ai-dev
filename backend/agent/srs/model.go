@@ -65,6 +65,7 @@ type Document struct {
 
 	Branding             map[string]any   `json:"branding,omitempty"`
 	ApprovedPlan         map[string]any   `json:"approved_plan,omitempty"`
+	EffectivePlan        map[string]any   `json:"effective_plan,omitempty"`
 	ApprovedPlanMarkdown string           `json:"approved_plan_markdown,omitempty"`
 	BuilderHandoff       map[string]any   `json:"builder_handoff,omitempty"`
 	RevisionHistory      []map[string]any `json:"revision_history,omitempty"`
