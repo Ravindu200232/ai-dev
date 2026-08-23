@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Before a deployment is attempted, the account is asked whether it could
@@ -379,4 +380,104 @@ func writeSections(body string, sections map[string][]string) string {
 		out = append(out, sections[name]...)
 	}
 	return strings.Join(out, "\n") + "\n"
+}
+
+// --- what the machine has --------------------------------------------------------------------
+
+// Onboarding is what the Studio's account panel shows: which tools are
+// installed, which AWS profiles work, and whether GitHub is signed in.
+func Onboarding(ctx context.Context) map[string]any {
+	status := ToolStatus(ctx)
+	profiles := []string{}
+	identities := map[string]any{}
+
+	if installed(status, "aws") {
+		if out := Exec(ctx, Command{Name: "aws", Args: []string{"configure", "list-profiles"},
+			Timeout: 10 * time.Second}); out.OK() {
+			for _, line := range out.Lines() {
+				if name := strings.TrimSpace(line); name != "" {
+					profiles = append(profiles, name)
+				}
+			}
+		}
+		for index, profile := range profiles {
+			if index == 20 {
+				break
+			}
+			if identity := profileIdentity(ctx, profile); identity != nil {
+				identities[profile] = identity
+			}
+		}
+	}
+
+	github, account := false, ""
+	if installed(status, "gh") {
+		github = Exec(ctx, Command{Name: "gh", Args: []string{"auth", "status"},
+			Timeout: 15 * time.Second}).OK()
+		if github {
+			if out := Exec(ctx, Command{Name: "gh", Args: []string{"api", "user", "--jq", ".login"},
+				Timeout: 15 * time.Second}); out.OK() {
+				account = strings.TrimSpace(out.Stdout)
+			}
+		}
+	}
+
+	return map[string]any{
+		"tools":                status,
+		"aws_profiles":         profiles,
+		"aws_authenticated":    len(identities) > 0,
+		"aws_identities":       identities,
+		"github_authenticated": github,
+		"github_account":       account,
+		"cloud_notice": "Selected source context is sent to Ollama Cloud for deployment " +
+			"planning. Credentials and detected secret values are always redacted.",
+	}
+}
+
+// profileIdentity is who a configured profile is, and whether the account it
+// belongs to can actually be deployed into.
+func profileIdentity(ctx context.Context, profile string) map[string]any {
+	region := DefaultRegion
+	if out := Exec(ctx, Command{Name: "aws",
+		Args: []string{"configure", "get", "region", "--profile", profile}, Timeout: 10 * time.Second}); out.OK() {
+		if configured := strings.TrimSpace(out.Stdout); configured != "" {
+			region = configured
+		}
+	}
+	aws := AWS{Profile: profile, Region: region}
+
+	identity, err := aws.Whoami(ctx)
+	if err != nil {
+		return nil
+	}
+
+	// One real call, because an account that has never been activated
+	// authenticates perfectly well and then refuses everything.
+	ready, problem := true, ""
+	if err := aws.call(ctx, nil, "cloudformation", "list-stacks", "--max-items", "1"); err != nil {
+		ready = false
+		problem = serviceProblem(err.Error())
+	}
+	return map[string]any{
+		"account": identity.Account, "arn": identity.Arn, "user_id": identity.UserID,
+		"region": region, "service_ready": ready, "service_error": problem,
+	}
+}
+
+func serviceProblem(text string) string {
+	lowered := strings.ToLower(text)
+	switch {
+	case strings.Contains(lowered, "optinrequired"), strings.Contains(lowered, "not subscribed"),
+		strings.Contains(lowered, "needs a subscription"):
+		return "AWS account services are not activated (OptInRequired)"
+	case strings.Contains(lowered, "expired"):
+		return "AWS login session expired"
+	case strings.Contains(lowered, "accessdenied"), strings.Contains(lowered, "not authorized"):
+		return "CloudFormation access is denied for this identity"
+	}
+	return "CloudFormation preflight failed"
+}
+
+func installed(status map[string]any, name string) bool {
+	return object(status[name])["installed"] == true
 }

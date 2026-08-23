@@ -31,8 +31,9 @@ database.
   `/deploy/*`; `graph.go` is the analysis graph; `assets/` are the files it
   generates, kept as files. See below.
 - `server/` — the Studio's two surfaces: `ws.go` (7825), `http.go` (7824),
-  `jobs.go` for slow work the Studio polls, and `mongo.go`, which fetches and
-  runs mongod when the machine has none.
+  `deploy.go` for the deployment agent's seam into it, `jobs.go` for slow work
+  the Studio polls, and `mongo.go`, which fetches and runs mongod when the
+  machine has none.
 
 ## Deployment — `agent/deploy/`
 
@@ -68,6 +69,7 @@ deployment agent have no port of their own any more: they are served under
   largest are `server/http.go`, which is one endpoint table and has to be, and
   `core/run.go`, which is the state plus the event vocabulary every package
   emits — splitting either would cost more in indirection than it saves.
+  Nothing else is over 850.
 - Reach for a new file only when a new concept arrives, not when an existing
   one gets long.
 - `core` never imports another package in this module. Everything else may
