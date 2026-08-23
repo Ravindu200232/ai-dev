@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -383,4 +384,21 @@ func object(value any) map[string]any {
 		return map[string]any{}
 	}
 	return out
+}
+
+// number reads a count out of decoded JSON, whatever numeric shape it took.
+func number(value any) int {
+	switch item := value.(type) {
+	case int:
+		return item
+	case int64:
+		return int(item)
+	case float64:
+		return int(item)
+	case string:
+		if parsed, err := strconv.Atoi(item); err == nil {
+			return parsed
+		}
+	}
+	return 0
 }

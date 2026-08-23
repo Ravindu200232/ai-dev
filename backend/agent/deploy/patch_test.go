@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // patched stages a project and applies the compatibility patches to it,
@@ -86,7 +87,7 @@ func TestStandaloneIsAddedToAConfigThatHasOne(t *testing.T) {
 		"import type { NextConfig } from 'next'\n\nconst nextConfig: NextConfig = {\n};\n\nexport default nextConfig\n": `output: "standalone"`,
 	}
 	for body, want := range cases {
-		got, ok := addStandalone(body)
+		got, ok, _ := addStandalone(body)
 		if !ok || !strings.Contains(got, want) {
 			t.Errorf("addStandalone(%q) = %q %v", body, got, ok)
 		}
@@ -94,12 +95,76 @@ func TestStandaloneIsAddedToAConfigThatHasOne(t *testing.T) {
 
 	// Already done, and a shape nothing recognises: both are left alone.
 	already := "const nextConfig = { output: 'standalone' };\n"
-	if got, ok := addStandalone(already); ok || got != already {
+	if got, ok, wasSet := addStandalone(already); ok || !wasSet || got != already {
 		t.Errorf("a config that already says it = %q %v", got, ok)
 	}
 	strange := "const config = makeConfig({ output: 1 })\nexport default config\n"
-	if got, ok := addStandalone(strange); ok || got != strange {
+	if got, ok, already := addStandalone(strange); ok || already || got != strange {
 		t.Errorf("a config nothing recognises is never guessed at: %q %v", got, ok)
+	}
+}
+
+func TestStandaloneGoesIntoTheObjectNextReads(t *testing.T) {
+	// The file declares a config and then exports a different one written
+	// out in place. Editing the named one changes nothing, and reporting it
+	// as done is worse than reporting that it could not be done.
+	body := `const config = {
+  basePath: '',
+};
+
+export default {
+  reactStrictMode: true,
+};
+`
+	got, ok, _ := addStandalone(body)
+	if !ok {
+		t.Fatalf("the exported object was not patched: %q", got)
+	}
+	if strings.Index(got, `output: "standalone"`) < strings.Index(got, "export default") {
+		t.Errorf("the setting went into the object nobody reads:\n%s", got)
+	}
+}
+
+func TestStandalonePatchesAnExportedDeclaration(t *testing.T) {
+	body := `export const nextConfig = {
+  reactStrictMode: true,
+}
+
+export default nextConfig
+`
+	got, ok, _ := addStandalone(body)
+	if !ok || !strings.Contains(got, `output: "standalone"`) {
+		t.Errorf("a config declared with export was not patched: %q %v", got, ok)
+	}
+}
+
+func TestStandaloneIsNotFooledByAGlobString(t *testing.T) {
+	// The `+"`/*`"+` inside the glob is not the start of a comment, and treating it
+	// as one used to blank out every line below it.
+	body := `const IGNORED = ['**/*.test.js']
+
+const nextConfig = {
+  reactStrictMode: true,
+}
+
+export default nextConfig
+`
+	got, ok, _ := addStandalone(body)
+	if !ok || !strings.Contains(got, `output: "standalone"`) {
+		t.Errorf("a config below a glob string was not found: %q %v", got, ok)
+	}
+
+	// And the mirror: a glob below the setting must not hide it, or the
+	// setting is added a second time on every re-run.
+	set := `const nextConfig = {
+  output: 'standalone',
+  pageExtensions: ['**/*.page.tsx'],
+}
+
+export default nextConfig
+`
+	if _, ok, already := addStandalone(set); ok || !already {
+		t.Errorf("a config that already says it was patched again: %v %v", ok, already)
 	}
 }
 
@@ -115,7 +180,7 @@ const nextConfig = {
 
 export default nextConfig;
 `
-	got, ok := addStandalone(body)
+	got, ok, _ := addStandalone(body)
 	if !ok {
 		t.Fatalf("the real config was not patched: %q", got)
 	}
@@ -134,7 +199,7 @@ export default nextConfig;
 
 	// A block comment hides a config just as well.
 	blocked := "/*\nconst nextConfig = {\n}\n*/\nmodule.exports = {\n  images: {},\n}\n"
-	if got, ok := addStandalone(blocked); !ok || strings.Index(got, `output: "standalone"`) < strings.Index(got, "module.exports") {
+	if got, ok, _ := addStandalone(blocked); !ok || strings.Index(got, `output: "standalone"`) < strings.Index(got, "module.exports") {
 		t.Errorf("block comment = %q %v", got, ok)
 	}
 }
@@ -150,7 +215,7 @@ const nextConfig = {
 
 export default nextConfig
 `
-	got, ok := addStandalone(body)
+	got, ok, _ := addStandalone(body)
 	if !ok {
 		t.Fatal("nothing was patched")
 	}
@@ -539,6 +604,28 @@ const help = ` + "`" + `import b from 'c'` + "`" + `
 
 export default function P() { return null }
 `, "import a from 'a'"},
+
+		// A trailing comment holding an unbalanced bracket used to be counted
+		// as code, which left the walk inside the import below it.
+		{"trailing comments with brackets in them", `'use client'
+
+import { Button } from '@/components/ui/button' // primary CTA :)
+import {
+  Card,
+  CardContent, // re-exported from '@/components/ui'
+  CardHeader,
+} from '@/components/ui/card'
+
+export default function Page() { return null }
+`, "} from '@/components/ui/card'"},
+
+		{"a block comment between imports", `import a from 'a'
+/* the next one is
+   only for the header */
+import b from 'b'
+
+export default function P() { return null }
+`, "import b from 'b'"},
 	}
 
 	for _, c := range cases {
@@ -602,6 +689,61 @@ export default clientPromise
 		}
 		if !changed(changes, relative) {
 			t.Errorf("%s was not recorded as changed", relative)
+		}
+	}
+}
+
+// TestTheDeclarationLeavesAFileThatParses is the check the unit tests cannot
+// make on their own: the point of finding the right line is that node can still
+// read the file afterwards. It runs only where node is installed.
+func TestTheDeclarationLeavesAFileThatParses(t *testing.T) {
+	if Resolve("node") == "" {
+		t.Skip("node is not installed")
+	}
+	bodies := []string{
+		`'use client'
+
+import { Button } from '@/components/ui/button' // primary CTA :)
+import {
+  Card,
+  CardContent, // re-exported from '@/components/ui'
+  CardHeader,
+} from '@/components/ui/card'
+
+export default function Page() { return null }
+`,
+		`import a from 'a'
+/* a header
+   over two lines */
+import b from 'b'
+
+export default function P() { return null }
+`,
+		`import { getDb } from '@/lib/mongodb'
+import {
+  Card,
+} from '@/components/ui/card'
+
+const copy = ` + "`" + `
+import nothing from 'here'
+` + "`" + `
+
+export default async function Dash() { return copy }
+`,
+		"export default function P() { return null }\n",
+	}
+
+	dir := t.TempDir()
+	for index, body := range bodies {
+		path := filepath.Join(dir, "page"+string(rune('a'+index))+".mjs")
+		if err := os.WriteFile(path, []byte(forceDynamic(body)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out := Exec(context.Background(), Command{Name: "node", Args: []string{"--check", path},
+			Timeout: 30 * time.Second, Plain: true})
+		if !out.OK() {
+			patched, _ := os.ReadFile(path)
+			t.Errorf("case %d does not parse: %s\n%s", index, out.Text(), patched)
 		}
 	}
 }

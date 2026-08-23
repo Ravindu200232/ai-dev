@@ -17,7 +17,9 @@ import (
 // one generated project: this runs git, npm, aws and gh against the customer's
 // own folder and against a staging workspace outside it. What the two share is
 // the rule that output is captured, never inherited, and redacted before it
-// reaches anything that stores or displays it.
+// reaches anything that stores or displays it — the one exception being a
+// caller that asks for it Plain because it is deciding with it rather than
+// showing it.
 
 // tools are the command-line programs a deployment depends on. The Studio's
 // setup panel reports each one.
@@ -109,7 +111,9 @@ func Resolve(name string) string {
 // Have reports whether the machine has a command.
 func Have(name string) bool { return Resolve(name) != "" }
 
-// Output is what one command left behind. Both streams are already redacted.
+// Output is what one command left behind. Both streams arrive redacted, unless
+// the Command asked for them Plain — in which case they are exactly what the
+// program wrote and must not be stored or displayed as they are.
 type Output struct {
 	Code     int
 	Stdout   string
@@ -216,7 +220,10 @@ func Exec(ctx context.Context, cmd Command) Output {
 	if err != nil && out.Code == 0 {
 		out.Code = 1
 		if out.Stderr == "" {
-			out.Stderr = RedactText(err.Error())
+			out.Stderr = err.Error()
+			if !cmd.Plain {
+				out.Stderr = RedactText(out.Stderr)
+			}
 		}
 	}
 	return out

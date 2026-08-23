@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -31,12 +29,6 @@ var terminalFailure = map[string]bool{
 var inFlight = map[string]bool{
 	"queued": true, "in_progress": true, "waiting": true, "pending": true, "requested": true,
 }
-
-// accountNumber is a bare twelve-digit AWS account id.
-var accountNumber = regexp.MustCompile(`(^|[^\d])(\d{12})($|[^\d])`)
-
-// imageDigest is the long hash in a container image reference.
-var imageDigest = regexp.MustCompile(`(sha256:)[a-f0-9]{20,}`)
 
 // Monitor reports on a run that has been deployed.
 type Monitor struct {
@@ -802,54 +794,4 @@ func providerHealthy(run *Run, snapshot map[string]any) bool {
 		}
 		return text(releases[0]["status"]) == "Success"
 	}
-}
-
-// --- masking -----------------------------------------------------------------------------
-
-// mask removes the identifiers that are not secrets but are nobody else's
-// business: the account number, and the digest of an image.
-func mask(value any) any {
-	switch item := value.(type) {
-	case string:
-		item = accountNumber.ReplaceAllString(item, "${1}***ACCOUNT***${3}")
-		return imageDigest.ReplaceAllString(item, "${1}***masked***")
-	case map[string]any:
-		out := make(map[string]any, len(item))
-		for key, nested := range item {
-			out[key] = mask(nested)
-		}
-		return out
-	case []any:
-		out := make([]any, 0, len(item))
-		for _, nested := range item {
-			out = append(out, mask(nested))
-		}
-		return out
-	case []string:
-		// Redact keeps a []string a []string, so without this arm the one
-		// list made of raw provider errors would skip masking entirely.
-		out := make([]string, 0, len(item))
-		for _, nested := range item {
-			out = append(out, text(mask(nested)))
-		}
-		return out
-	}
-	return value
-}
-
-// number reads a count out of decoded JSON, whatever numeric shape it took.
-func number(value any) int {
-	switch item := value.(type) {
-	case int:
-		return item
-	case int64:
-		return int(item)
-	case float64:
-		return int(item)
-	case string:
-		if parsed, err := strconv.Atoi(item); err == nil {
-			return parsed
-		}
-	}
-	return 0
 }

@@ -216,6 +216,13 @@ func CheckMongoURI(value string) error {
 	if parsed.Host == "" || parsed.Hostname() == "" {
 		return badRequest("MONGODB_URI must contain a MongoDB host and use mongodb:// or mongodb+srv://")
 	}
+	// A loopback address is this machine, and the deployed app is not on this
+	// machine. Settings says it refuses one; this is where that promise is
+	// kept, for the explicitly saved URI as well as the shared one.
+	if loopback.MatchString(value) {
+		return badRequest("MONGODB_URI points at this machine, which the deployed app cannot " +
+			"reach. Set a database that is reachable from the internet in Settings.")
+	}
 	return nil
 }
 

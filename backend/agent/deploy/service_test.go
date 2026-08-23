@@ -453,3 +453,128 @@ func TestAFinishedDeploymentIsWrittenIntoItsProject(t *testing.T) {
 		t.Errorf("deleted = %v", note)
 	}
 }
+
+func TestAStrandedRunDoesNotBlockTheButtonForGood(t *testing.T) {
+	agent := agentOn(t)
+	source := project(t)
+
+	// The app closed between the analysis finishing and the deployment
+	// starting. Nothing sweeps this state up, so counting it as in flight
+	// would refuse every later deployment of this project.
+	run, err := agent.Store.CreateRun(NewRunID(), "corner-shop", source, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []State{StateAnalyzing, StateReviewReady} {
+		if _, err := agent.Store.Transition(run.ID, step, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	request := StudioRequest{Path: source, Target: TargetVercel,
+		MongoURI: "mongodb+srv://user:pw@cluster.mongodb.net/shop"}
+	if err := agent.canDeploy(request, TargetVercel); err != nil {
+		t.Fatalf("a stranded run refused a new deployment: %v", err)
+	}
+
+	// A run that really is deploying still does.
+	if _, err := agent.Store.Transition(run.ID, StateBootstrapping, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := agent.canDeploy(request, TargetVercel); err == nil ||
+		!strings.Contains(err.Error(), "already running") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestTheRecordLeftInTheProjectCarriesNoAccountNumber(t *testing.T) {
+	agent := agentOn(t)
+	source := project(t)
+	run, err := agent.Store.CreateRun(NewRunID(), "corner-shop", source, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.Store.Update(run.ID, map[string]any{"repo": map[string]any{
+		"account_id":     "123456789012",
+		"ecr_repository": "123456789012.dkr.ecr.ap-south-1.amazonaws.com/shop",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := agent.Store.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Adopt(agent.Store, current); err != nil {
+		t.Fatal(err)
+	}
+
+	// This folder is the folder that gets committed and pushed.
+	body, err := os.ReadFile(filepath.Join(source, ".agentforge", "deploy", "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "123456789012") {
+		t.Errorf("the AWS account number was written into the project:\n%s", body)
+	}
+	if !strings.Contains(string(body), "***ACCOUNT***") {
+		t.Errorf("run.json = %s", body)
+	}
+}
+
+func TestATornDownProjectStopsSayingItHasADeployment(t *testing.T) {
+	agent := agentOn(t)
+	source := project(t)
+	run, err := agent.Store.CreateRun(NewRunID(), "corner-shop", source, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []State{StateAnalyzing, StateReviewReady, StateBootstrapping,
+		StateCIRunning, StateDeploying, StateValidating, StateLive} {
+		if _, err := agent.Store.Transition(run.ID, step, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	live, err := agent.Store.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Adopt(agent.Store, live); err != nil {
+		t.Fatal(err)
+	}
+
+	// Teardown files the record away — the one path that used to leave the
+	// project reporting a deployment that no longer exists.
+	if err := agent.Deployer.destroyed(live); err != nil {
+		t.Fatal(err)
+	}
+	if HasRecord(source) {
+		t.Error("the project still claims a deployment it no longer has")
+	}
+	view := agent.ForProject(source)
+	if view.Deleted == nil {
+		t.Errorf("the panel has nothing to say about the deleted deployment: %+v", view)
+	}
+}
+
+func TestARunKnowsItsTargetBeforeItIsPlanned(t *testing.T) {
+	agent := agentOn(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	runID, err := agent.Analyzer.Start(ctx, project(t), TargetVercel, false)
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := agent.Store.GetRun(runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The panel draws its pipeline and its heading from the target, for the
+	// whole of an intake that happens long before there is a plan to read it
+	// out of. Without this a Vercel deployment says it is going to AWS.
+	if TargetOf(run) != TargetVercel {
+		t.Errorf("target = %q, want %q", TargetOf(run), TargetVercel)
+	}
+	// Let the cancelled analysis finish putting itself away before the
+	// temporary directory under it goes.
+	waitFor(t, agent, runID)
+}

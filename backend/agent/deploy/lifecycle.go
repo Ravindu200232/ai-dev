@@ -215,7 +215,7 @@ func (d *Deployer) Teardown(ctx context.Context, runID string,
 
 	slug := text(run.Plan["project_slug"])
 	if slug == "" || len(run.Repo) == 0 {
-		if _, err := d.Store.Transition(runID, StateDestroyed, map[string]any{"error": ""}); err != nil {
+		if err := d.destroyed(run); err != nil {
 			return nil, err
 		}
 		d.emit(runID).step("teardown", StatusComplete, 100,
@@ -229,6 +229,20 @@ func (d *Deployer) Teardown(ctx context.Context, runID string,
 		go d.teardownAWS(ctx, run, slug, credentials)
 	}
 	return map[string]any{"accepted": true, "slug": slug}, nil
+}
+
+// destroyed marks a run torn down and files its record away with it. Every
+// teardown ends here: a project whose deployment was deleted must stop saying
+// it has one, and the record it kept moves to the archive rather than being
+// thrown away — the customer deleted cloud resources, not the evidence.
+func (d *Deployer) destroyed(run *Run) error {
+	if _, err := d.Store.Transition(run.ID, StateDestroyed, map[string]any{"error": ""}); err != nil {
+		return err
+	}
+	// The resources are already gone. A record that could not be moved is not
+	// a reason to report the teardown as failed.
+	_ = Retire(run.ProjectPath, run.ID)
+	return nil
 }
 
 func (d *Deployer) teardownVercel(ctx context.Context, run *Run, slug string) {
@@ -253,7 +267,7 @@ func (d *Deployer) teardownVercel(ctx context.Context, run *Run, slug string) {
 		fail(err)
 		return
 	}
-	if _, err := d.Store.Transition(run.ID, StateDestroyed, map[string]any{"error": ""}); err != nil {
+	if err := d.destroyed(run); err != nil {
 		fail(err)
 		return
 	}
@@ -288,7 +302,7 @@ func (d *Deployer) teardownAWS(ctx context.Context, run *Run, slug string, crede
 		emit.step("teardown", StatusRunning, 40+index*40, "Deleted "+stack, nil)
 	}
 
-	if _, err := d.Store.Transition(run.ID, StateDestroyed, map[string]any{"error": ""}); err != nil {
+	if err := d.destroyed(run); err != nil {
 		emit.send(Event{Type: EventError, Stage: "teardown", Status: StatusFailed, Percent: 100,
 			Message: RedactText(err.Error())})
 		return

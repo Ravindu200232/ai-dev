@@ -38,18 +38,31 @@ var secretValues = []*regexp.Regexp{
 }
 
 // assignment is a `NAME=value` line whose name says the value is a secret.
+// Spaces and tabs around the `=`, never `\s`, which in Go matches a newline
+// and would take the line below with it.
 var assignment = regexp.MustCompile(
-	`(?im)^([A-Z][A-Z0-9_]*(SECRET|TOKEN|PASSWORD|URI|KEY)[A-Z0-9_]*\s*=\s*).+$`)
+	`(?im)^([A-Z][A-Z0-9_]*(SECRET|TOKEN|PASSWORD|URI|KEY)[A-Z0-9_]*[ \t]*=[ \t]*).+$`)
 
 // IsSecretName reports whether a variable's name means its value is a secret.
 func IsSecretName(name string) bool { return secretName.MatchString(name) }
 
 // RedactText removes anything that looks like a secret from one string.
+//
+// It never changes how many lines the string has. A private key covers several
+// lines and has to be matched across them, but deleting those lines takes the
+// text that happened to sit between BEGIN and END with it — and something else
+// is reading those lines.
 func RedactText(value string) string {
 	for _, pattern := range secretValues {
-		value = pattern.ReplaceAllString(value, redacted)
+		value = pattern.ReplaceAllStringFunc(value, keepLines)
 	}
 	return assignment.ReplaceAllString(value, "${1}"+redacted)
+}
+
+// keepLines is the redaction marker, followed by the newlines the match it
+// replaces spanned.
+func keepLines(match string) string {
+	return redacted + strings.Repeat("\n", strings.Count(match, "\n"))
 }
 
 // Redact walks a value and removes every secret in it: by the key's name where
@@ -125,4 +138,48 @@ func SafeJSON(value any) string {
 		return "{}"
 	}
 	return strings.TrimSpace(string(body))
+}
+
+// accountNumber is a bare twelve-digit AWS account id.
+var accountNumber = regexp.MustCompile(`(^|[^\d])(\d{12})($|[^\d])`)
+
+// imageDigest is the long hash in a container image reference.
+var imageDigest = regexp.MustCompile(`(sha256:)[a-f0-9]{20,}`)
+
+// --- masking -----------------------------------------------------------------------------
+
+// Masking is the smaller sibling of redaction. These are not secrets — knowing
+// an AWS account number does not let anyone in — but they identify the customer
+// and belong to them, so nothing that leaves this process carries them: not the
+// Studio, not the evidence bundle, not the record left in the project.
+
+// mask removes the identifiers that are not secrets but are nobody else's
+// business: the account number, and the digest of an image.
+func mask(value any) any {
+	switch item := value.(type) {
+	case string:
+		item = accountNumber.ReplaceAllString(item, "${1}***ACCOUNT***${3}")
+		return imageDigest.ReplaceAllString(item, "${1}***masked***")
+	case map[string]any:
+		out := make(map[string]any, len(item))
+		for key, nested := range item {
+			out[key] = mask(nested)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(item))
+		for _, nested := range item {
+			out = append(out, mask(nested))
+		}
+		return out
+	case []string:
+		// Redact keeps a []string a []string, so without this arm the one
+		// list made of raw provider errors would skip masking entirely.
+		out := make([]string, 0, len(item))
+		for _, nested := range item {
+			out = append(out, text(mask(nested)))
+		}
+		return out
+	}
+	return value
 }

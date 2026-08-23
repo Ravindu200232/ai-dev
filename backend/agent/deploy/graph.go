@@ -118,6 +118,13 @@ func (a *Analyzer) Start(ctx context.Context, source, target string, validateBui
 	if err != nil {
 		return "", err
 	}
+	// The target is what the panel draws its pipeline from, and the plan that
+	// carries it is minutes of analysis away. Write it down now, or a Vercel
+	// deployment is labelled an AWS one for its whole first stage.
+	if updated, err := a.Store.Update(runID, map[string]any{
+		"plan": map[string]any{"target": target}}); err == nil {
+		run = updated
+	}
 
 	go func() {
 		if err := a.Analyze(ctx, run, target, validateBuild); err != nil {

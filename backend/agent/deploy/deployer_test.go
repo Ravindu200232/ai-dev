@@ -195,15 +195,17 @@ func TestADeployingRunElsewhereStillOwnsTheProject(t *testing.T) {
 func TestCheckMongoURI(t *testing.T) {
 	good := []string{
 		"mongodb+srv://user:pass@cluster.mongodb.net/shop",
-		"mongodb://127.0.0.1:27017/shop",
+		"mongodb://db.internal.example.com:27017/shop",
 	}
 	for _, value := range good {
 		if err := CheckMongoURI(value); err != nil {
 			t.Errorf("CheckMongoURI(%q) = %v", value, err)
 		}
 	}
+	// A loopback address is refused: the deployed app is not on this machine,
+	// and Settings promises the box will not take one.
 	bad := []string{"", "postgres://host/db", "mongodb://", "mongodb+srv://user:p ss@host/db",
-		"just a string"}
+		"just a string", "mongodb://127.0.0.1:27017/shop", "mongodb://localhost:27017/shop"}
 	for _, value := range bad {
 		if err := CheckMongoURI(value); err == nil {
 			t.Errorf("CheckMongoURI(%q) was accepted", value)

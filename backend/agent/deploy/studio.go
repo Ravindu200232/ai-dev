@@ -61,10 +61,28 @@ func (s *Agent) canDeploy(request StudioRequest, target string) error {
 	if strings.HasPrefix(target, "aws_") && strings.TrimSpace(request.AWSProfile) == "" {
 		return badRequest("no AWS account connected — sign in from Settings")
 	}
-	if view := s.ForProject(request.Path); view.Live != nil {
-		return conflict("a deployment for this project is already running")
+	for _, run := range s.runsFor(request.Path) {
+		if stillWorking(run) {
+			return conflict("a deployment for this project is already running")
+		}
 	}
 	return nil
+}
+
+// stillWorking is a run that would really be interrupted by starting another one:
+// one that is deploying, or an analysis young enough to still be working.
+//
+// A run stuck before either — the app closed between the analysis finishing
+// and the deployment starting — is not going anywhere and nothing sweeps it
+// up, so counting it would leave the project's Deploy button refusing for
+// good. The supervisor already decides when a run has been abandoned; this
+// asks the same question rather than a second one.
+func stillWorking(run *Run) bool {
+	if Active[run.State] {
+		return true
+	}
+	return (run.State == StateAnalyzing || run.State == StateDraft) &&
+		!older(run, time.Now().UTC().Add(-analysisGrace))
 }
 
 // Status is what the Studio shows about the agent itself. It is part of this
@@ -163,24 +181,10 @@ type Project struct {
 // record, so it carries what was deployed and where it ended up.
 func (s *Agent) ForProject(path string) Project {
 	out := Project{}
-	wanted, err := filepath.Abs(path)
-	if err != nil {
-		return out
-	}
-	wanted = strings.ToLower(wanted)
-
-	runs, err := s.Store.ListRuns(250)
-	if err != nil {
-		return out
-	}
-	for i := range runs {
-		run := &runs[i]
-		mine, err := filepath.Abs(run.ProjectPath)
-		if err != nil || strings.ToLower(mine) != wanted {
-			continue
-		}
-		// ListRuns is newest first, so the first match of each kind is the
-		// one the panel wants.
+	runs := s.runsFor(path)
+	for _, run := range runs {
+		// runsFor is newest first, so the first match of each kind is the one
+		// the panel wants.
 		if !out.HaveLast {
 			out.Last, out.HaveLast = s.finished(run), true
 		}
@@ -191,8 +195,35 @@ func (s *Agent) ForProject(path string) Project {
 			break
 		}
 	}
-	if !out.HaveLast {
+	// The note a teardown left. A project whose newest run was torn down has
+	// nothing deployed any more, whatever that run still says it built.
+	if len(runs) == 0 || runs[0].State == StateDestroyed {
 		out.Deleted = Deleted(path)
+	}
+	return out
+}
+
+// runsFor are one project's runs, newest first. A project reaches here spelled
+// several ways — relative, with a different case — so the paths are compared
+// absolute and lower-cased.
+func (s *Agent) runsFor(path string) []*Run {
+	wanted, err := filepath.Abs(path)
+	if err != nil {
+		return nil
+	}
+	wanted = strings.ToLower(wanted)
+
+	all, err := s.Store.ListRuns(250)
+	if err != nil {
+		return nil
+	}
+	out := []*Run{}
+	for i := range all {
+		mine, err := filepath.Abs(all[i].ProjectPath)
+		if err != nil || strings.ToLower(mine) != wanted {
+			continue
+		}
+		out = append(out, &all[i])
 	}
 	return out
 }
@@ -206,11 +237,13 @@ func (s *Agent) finished(run *Run) map[string]any {
 		"run_id":    run.ID,
 		"state":     string(run.State),
 		"target":    TargetOf(run),
-		"readiness": object(run.Readiness),
+		"readiness": object(mask(run.Readiness)),
 		// The Studio reads the provider block under this name.
-		"repo_state":   object(mask(Redact(run.Repo))),
-		"error":        run.Error,
-		"monitor":      object(run.Monitor),
+		"repo_state": object(mask(Redact(run.Repo))),
+		// Masked like everything else that leaves this process: an IAM refusal
+		// is stored with the account number in it.
+		"error":        text(mask(run.Error)),
+		"monitor":      object(mask(run.Monitor)),
 		"events_count": len(events),
 		"link": map[string]any{
 			"run_id":     run.ID,
@@ -256,11 +289,24 @@ func (s *Agent) progress(run *Run) map[string]any {
 		"target":  TargetOf(run),
 		"phase":   phase,
 		"percent": percent,
-		"message": message,
-		"error":   run.Error,
-		"url":     text(object(run.Repo)["application_url"]),
-		"events":  events,
+		"message": text(mask(message)),
+		"error":   text(mask(run.Error)),
+		"url":     text(mask(object(run.Repo)["application_url"])),
+		"events":  maskEvents(events),
 	}
+}
+
+// maskEvents is a run's log as the panel reads it. The store redacts every
+// event on the way in; this takes out what is not a secret but is still nobody
+// else's business, the same as every other way out of this process.
+func maskEvents(events []Event) []Event {
+	for i := range events {
+		events[i].Message = text(mask(events[i].Message))
+		if len(events[i].Data) > 0 {
+			events[i].Data = object(mask(events[i].Data))
+		}
+	}
+	return events
 }
 
 // schemaVersion is which renderer produced the artifacts sitting in the run's
@@ -296,7 +342,9 @@ func (s *Agent) settle(ctx context.Context, runID string) {
 			continue
 		}
 		if run.State == StateDestroyed {
-			_ = Retire(run.ProjectPath, run.ID)
+			// Teardown has already filed the record away. There is nothing
+			// left to keep, and writing one back would say the project still
+			// has a deployment.
 			return
 		}
 		if err := Adopt(s.Store, run); err != nil {

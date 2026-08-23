@@ -23,8 +23,9 @@ import (
 var (
 	standaloneSet = regexp.MustCompile(`\boutput\s*:\s*['"]standalone['"]`)
 	// A config is declared at the start of a line, and in TypeScript it
-	// carries a type: `const nextConfig: NextConfig = {`.
-	namedConfig    = regexp.MustCompile(`(?m)^[ \t]*(?:const|let|var)\s+(?:nextConfig|config)\s*(?::[^=\n]+)?=\s*\{`)
+	// carries a type: `const nextConfig: NextConfig = {`. The declaration
+	// itself is often exported as well: `export const nextConfig = {`.
+	namedConfig    = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+(?:nextConfig|config)\s*(?::[^=\n]+)?=\s*\{`)
 	exportedConfig = regexp.MustCompile(`(?m)^[ \t]*(?:module\.exports\s*=|export\s+default)\s*\{`)
 	// Which identifier the file actually exports, so the right object is the
 	// one that gets the setting.
@@ -71,10 +72,12 @@ func applyPatches(w writer, service Service, target string) ([]Artifact, []map[s
 	// its own way and would be confused by it.
 	if target == TargetEC2 || target == TargetECS {
 		if name, body, found := findConfig(w, prefix); found {
-			if updated, ok := addStandalone(body); ok {
+			updated, changed, already := addStandalone(body)
+			switch {
+			case changed:
 				add(prefix+name, updated,
 					"Next.js standalone build output", "Add output: standalone")
-			} else if !standaloneSet.MatchString(codeOnly(body)) {
+			case !already:
 				// The build will fail the standalone check and nothing would
 				// say why, so the review screen says it instead.
 				problems = append(problems, "Could not switch on standalone output in "+
@@ -193,16 +196,18 @@ func findConfig(w writer, prefix string) (name, body string, found bool) {
 }
 
 // addStandalone switches standalone output on in a config that does not have
-// it. A config it cannot recognise is left alone and reported instead: a wrong
-// edit to a config file breaks the build for everyone, and the review screen
-// can ask a person for it.
+// it. It answers with the file, whether it changed it, and whether the setting
+// was already there — because "changed nothing" has two meanings and only one
+// of them is fine. A config it cannot recognise is left alone and reported
+// instead: a wrong edit to a config file breaks the build for everyone, and
+// the review screen can ask a person for it.
 //
 // Matching happens against the file with its comments blanked out, so a
 // commented-out config above the real one cannot be edited into life.
-func addStandalone(body string) (string, bool) {
+func addStandalone(body string) (updated string, changed, already bool) {
 	code := codeOnly(body)
 	if standaloneSet.MatchString(code) {
-		return body, false
+		return body, false, true
 	}
 
 	// The object the file exports is the one Next.js reads. A file may well
@@ -210,17 +215,20 @@ func addStandalone(body string) (string, bool) {
 	// the setting in one of those would change nothing and look like success.
 	if name := exportedName.FindStringSubmatch(code); name != nil {
 		declared := regexp.MustCompile(
-			`(?m)^[ \t]*(?:const|let|var)\s+` + regexp.QuoteMeta(name[1]) + `\s*(?::[^=\n]+)?=\s*\{`)
+			`(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+` + regexp.QuoteMeta(name[1]) +
+				`\s*(?::[^=\n]+)?=\s*\{`)
 		if at := declared.FindStringIndex(code); at != nil {
-			return withStandalone(body, at[1]), true
+			return withStandalone(body, at[1]), true, false
 		}
 	}
-	for _, pattern := range []*regexp.Regexp{namedConfig, exportedConfig} {
+	// An object written into the export itself is by definition the one Next.js
+	// reads, so it comes before any name the file happens to declare.
+	for _, pattern := range []*regexp.Regexp{exportedConfig, namedConfig} {
 		if at := pattern.FindStringIndex(code); at != nil {
-			return withStandalone(body, at[1]), true
+			return withStandalone(body, at[1]), true, false
 		}
 	}
-	return body, false
+	return body, false, false
 }
 
 // withStandalone writes the setting immediately after the opening brace the
@@ -240,12 +248,26 @@ func withStandalone(body string, after int) string {
 // This is not a JavaScript parser and does not pretend to be. It exists for one
 // question — is this match real code, or is it something a developer commented
 // out? — which is the question that decides whether an edit here is safe.
+//
+// String literals are stepped over rather than blanked out. A config file is
+// full of paths and globs, and `['**/*.test.js']` carries a `/*` that would
+// otherwise start a block comment the scan never comes out of, blanking every
+// line below it.
 func codeOnly(body string) string {
 	out := []byte(body)
 	line, block := false, false
+	quote := byte(0)
 
 	for i := 0; i < len(out); i++ {
 		switch {
+		case quote != 0:
+			if out[i] == '\\' {
+				i++
+				continue
+			}
+			if out[i] == quote {
+				quote = 0
+			}
 		case line:
 			if out[i] == '\n' {
 				line = false
@@ -262,6 +284,8 @@ func codeOnly(body string) string {
 			if out[i] != '\n' {
 				out[i] = ' '
 			}
+		case out[i] == '\'' || out[i] == '"' || out[i] == '`':
+			quote = out[i]
 		case out[i] == '/' && i+1 < len(out) && out[i+1] == '/':
 			line = true
 			out[i], out[i+1] = ' ', ' '
@@ -346,22 +370,24 @@ func pagesReadingDatabase(w writer, appRoot string) []string {
 // Counting lines that begin with "import " would put the declaration inside
 // that statement and leave the customer with a file that does not parse. So
 // this walks the top of the file, follows each import to its end, and stops at
-// the first line that is neither an import, a directive, nor a comment.
+// the first line that is neither an import nor a directive.
+//
+// The walk reads the file with its comments already blanked out. A bracket or
+// a quote inside a trailing comment — `import { Button } from './b' // CTA :)`
+// — is otherwise counted as code, and one miscounted bracket puts the walk
+// inside an import it never leaves.
 func forceDynamic(body string) string {
-	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
-	at, depth, inImport, inComment := 0, 0, false, false
+	normalized := strings.ReplaceAll(body, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	code := strings.Split(codeOnly(normalized), "\n")
 
-	for index, line := range lines {
-		trimmed := strings.TrimSpace(line)
+	at, directives, depth, inImport := 0, 0, 0, false
 
-		if inComment {
-			if strings.Contains(trimmed, "*/") {
-				inComment = false
-			}
-			continue
-		}
+	for index := range lines {
+		trimmed := strings.TrimSpace(code[index])
+
 		if inImport {
-			depth += brackets(line)
+			depth += brackets(code[index])
 			if depth <= 0 && importEnds(trimmed) {
 				at, inImport, depth = index+1, false, 0
 			}
@@ -369,25 +395,29 @@ func forceDynamic(body string) string {
 		}
 
 		switch {
-		case trimmed == "" || strings.HasPrefix(trimmed, "//"):
-			// Blank lines and comments neither move the insertion point nor
-			// end the run of imports.
-		case strings.HasPrefix(trimmed, "/*"):
-			inComment = !strings.Contains(trimmed, "*/")
+		case trimmed == "":
+			// A blank line, or one that held nothing but a comment. Neither
+			// moves the insertion point nor ends the run of imports.
 		case strings.HasPrefix(trimmed, "'use ") || strings.HasPrefix(trimmed, `"use `):
-			at = index + 1
+			at, directives = index+1, index+1
 		case strings.HasPrefix(trimmed, "import"):
-			if brackets(line) == 0 && importEnds(trimmed) {
+			if brackets(code[index]) == 0 && importEnds(trimmed) {
 				at = index + 1
 				continue
 			}
 			// An import that is still open: follow it to its closing line.
-			inImport, depth = true, brackets(line)
+			inImport, depth = true, brackets(code[index])
 		default:
 			// The first real statement. Anything below this is code, and the
 			// declaration has to be above all of it.
 			return insertAt(lines, at)
 		}
+	}
+	if inImport {
+		// The walk ran off the end of an import it could not follow, so the
+		// line it settled on is a guess. Above every import is always a valid
+		// place for a declaration; the middle of one never is.
+		return insertAt(lines, directives)
 	}
 	return insertAt(lines, at)
 }

@@ -89,7 +89,20 @@ deployment agent have no port of their own any more: they are served under
   so a pattern that matches one line can swallow the next: `Command.Plain` is
   for the reads that make a decision, and everything else is redacted. A secret
   is passed to a program on its standard input, never as an argument — an
-  argument is readable by every process on the machine.
+  argument is readable by every process on the machine. Where a platform has no
+  standard-input path — Windows has no `/dev/stdin` — it goes into a file that
+  is deleted the moment the command returns.
+- Redaction never changes how many lines a string has, and masking is applied
+  wherever redaction is. Both live in `deploy/secret.go`: redaction removes
+  secrets, masking removes the account number and the image digest, which are
+  not secrets but are the customer's. Everything that leaves the process gets
+  both — the Studio, the evidence bundle, and the record left in the project.
+- Editing a customer's JavaScript is done against the file with its comments
+  blanked out (`codeOnly`), never against the raw text. A bracket in a trailing
+  comment or a `/*` inside a glob string is how an edit lands in the middle of
+  an import or inside a comment, and the file that comes back does not parse.
+  When the walk cannot tell where it is, insert somewhere always valid rather
+  than somewhere guessed.
 - Every phase re-runs `core.Refresh` before it decides anything. Do not carry a
   file listing forward between phases.
 - Listing a directory runs the platform's own `ls` or `dir` and parses it. The
@@ -107,7 +120,16 @@ deployment agent have no port of their own any more: they are served under
   `events`.
 - The database a deployment uses is `deploy_mongodb_uri`, never the
   `mongodb_uri` AgentForge runs for itself — that one is usually on this
-  machine, and an app in a cloud cannot reach it.
+  machine, and an app in a cloud cannot reach it. `CheckMongoURI` refuses a
+  loopback address whichever of the two it came from.
+- A run only blocks another one while it is doing something. `Active` is that
+  question; `!Terminal` is not — a run abandoned in `DRAFT` or `REVIEW_READY`
+  is swept up by nothing, and gating on it leaves a project's Deploy button
+  refusing for good.
+- The agent commits the project and nothing else. A pathspec's `**/` needs a
+  directory to match against, so every exclusion in `github.go` takes a second
+  pattern for the repository root — that is how a root `.env` was once staged.
+  `.agentforge/` is the agent's own record and is never committed.
 - QA rounds are sequential. A repair round has to see the failure the previous
   round left behind.
 - Prefer evidence-backed repairs over broad rewrites: read the file before

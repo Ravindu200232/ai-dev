@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -80,8 +82,13 @@ func (g GitHub) EnsureRepository(ctx context.Context, slug string) (string, erro
 		}
 	}
 
-	if out := g.git(ctx, "remote", "get-url", "origin"); out.OK() {
-		if remote := strings.TrimSpace(out.Stdout); remote != "" {
+	// Read plain: which repository this deploys to is decided here, and an
+	// origin that carries a token in it would be rewritten to ***REDACTED***
+	// and then refused as "not a GitHub repository". Nothing below stores it.
+	origin := Exec(ctx, Command{Name: "git", Args: []string{"remote", "get-url", "origin"},
+		Dir: g.Dir, Timeout: gitTimeout2, Plain: true})
+	if origin.OK() {
+		if remote := strings.TrimSpace(origin.Stdout); remote != "" {
 			name := RepositoryName(remote)
 			if name == "" {
 				return "", errors.New("The existing origin is not a GitHub repository")
@@ -145,8 +152,11 @@ func (g GitHub) Identity(ctx context.Context, repo string) (RepoIdentity, error)
 		var customization struct {
 			UseDefault *bool `json:"use_default"`
 		}
-		if json.Unmarshal([]byte(custom.Stdout), &customization) == nil &&
-			customization.UseDefault != nil && !*customization.UseDefault {
+		// A body this cannot read is a body it cannot clear the repository on.
+		// This is the check that decides whether the trust policy will match,
+		// so it refuses rather than assumes.
+		if err := json.Unmarshal([]byte(custom.Stdout), &customization); err != nil ||
+			(customization.UseDefault != nil && !*customization.UseDefault) {
 			return identity, errors.New("This repository uses a custom GitHub OIDC subject " +
 				"template; reset it to the default before deployment")
 		}
@@ -288,12 +298,58 @@ func within(root, path string) bool {
 // every other variant Next.js reads — because naming them one at a time is how
 // .env.production.local came to be missing from the list. .env.example is the
 // one that is meant to be committed, and it is added back by name below.
-// A pathspec's **/ needs a directory to match against, so the project root
-// takes a pattern of its own — and the root .env is the one most likely to
-// hold the customer's real database password.
+//
+// A pathspec's **/ needs a directory to match against, so everything here
+// takes a second pattern for the project root — and the root .env is the one
+// most likely to hold the customer's real database password.
+//
+// .agentforge is this agent's own record of the deployment. It belongs to the
+// project, not to the repository: it carries the account it deployed into and
+// the address it ended up at, and the customer's repository may be public.
 var excluded = []string{
 	":(exclude).env*", ":(exclude)**/.env*",
-	":(exclude)**/node_modules/**", ":(exclude)**/.next/**", ":(exclude)**/.vercel/**",
+	":(exclude).agentforge/**", ":(exclude)**/.agentforge/**",
+	":(exclude)node_modules/**", ":(exclude)**/node_modules/**",
+	":(exclude).next/**", ":(exclude)**/.next/**",
+	":(exclude).vercel/**", ":(exclude)**/.vercel/**",
+}
+
+// exampleFiles are the .env.example paths to put back into the commit: the ones
+// this run wrote, and any the project already had. Only the first list used to
+// be added back, so a project whose example was not regenerated quietly shipped
+// without one.
+func exampleFiles(dir string, applied []string) []string {
+	seen, out := map[string]bool{}, []string{}
+	keep := func(relative string) {
+		if !seen[relative] {
+			seen[relative] = true
+			out = append(out, relative)
+		}
+	}
+	for _, relative := range applied {
+		if strings.HasSuffix(relative, ".env.example") {
+			keep(relative)
+		}
+	}
+	_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil
+		case entry.IsDir():
+			if path != dir && (skipDirs[entry.Name()] || entry.Name() == ".git") {
+				return fs.SkipDir
+			}
+			return nil
+		case entry.Name() != ".env.example":
+			return nil
+		}
+		if relative, err := filepath.Rel(dir, path); err == nil {
+			keep(filepath.ToSlash(relative))
+		}
+		return nil
+	})
+	sort.Strings(out)
+	return out
 }
 
 // Commit stages the deployment, refuses to commit anything that holds a value,
@@ -306,12 +362,11 @@ func (g GitHub) Commit(ctx context.Context, runID, repo, branch string,
 	if out := g.git(ctx, append([]string{"add", "-A", "--", "."}, excluded...)...); !out.OK() {
 		return Push{}, errors.New("git add: " + out.Text())
 	}
-	// .env.example is the one .env file that exists to be committed.
-	for _, relative := range applied {
-		if strings.HasSuffix(relative, ".env.example") {
-			if out := g.git(ctx, "add", "-f", "--", relative); !out.OK() {
-				return Push{}, errors.New("git add: " + out.Text())
-			}
+	// .env.example is the one .env file that exists to be committed, and the
+	// exclusion above catches it with the rest of the family.
+	for _, relative := range exampleFiles(g.Dir, applied) {
+		if out := g.git(ctx, "add", "-f", "--", relative); !out.OK() {
+			return Push{}, errors.New("git add: " + out.Text())
 		}
 	}
 

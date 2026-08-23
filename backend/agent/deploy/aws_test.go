@@ -171,3 +171,55 @@ esac`)
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestAStackFailureStillReportsWhenTheClocksDisagree(t *testing.T) {
+	recent := time.Now().UTC().Format(time.RFC3339Nano)
+	_, _ = fakeAWS(t, `case "$*" in
+  *describe-stack-events*) echo '{"StackEvents":[
+     {"Timestamp":"`+recent+`","LogicalResourceId":"AppInstance","ResourceStatus":"CREATE_FAILED","ResourceStatusReason":"instance type not available"}]}' ;;
+  *) echo '{}' ;;
+esac`)
+
+	// This machine's clock runs an hour ahead of AWS, so every event of the
+	// operation looks old. Losing the diagnosis to a wrong clock is worse than
+	// reporting one that might be from an earlier attempt.
+	ahead := time.Now().UTC().Add(time.Hour)
+	err := (AWS{Region: DefaultRegion}).stackFailure(context.Background(), "shop-bootstrap",
+		Output{Code: 255}, ahead)
+	if err == nil || !strings.Contains(err.Error(), "instance type not available") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTheSecretNeverBecomesAWindowsPathThatDoesNotExist(t *testing.T) {
+	// Windows has no /dev/stdin. Passing it anyway is how every deployment
+	// from a Windows machine used to stop at the secrets step.
+	parameter, stdin, cleanup, err := secretParameter("windows", `{"MONGODB_URI":"mongodb://x"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if strings.Contains(parameter, "/dev/stdin") || !strings.HasPrefix(parameter, "file://") {
+		t.Fatalf("parameter = %q", parameter)
+	}
+	if stdin != "" {
+		t.Errorf("nothing goes on standard input there: %q", stdin)
+	}
+	path := strings.TrimPrefix(parameter, "file://")
+	body, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(body), "mongodb://x") {
+		t.Fatalf("the bundle was not written: %v %q", err, body)
+	}
+	cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the file outlived the command: %v", err)
+	}
+}
+
+func TestOnUnixTheSecretGoesOnStandardInput(t *testing.T) {
+	parameter, stdin, cleanup, err := secretParameter("linux", `{"A":"b"}`)
+	defer cleanup()
+	if err != nil || parameter != "file:///dev/stdin" || stdin != `{"A":"b"}` {
+		t.Fatalf("parameter = %q stdin = %q err = %v", parameter, stdin, err)
+	}
+}

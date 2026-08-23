@@ -34,10 +34,14 @@ func Adopt(store *Store, run *Run) error {
 	if err != nil {
 		events = []Event{}
 	}
+	// Masked as well as redacted. This record sits in the customer's project
+	// folder, which is the folder that gets committed and pushed, so it holds
+	// no more than what the Studio itself is shown: no account number, no
+	// image digest.
 	files := map[string]any{
-		"run.json":     Redact(run),
-		"events.json":  map[string]any{"events": events},
-		"monitor.json": run.Monitor,
+		"run.json":     mask(Redact(run)),
+		"events.json":  mask(Redact(map[string]any{"events": events})),
+		"monitor.json": mask(Redact(run.Monitor)),
 		"link.json": map[string]any{
 			"run_id":     run.ID,
 			"adopted_at": NowISO(),

@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -381,12 +384,22 @@ func (a AWS) stackFailure(ctx context.Context, stack string, out Output, since t
 		} `json:"StackEvents"`
 	}
 	if a.call(ctx, &described, "cloudformation", "describe-stack-events", "--stack-name", stack) == nil {
+		scan := described.Events[:0:0]
 		for _, event := range described.Events {
 			if !after(event.Timestamp, since) {
 				// Events come back newest first, so everything from here down
 				// belongs to an earlier operation.
 				break
 			}
+			scan = append(scan, event)
+		}
+		if len(scan) == 0 {
+			// Not one event of this operation fell inside the window, which
+			// means the two clocks disagree rather than that nothing failed.
+			// An old reason is still a reason; no reason at all is not.
+			scan = described.Events
+		}
+		for _, event := range scan {
 			if strings.HasSuffix(event.ResourceStatus, "_FAILED") && event.ResourceStatusReason != "" {
 				return errors.New("CloudFormation stopped at " + event.LogicalResourceId + ": " +
 					clip(event.ResourceStatusReason, 400))
@@ -447,21 +460,62 @@ func parameterList(parameters map[string]string) []map[string]string {
 // PutSecret writes the running application's whole environment into Secrets
 // Manager. It is the only place a deployment ever puts a value.
 //
-// The bundle is handed to the CLI on standard input rather than as an argument:
-// it holds the customer's database password, and an argument is world-readable
-// for as long as the process lives.
+// The bundle never becomes an argument: it holds the customer's database
+// password, and an argument is readable by every other process on the machine
+// for as long as the command runs.
 func (a AWS) PutSecret(ctx context.Context, id string, values map[string]string) error {
 	body, err := json.Marshal(values)
 	if err != nil {
 		return err
 	}
-	out := a.execWith(ctx, awsTimeout, string(body),
+	parameter, stdin, cleanup, err := secretParameter(runtime.GOOS, string(body))
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	out := a.execWith(ctx, awsTimeout, stdin,
 		"secretsmanager", "put-secret-value",
-		"--secret-id", id, "--secret-string", "file:///dev/stdin")
+		"--secret-id", id, "--secret-string", parameter)
 	if !out.OK() {
 		return awsError([]string{"secretsmanager", "put-secret-value"}, out)
 	}
 	return nil
+}
+
+// secretParameter is how the bundle reaches the CLI: what to pass as
+// --secret-string, what to put on standard input, and what to clean up after.
+//
+// On Unix that is standard input, which the CLI reads through /dev/stdin.
+// Windows has no /dev/stdin — the CLI would try to open a path that does not
+// exist and every deployment from a Windows machine would stop here — so there
+// the bundle goes into a file in the user's own temporary directory and is
+// deleted the moment the command returns. A file that exists for a second is
+// still out of every process list; an argument is not.
+func secretParameter(goos, body string) (parameter, stdin string, cleanup func(), err error) {
+	if goos != "windows" {
+		return "file:///dev/stdin", body, func() {}, nil
+	}
+	file, err := os.CreateTemp("", "agentforge-secret-*.json")
+	if err != nil {
+		return "", "", func() {}, err
+	}
+	path := file.Name()
+	cleanup = func() { _ = os.Remove(path) }
+	// Windows keeps the temporary directory per-user already; this narrows it
+	// further wherever the filesystem honours it.
+	_ = file.Chmod(0o600)
+
+	if _, err := file.WriteString(body); err != nil {
+		_ = file.Close()
+		cleanup()
+		return "", "", func() {}, err
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", "", func() {}, err
+	}
+	return "file://" + filepath.ToSlash(path), "", cleanup, nil
 }
 
 // --- the network ------------------------------------------------------------------------------
@@ -572,8 +626,11 @@ func after(timestamp string, since time.Time) bool {
 	if err != nil {
 		return true
 	}
-	// A second of slack: the wait starts after the change set executes.
-	return !at.Before(since.Add(-time.Second))
+	// The timestamp is AWS's clock and `since` is this machine's, so the slack
+	// covers ordinary drift between them as well as the gap between recording
+	// the moment and the change set actually executing. An event a minute old
+	// is still almost certainly this operation's.
+	return !at.Before(since.Add(-time.Minute))
 }
 
 // sleep waits, and reports false if the run was cancelled while it waited.
