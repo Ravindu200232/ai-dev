@@ -195,3 +195,65 @@ func TestBodiesAreBounded(t *testing.T) {
 		t.Errorf("code = %d", recorder.Code)
 	}
 }
+
+func TestTheButtonWaitsForASlowAnalysis(t *testing.T) {
+	agent := agentOn(t)
+	run, err := agent.Store.CreateRun(NewRunID(), "shop", t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.Store.Transition(run.ID, StateAnalyzing, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// An analysis that is still going is waited for, however long it takes.
+	ctx, cancel := context.WithCancel(context.Background())
+	settled := make(chan bool, 1)
+	go func() {
+		_, ok := agent.awaitReview(ctx, run.ID)
+		settled <- ok
+	}()
+
+	select {
+	case <-settled:
+		t.Fatal("it gave up on a run that is still analysing")
+	case <-time.After(2500 * time.Millisecond):
+	}
+
+	// And it notices the moment the review is ready.
+	if _, err := agent.Store.Transition(run.ID, StateReviewReady, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ok := <-settled:
+		if !ok {
+			t.Error("a reviewable run was not recognised")
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("it did not notice the review")
+	}
+	cancel()
+}
+
+func TestTheButtonStopsWhenTheRunDoes(t *testing.T) {
+	agent := agentOn(t)
+	run, err := agent.Store.CreateRun(NewRunID(), "shop", t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []State{StateAnalyzing, StateFailed} {
+		if _, err := agent.Store.Transition(run.ID, step, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := agent.awaitReview(context.Background(), run.ID); ok {
+		t.Error("a failed analysis is not deployable")
+	}
+
+	// A cancelled context stops the wait rather than spinning.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, ok := agent.awaitReview(ctx, run.ID); ok {
+		t.Error("a cancelled wait does not deploy anything")
+	}
+}

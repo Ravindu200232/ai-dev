@@ -69,15 +69,17 @@ func (s *Agent) deployWhenReviewed(ctx context.Context, runID string, request St
 		Percent: 100, Message: err.Error()})
 }
 
-// reviewPatience is how long the analysis is given to reach the review screen.
-// It installs and builds the project, so it is measured in tens of minutes.
-const reviewPatience = 45 * time.Minute
-
-// awaitReview waits for the run to leave ANALYZING, and reports whether what
-// it left behind is deployable.
+// awaitReview follows the run until the analysis has finished, and reports
+// whether what it left behind is deployable.
+//
+// It waits on the state rather than on a clock. An analysis installs the
+// project's dependencies and builds it, which on a large project and a slow
+// machine is tens of minutes, and a wall-clock limit here would abandon a run
+// that was still working — leaving it in REVIEW_READY with nothing watching it
+// and no button to press. The supervisor already decides when an analysis is
+// lost; this follows that decision instead of making a second one.
 func (s *Agent) awaitReview(ctx context.Context, runID string) (*Run, bool) {
-	deadline := time.Now().Add(reviewPatience)
-	for time.Now().Before(deadline) {
+	for {
 		if !sleep(ctx, time.Second) {
 			return nil, false
 		}
@@ -91,10 +93,11 @@ func (s *Agent) awaitReview(ctx context.Context, runID string) (*Run, bool) {
 		case StateReviewReady:
 			return run, true
 		default:
+			// Failed, or cancelled by the customer. Either way the run itself
+			// already says why, where the Studio is looking.
 			return nil, false
 		}
 	}
-	return nil, false
 }
 
 // --- one project's deployments -----------------------------------------------------------
