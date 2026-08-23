@@ -427,6 +427,16 @@ func (s *Server) srsPlan(ctx context.Context, srsID string) string {
 
 // serveSRS hands one request to the in-process SRS service. The Studio calls
 // it under /srs/*, which is where the reverse proxy to port 7826 used to be.
+// rerouted is the same request with a different path — the one the in-process
+// service knows itself by. The query string comes with it: an artifact is
+// asked for by ?path=, and losing that turns a file into a 400.
+func rerouted(r *http.Request, path string) *http.Request {
+	inner := r.Clone(r.Context())
+	inner.URL = &url.URL{Path: path, RawQuery: r.URL.RawQuery}
+	inner.RequestURI = ""
+	return inner
+}
+
 // serveDeploy hands a /deploy/* request to the deployment agent, which is part
 // of this binary rather than a service on a port of its own.
 func (s *Server) serveDeploy(w http.ResponseWriter, r *http.Request, path string) {
@@ -434,10 +444,7 @@ func (s *Server) serveDeploy(w http.ResponseWriter, r *http.Request, path string
 		writeJSON(w, 503, map[string]any{"error": "the deployment agent is not running"})
 		return
 	}
-	inner := r.Clone(r.Context())
-	inner.URL = r.URL.ResolveReference(&url.URL{Path: "/api" + path[len("/deploy"):]})
-	inner.RequestURI = ""
-	s.Deploy.Handler().ServeHTTP(w, inner)
+	s.Deploy.Handler().ServeHTTP(w, rerouted(r, "/api"+path[len("/deploy"):]))
 }
 
 // deployJob runs one deployment request as a job, because the Studio polls
@@ -475,10 +482,7 @@ func (s *Server) serveSRS(w http.ResponseWriter, r *http.Request, path string) {
 		writeJSON(w, 503, map[string]any{"error": "the SRS service is not running"})
 		return
 	}
-	inner := r.Clone(r.Context())
-	inner.URL = r.URL.ResolveReference(&url.URL{Path: path[len("/srs"):]})
-	inner.RequestURI = ""
-	s.SRS.Handler().ServeHTTP(w, inner)
+	s.SRS.Handler().ServeHTTP(w, rerouted(r, path[len("/srs"):]))
 }
 
 // tune rewords an edit request into something the builder can act on. The

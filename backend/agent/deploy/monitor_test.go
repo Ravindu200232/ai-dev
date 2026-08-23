@@ -174,3 +174,24 @@ func TestSnapshotOfARunThatHasDeployedNothing(t *testing.T) {
 		t.Error("a run that does not exist has no snapshot")
 	}
 }
+
+func TestASnapshotKeepsWhatTheReviewProved(t *testing.T) {
+	deployer, run := deployable(t)
+	monitor := &Monitor{Store: deployer.Store}
+
+	if _, err := monitor.Snapshot(context.Background(), run.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := deployer.Store.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates := object(object(after.Readiness)["gates"])
+	if gates["build_validation"] != true || gates["security_validation"] != true {
+		t.Fatalf("the review's evidence was thrown away: %+v", after.Readiness)
+	}
+	// So the run can still be deployed after a snapshot.
+	if _, _, err := deployer.check(request(after)); err != nil {
+		t.Errorf("a snapshot made the run undeployable: %v", err)
+	}
+}

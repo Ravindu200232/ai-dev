@@ -103,12 +103,20 @@ func (m *Monitor) Snapshot(ctx context.Context, runID string) (map[string]any, e
 	}
 
 	readiness := Score(run, snapshot)
-	snapshot["readiness"] = asMap(readiness)
+	scored := asMap(readiness)
+	// The gates are evidence of what the review proved — that the project
+	// builds, that its artifacts are sound — and a snapshot does not re-prove
+	// any of it. Overwriting them would make a redeploy of a failed run ask
+	// for a build validation that already passed.
+	if gates := object(run.Readiness)["gates"]; gates != nil {
+		scored["gates"] = gates
+	}
+	snapshot["readiness"] = scored
 	snapshot["errors"] = problems
 
 	sanitized := object(mask(Redact(snapshot)))
 	if _, err := m.Store.Update(runID, map[string]any{
-		"monitor": sanitized, "readiness": asMap(readiness),
+		"monitor": sanitized, "readiness": scored,
 	}); err != nil {
 		return nil, err
 	}
