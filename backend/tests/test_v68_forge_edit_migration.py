@@ -11,6 +11,9 @@ from forge.llm import ScriptedModel, tool_call
 from forge.modes import PLAN
 from forge.tools.paths import PathError
 
+FEATURE = Path("agents/feature")
+SELECT = Path("server_modules/agent/selection/scope_map.py")
+PENCIL = Path("server_modules/agent/pencil/page.py")
 
 
 class Host:
@@ -231,20 +234,29 @@ def test_a_host_without_a_project_directory_falls_back(host):
     assert project_dir(host) == str(host.project_dir)
 
 
-# --- the edit agent still has a caller -------------------------------------
+# --- the call sites actually moved ------------------------------------------
 
-def test_the_server_edit_flow_uses_the_edit_agent():
-    """`forge/edit` is not left without a caller by the cutover."""
-    body = Path("forge/server/runs.py").read_text(encoding="utf-8")
-    assert "from ..edit import EditAgent" in body
-    assert "def edit(" in body and "EDIT_ROLE" in body
+@pytest.mark.parametrize("path", [
+    FEATURE / "planning.py", FEATURE / "audit.py", FEATURE / "apply.py",
+    SELECT, PENCIL,
+])
+def test_no_edit_path_still_hand_builds_a_tool_conversation(path):
+    """The XML-tag protocol and the stream parser are gone from these."""
+    body = path.read_text(encoding="utf-8")
+    assert "TOOL_HELP" not in body, f"{path} still pastes the old tool protocol"
+    assert "WorkspaceTools(" not in body or "serve(" not in body, (
+        f"{path} still parses tools out of the reply text")
+    assert "EditAgent" in body, f"{path} is not on the forge loop"
 
 
-def test_the_edit_host_writes_through_and_announces_the_file(tmp_path):
-    from forge.server import runs
+def test_feature_planning_reads_the_real_window_not_a_character_count():
+    body = (FEATURE / "planning.py").read_text(encoding="utf-8")
+    assert "loop.convo.pressure()" in body
+    assert "used_chars" not in body
 
-    (tmp_path / "a.txt").write_text("old", encoding="utf-8")
-    host = runs._Host(tmp_path)
-    assert host.write_file("a.txt", "new") is True
-    assert host.write_file("a.txt", "new") is False, "an identical write is not a write"
-    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "new"
+
+def test_the_evidence_helpers_still_use_the_deterministic_reader():
+    """`WorkspaceTools` stays where it gathers evidence, not where it loops."""
+    for name in ("planning.py", "audit.py"):
+        body = (FEATURE / name).read_text(encoding="utf-8")
+        assert "WorkspaceTools(self.arch)" in body

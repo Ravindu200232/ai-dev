@@ -92,33 +92,20 @@ make it different from the builder:
   once and then `loop.run(note)` per round, so the request stays pinned and
   the history compacts instead of growing until it hits a character ceiling.
 
-## The server
+## Wired into the server
 
-`forge/server/` is the whole backend. `server.py` starts it.
-
-| File | What it is |
-| --- | --- |
-| `state.py` | where projects live, and what the studio asks about them |
-| `api.py` | the JSON routes under `/__agentforge/api` |
-| `http.py` | the HTTP handler, proxying anything else to the studio |
-| `ws.py` | the socket protocol: build, decide, cancel, edit |
-| `runs.py` | starting, answering and stopping one run |
-| `gate.py` | the approval a build blocks on |
-| `events.py` | the one place a message to the studio goes through |
-| `app.py` | starting both servers |
-
-Socket messages:
+`server_modules/forge/stage.py` is loaded by `server_runtime.py` and puts
+`run_forge_pipeline` into the runtime namespace. The websocket accepts:
 
 | message | what it does |
 | --- | --- |
-| `{type: "forge_build", prompt, model, qa_model, kinds}` | starts a build |
-| `{type: "plan_decision", project, verdict, note}` | answers the plan — `approve`, `revise` (with a note) or `reject` |
-| `{type: "chat", project, prompt, files}` | changes a project that already exists |
-| `{type: "cancel"}` | stops the run at its next checkpoint |
+| `{type: "forge_build", prompt, model, qa_model, kinds}` | starts a run |
+| `{type: "plan_decision", project, verdict, note}` | answers the plan review — `approve`, `revise` (with a note) or `reject` |
 
-A build emits `plan_review` when its plan is ready and blocks until the studio
-answers; the studio draws it as the *Plan ready* panel. Forge's phases are
-grouped onto the two stages the overlay draws.
+A run emits `plan_review` when its plan is ready and blocks until the studio
+answers; the studio renders it as the *Plan ready* panel. Forge's five phases
+are grouped onto the two stages the overlay draws (`build`, `test`) by
+`bridge.ui_relay`, so the progress rail reads the same as any other build.
 
 ## Tests
 

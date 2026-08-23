@@ -1,0 +1,145 @@
+"""Wiring `forge` into the running server: models, events and the plan gate."""
+from __future__ import annotations
+
+import logging
+import threading
+
+log = logging.getLogger("server.forge")
+
+APPROVAL_TIMEOUT = 900
+
+from forge.edit import edit_budget, edit_model  # noqa: F401
+
+
+# The studio's overlay draws two stages. Forge reports five, so they are
+# grouped onto the two the UI actually renders.
+UI_STAGE = {"scaffold": "build", "plan": "build", "build": "build",
+            "unit": "test", "e2e": "test"}
+
+
+def ui_relay(emit):
+    """Forge events → this UI's messages, in its coarser stage vocabulary.
+
+    Forge opens and closes a stage per phase; the overlay wants one `run` when
+    a group starts and one `done` when it ends, so the group transitions are
+    tracked here rather than flickering the same step through run/done twice.
+    """
+    from forge.events import to_ws
+
+    state = {"open": ""}
+
+    def close(status: str = "done") -> None:
+        if state["open"]:
+            emit({"type": "step", "step": state["open"], "status": status})
+            state["open"] = ""
+
+    def sink(event: dict) -> None:
+        for message in to_ws(event):
+            if message.get("type") != "step":
+                emit(message)
+                continue
+            stage = UI_STAGE.get(message.get("step"))
+            if not stage:
+                continue                      # a phase this UI does not draw
+            if message.get("status") == "run":
+                if state["open"] != stage:
+                    close()
+                    emit({"type": "step", "step": stage, "status": "run"})
+                    state["open"] = stage
+            elif message.get("status") == "error":
+                emit({"type": "step", "step": stage, "status": "error"})
+                state["open"] = ""
+
+    sink.close = close
+    return sink
+
+
+class PlanGate:
+    """The human-in-the-loop approval, driven from the websocket.
+
+    The pipeline blocks on `gate` until the UI sends approve, revise or
+    reject. Nobody answering is not a reason to hang forever, so
+    `on_timeout` decides what silence means — and whichever way it falls, it
+    is announced rather than assumed.
+    """
+
+    def __init__(self, emit=None, *, timeout: int = APPROVAL_TIMEOUT,
+                 on_timeout: str = "approve"):
+        self.emit = emit
+        self.timeout = timeout
+        self.on_timeout = on_timeout
+        self._answered = threading.Event()
+        self._verdict = None
+        # An answer is only meaningful once the plan has actually been put to
+        # the user. Before that there is nothing to answer, and accepting one
+        # would let a stale verdict decide the next plan.
+        self._asked = False
+
+    def _say(self, message: dict) -> None:
+        if self.emit:
+            self.emit(message)
+
+    def _answer(self, verdict) -> bool:
+        """Record a verdict. False when no plan is waiting for one."""
+        if not self._asked:
+            return False
+        self._verdict = verdict
+        self._answered.set()
+        return True
+
+    def approve(self) -> bool:
+        return self._answer(True)
+
+    def revise(self, note: str) -> bool:
+        return self._answer(str(note or "").strip() or "revise the plan")
+
+    def reject(self) -> bool:
+        return self._answer(False)
+
+    def gate(self, plan):
+        """Ask, wait, and return True / a revision note / False."""
+        self._answered.clear()
+        self._verdict = None
+        self._asked = True
+        self._say({"type": "plan_review", "plan": plan.as_dict()})
+        answered = self._answered.wait(self.timeout)
+        self._asked = False
+        if not answered:
+            approved = self.on_timeout == "approve"
+            self._say({"type": "log", "level": "WARN",
+                       "text": f"   🧭 no answer in {self.timeout}s — the plan "
+                               f"was {'approved' if approved else 'rejected'} "
+                               f"by the timeout rule"})
+            return approved
+        return self._verdict
+
+
+def build_pipeline(project_dir, *, emit=None, model_name: str = "",
+                   qa_model_name: str = "", budget: int = 24_000,
+                   should_stop=None):
+    """A pipeline pointed at one project, talking to one Ollama model."""
+    from forge import Pipeline
+    from forge.llm import Model
+
+    model = Model(model_name) if model_name else None
+    if model is None:
+        raise ValueError("build_pipeline needs a model name")
+    qa_model = Model(qa_model_name) if qa_model_name else model
+    return Pipeline(project_dir, model, emit=emit, qa_model=qa_model,
+                    budget=budget, should_stop=should_stop)
+
+
+def run_build(project_dir, brief: str, *, emit=None, model_name: str = "",
+              qa_model_name: str = "", gate=None, name: str = "app",
+              title: str = "New App", kinds=("unit", "e2e"),
+              should_stop=None) -> dict:
+    """Scaffold, plan, approve, build and verify — the whole thing, once."""
+    pipeline = build_pipeline(project_dir, emit=emit, model_name=model_name,
+                              qa_model_name=qa_model_name,
+                              should_stop=should_stop)
+    approver = (gate or PlanGate(emit)).gate
+    result = pipeline.run(brief, name=name, title=title, approve=approver,
+                          kinds=kinds)
+    if emit:
+        emit({"type": "build_done", "result": result.as_dict()})
+    return result.as_dict()
