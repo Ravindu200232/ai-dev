@@ -21,10 +21,14 @@ import (
 // and each is skipped when the project has already done it.
 
 var (
-	standaloneSet   = regexp.MustCompile(`\boutput\s*:\s*['"]standalone['"]`)
-	emptyConfig     = regexp.MustCompile(`const\s+nextConfig\s*=\s*\{\s*\}\s*;?`)
-	namedConfig     = regexp.MustCompile(`(const\s+(?:nextConfig|config)\s*=\s*\{)`)
-	exportedConfig  = regexp.MustCompile(`((?:module\.exports\s*=|export\s+default)\s*\{)`)
+	standaloneSet = regexp.MustCompile(`\boutput\s*:\s*['"]standalone['"]`)
+	// A config is declared at the start of a line, and in TypeScript it
+	// carries a type: `const nextConfig: NextConfig = {`.
+	namedConfig    = regexp.MustCompile(`(?m)^[ \t]*(?:const|let|var)\s+(?:nextConfig|config)\s*(?::[^=\n]+)?=\s*\{`)
+	exportedConfig = regexp.MustCompile(`(?m)^[ \t]*(?:module\.exports\s*=|export\s+default)\s*\{`)
+	// Which identifier the file actually exports, so the right object is the
+	// one that gets the setting.
+	exportedName    = regexp.MustCompile(`(?m)^[ \t]*(?:module\.exports\s*=|export\s+default)\s+([A-Za-z_$][\w$]*)`)
 	eagerConnect    = regexp.MustCompile(`(?s)let\s+clientPromise\b.*?export\s+default\s+clientPromise`)
 	eagerAuth       = regexp.MustCompile(`toNextJsHandler\s*\(\s*auth\.handler\s*\)`)
 	pinnedAuthURL   = regexp.MustCompile(`createAuthClient\(\s*\{[\s\S]*?baseURL\s*:\s*process\.env\.BETTER_AUTH_URL[\s\S]*?\}\s*\)`)
@@ -42,11 +46,12 @@ func patch(path, reason, change string) map[string]string {
 	return map[string]string{"path": path, "reason": reason, "change": change}
 }
 
-// applyPatches makes the project deployable. It returns what it wrote and what
-// each change was for.
-func applyPatches(w writer, service Service, target string) ([]Artifact, []map[string]string) {
+// applyPatches makes the project deployable. It returns what it wrote, what
+// each change was for, and anything it could not do that a person now has to.
+func applyPatches(w writer, service Service, target string) ([]Artifact, []map[string]string, []string) {
 	records := []Artifact{}
 	changes := []map[string]string{}
+	problems := []string{}
 	prefix := ""
 	if service.Root != "" {
 		prefix = service.Root + "/"
@@ -69,6 +74,12 @@ func applyPatches(w writer, service Service, target string) ([]Artifact, []map[s
 			if updated, ok := addStandalone(body); ok {
 				add(prefix+name, updated,
 					"Next.js standalone build output", "Add output: standalone")
+			} else if !standaloneSet.MatchString(codeOnly(body)) {
+				// The build will fail the standalone check and nothing would
+				// say why, so the review screen says it instead.
+				problems = append(problems, "Could not switch on standalone output in "+
+					prefix+name+"; add  output: \"standalone\"  to the config by hand "+
+					"before deploying.")
 			}
 		} else {
 			add(prefix+"next.config.mjs", assetText("next.config.mjs"),
@@ -116,11 +127,12 @@ func applyPatches(w writer, service Service, target string) ([]Artifact, []map[s
 			add(relative, updated,
 				"next build imports every module and has no database",
 				"Connect to MongoDB on first use instead of at import")
-			goto authRoute
+			// One file per helper name: a project can have both lib/mongodb.ts
+			// and lib/db.ts, and a build fails on whichever is left eager.
+			break
 		}
 	}
 
-authRoute:
 	// The same for Better Auth's catch-all route, which builds a handler at
 	// import time and opens the database doing it.
 	for _, suffix := range []string{".ts", ".js", ".tsx", ".jsx"} {
@@ -167,7 +179,7 @@ authRoute:
 			"Add export const dynamic = 'force-dynamic' so it is not prerendered")
 	}
 
-	return records, changes
+	return records, changes, problems
 }
 
 // findConfig is the project's Next.js config, whichever name it uses.
@@ -181,25 +193,86 @@ func findConfig(w writer, prefix string) (name, body string, found bool) {
 }
 
 // addStandalone switches standalone output on in a config that does not have
-// it, in whichever of the three shapes the config is written in. A config it
-// cannot recognise is left alone: a wrong edit to a config file breaks the
-// build for everyone, and the review screen can ask for it instead.
+// it. A config it cannot recognise is left alone and reported instead: a wrong
+// edit to a config file breaks the build for everyone, and the review screen
+// can ask a person for it.
+//
+// Matching happens against the file with its comments blanked out, so a
+// commented-out config above the real one cannot be edited into life.
 func addStandalone(body string) (string, bool) {
-	if standaloneSet.MatchString(body) {
+	code := codeOnly(body)
+	if standaloneSet.MatchString(code) {
 		return body, false
 	}
-	for _, attempt := range []func(string) string{
-		func(s string) string {
-			return replaceFirst(emptyConfig, s, "const nextConfig = {\n  output: \"standalone\",\n};")
-		},
-		func(s string) string { return replaceFirst(namedConfig, s, "${1}\n  output: \"standalone\",") },
-		func(s string) string { return replaceFirst(exportedConfig, s, "${1}\n  output: \"standalone\",") },
-	} {
-		if updated := attempt(body); updated != body {
-			return updated, true
+
+	// The object the file exports is the one Next.js reads. A file may well
+	// declare others — a middleware matcher, a shared constant — and putting
+	// the setting in one of those would change nothing and look like success.
+	if name := exportedName.FindStringSubmatch(code); name != nil {
+		declared := regexp.MustCompile(
+			`(?m)^[ \t]*(?:const|let|var)\s+` + regexp.QuoteMeta(name[1]) + `\s*(?::[^=\n]+)?=\s*\{`)
+		if at := declared.FindStringIndex(code); at != nil {
+			return withStandalone(body, at[1]), true
+		}
+	}
+	for _, pattern := range []*regexp.Regexp{namedConfig, exportedConfig} {
+		if at := pattern.FindStringIndex(code); at != nil {
+			return withStandalone(body, at[1]), true
 		}
 	}
 	return body, false
+}
+
+// withStandalone writes the setting immediately after the opening brace the
+// match ended on, keeping an empty object tidy.
+func withStandalone(body string, after int) string {
+	const setting = "\n  output: \"standalone\","
+	rest := body[after:]
+	if trimmed := strings.TrimLeft(rest, " \t"); strings.HasPrefix(trimmed, "}") {
+		return body[:after] + setting + "\n" + rest[len(rest)-len(trimmed):]
+	}
+	return body[:after] + setting + rest
+}
+
+// codeOnly is the file with every comment replaced by spaces. It is the same
+// length as the original, so an index into it is an index into the original.
+//
+// This is not a JavaScript parser and does not pretend to be. It exists for one
+// question — is this match real code, or is it something a developer commented
+// out? — which is the question that decides whether an edit here is safe.
+func codeOnly(body string) string {
+	out := []byte(body)
+	line, block := false, false
+
+	for i := 0; i < len(out); i++ {
+		switch {
+		case line:
+			if out[i] == '\n' {
+				line = false
+				continue
+			}
+			out[i] = ' '
+		case block:
+			if out[i] == '*' && i+1 < len(out) && out[i+1] == '/' {
+				out[i], out[i+1] = ' ', ' '
+				i++
+				block = false
+				continue
+			}
+			if out[i] != '\n' {
+				out[i] = ' '
+			}
+		case out[i] == '/' && i+1 < len(out) && out[i+1] == '/':
+			line = true
+			out[i], out[i+1] = ' ', ' '
+			i++
+		case out[i] == '/' && i+1 < len(out) && out[i+1] == '*':
+			block = true
+			out[i], out[i+1] = ' ', ' '
+			i++
+		}
+	}
+	return string(out)
 }
 
 func hasHealthRoute(w writer, appRoot string) bool {
@@ -262,15 +335,87 @@ func pagesReadingDatabase(w writer, appRoot string) []string {
 
 // forceDynamic adds the declaration below the file's imports and directives,
 // which is the only place it is allowed to be.
+//
+// Finding that place means knowing where the last import statement ends, and an
+// import in a Next.js page is usually several lines long:
+//
+//	import {
+//	  Card,
+//	} from '@/components/ui/card'
+//
+// Counting lines that begin with "import " would put the declaration inside
+// that statement and leave the customer with a file that does not parse. So
+// this walks the top of the file, follows each import to its end, and stops at
+// the first line that is neither an import, a directive, nor a comment.
 func forceDynamic(body string) string {
 	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
-	at := 0
+	at, depth, inImport, inComment := 0, 0, false, false
+
 	for index, line := range lines {
-		if strings.HasPrefix(line, "import ") ||
-			strings.HasPrefix(line, "'use ") || strings.HasPrefix(line, `"use `) {
+		trimmed := strings.TrimSpace(line)
+
+		if inComment {
+			if strings.Contains(trimmed, "*/") {
+				inComment = false
+			}
+			continue
+		}
+		if inImport {
+			depth += brackets(line)
+			if depth <= 0 && importEnds(trimmed) {
+				at, inImport, depth = index+1, false, 0
+			}
+			continue
+		}
+
+		switch {
+		case trimmed == "" || strings.HasPrefix(trimmed, "//"):
+			// Blank lines and comments neither move the insertion point nor
+			// end the run of imports.
+		case strings.HasPrefix(trimmed, "/*"):
+			inComment = !strings.Contains(trimmed, "*/")
+		case strings.HasPrefix(trimmed, "'use ") || strings.HasPrefix(trimmed, `"use `):
 			at = index + 1
+		case strings.HasPrefix(trimmed, "import"):
+			if brackets(line) == 0 && importEnds(trimmed) {
+				at = index + 1
+				continue
+			}
+			// An import that is still open: follow it to its closing line.
+			inImport, depth = true, brackets(line)
+		default:
+			// The first real statement. Anything below this is code, and the
+			// declaration has to be above all of it.
+			return insertAt(lines, at)
 		}
 	}
+	return insertAt(lines, at)
+}
+
+// brackets is how much deeper into an unfinished statement one line takes us.
+func brackets(line string) int {
+	return strings.Count(line, "{") - strings.Count(line, "}") +
+		strings.Count(line, "(") - strings.Count(line, ")")
+}
+
+// importEnds reports whether an import statement finishes on this line: it has
+// reached its module specifier, or it is a bare side-effect import.
+func importEnds(trimmed string) bool {
+	after := trimmed
+	if at := strings.LastIndex(trimmed, " from "); at >= 0 {
+		after = trimmed[at+len(" from "):]
+	} else if !strings.HasPrefix(trimmed, "import '") && !strings.HasPrefix(trimmed, `import "`) {
+		return false
+	} else {
+		after = strings.TrimSpace(strings.TrimPrefix(trimmed, "import"))
+	}
+	after = strings.TrimSuffix(strings.TrimSpace(after), ";")
+	return len(after) >= 2 && (after[0] == '\'' || after[0] == '"') &&
+		after[len(after)-1] == after[0]
+}
+
+// insertAt puts the declaration at the line the walk settled on.
+func insertAt(lines []string, at int) string {
 	out := append([]string{}, lines[:at]...)
 	out = append(out, "", "export const dynamic = 'force-dynamic'")
 	out = append(out, lines[at:]...)
@@ -347,7 +492,12 @@ func RepairCompatibility(w writer, spec *Spec, plan *Plan, records []Artifact,
 
 	// Everything the patches do is idempotent, so re-running them fills in
 	// whatever the removal above left missing.
-	patched, changes := applyPatches(w, service, plan.Target)
+	patched, changes, problems := applyPatches(w, service, plan.Target)
+	for _, problem := range problems {
+		if !warnedAbout(plan.Risks, problem) {
+			plan.Risks = append(plan.Risks, problem)
+		}
+	}
 	for _, record := range patched {
 		byPath[record.Path] = record
 	}

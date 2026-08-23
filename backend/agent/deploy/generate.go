@@ -97,9 +97,10 @@ func (g *Generator) Generate(spec *Spec, plan *Plan, staged, target string) ([]A
 	write(prefix+".env.example", envExample(contract), "environment")
 	g.Emit.step("runtime", StatusComplete, 44, "Runtime assets generated", nil)
 
-	patched, changes := applyPatches(w, service, profile.Target)
+	patched, changes, problems := applyPatches(w, service, profile.Target)
 	records = append(records, patched...)
 	plan.SourcePatches = append(plan.SourcePatches, changes...)
+	plan.Risks = append(plan.Risks, problems...)
 
 	g.Emit.step("cicd", StatusRunning, 48, "Generating GitHub Actions workflows", nil)
 	render(".github/workflows/ci.yml", "ci.yml", "cicd")

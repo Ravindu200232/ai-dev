@@ -18,7 +18,7 @@ func patched(t *testing.T, source, target string) (writer, []Artifact, []map[str
 		t.Fatal(err)
 	}
 	w := writer{source: source, staged: staged}
-	records, changes := applyPatches(w, spec.Services[0], target)
+	records, changes, _ := applyPatches(w, spec.Services[0], target)
 	return w, records, changes
 }
 
@@ -82,6 +82,8 @@ func TestStandaloneIsAddedToAConfigThatHasOne(t *testing.T) {
 		"const nextConfig = {\n  reactStrictMode: true,\n};\nexport default nextConfig;\n": `output: "standalone"`,
 		"module.exports = {\n  images: {},\n};\n":                                          `output: "standalone"`,
 		"export default {\n  poweredByHeader: false,\n};\n":                                `output: "standalone"`,
+		// The TypeScript config create-next-app writes.
+		"import type { NextConfig } from 'next'\n\nconst nextConfig: NextConfig = {\n};\n\nexport default nextConfig\n": `output: "standalone"`,
 	}
 	for body, want := range cases {
 		got, ok := addStandalone(body)
@@ -98,6 +100,87 @@ func TestStandaloneIsAddedToAConfigThatHasOne(t *testing.T) {
 	strange := "const config = makeConfig({ output: 1 })\nexport default config\n"
 	if got, ok := addStandalone(strange); ok || got != strange {
 		t.Errorf("a config nothing recognises is never guessed at: %q %v", got, ok)
+	}
+}
+
+func TestStandaloneIgnoresCommentedOutConfigs(t *testing.T) {
+	body := `// An older config we keep for reference:
+// const nextConfig = {
+//   reactStrictMode: true,
+// }
+
+const nextConfig = {
+  poweredByHeader: false,
+};
+
+export default nextConfig;
+`
+	got, ok := addStandalone(body)
+	if !ok {
+		t.Fatalf("the real config was not patched: %q", got)
+	}
+	// The setting goes in the live object, and the comment block is untouched.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, `output: "standalone"`) && strings.HasPrefix(strings.TrimSpace(line), "//") {
+			t.Errorf("the setting was written into a comment:\n%s", got)
+		}
+	}
+	if strings.Count(got, "// const nextConfig = {") != 1 {
+		t.Errorf("the commented-out config was edited:\n%s", got)
+	}
+	if !strings.Contains(got, "poweredByHeader: false") {
+		t.Errorf("the real config lost a setting:\n%s", got)
+	}
+
+	// A block comment hides a config just as well.
+	blocked := "/*\nconst nextConfig = {\n}\n*/\nmodule.exports = {\n  images: {},\n}\n"
+	if got, ok := addStandalone(blocked); !ok || strings.Index(got, `output: "standalone"`) < strings.Index(got, "module.exports") {
+		t.Errorf("block comment = %q %v", got, ok)
+	}
+}
+
+func TestStandaloneGoesIntoTheObjectThatIsExported(t *testing.T) {
+	body := `const config = {
+  matcher: ['/((?!api).*)'],
+}
+
+const nextConfig = {
+  reactStrictMode: true,
+}
+
+export default nextConfig
+`
+	got, ok := addStandalone(body)
+	if !ok {
+		t.Fatal("nothing was patched")
+	}
+	at := strings.Index(got, `output: "standalone"`)
+	matcher := strings.Index(got, "matcher:")
+	strict := strings.Index(got, "reactStrictMode")
+	if at < matcher || at > strict {
+		t.Errorf("the setting landed in the wrong object:\n%s", got)
+	}
+}
+
+func TestAConfigNothingRecognisedIsReported(t *testing.T) {
+	source := project(t)
+	write(t, source, "next.config.js", "const nextConfig = makeConfig({})\nexport default nextConfig\n")
+	staged := filepath.Join(t.TempDir(), "staged")
+	spec, err := (&Intake{}).Read(context.Background(), source, staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := writer{source: source, staged: staged}
+	_, changes, problems := applyPatches(w, spec.Services[0], TargetEC2)
+
+	if changed(changes, "next.config.js") {
+		t.Error("a config nothing recognises must not be edited")
+	}
+	if !warned(problems, "standalone output") {
+		t.Fatalf("nothing was reported: %v", problems)
+	}
+	if !warned(problems, "next.config.js") {
+		t.Errorf("the problem does not name the file: %v", problems)
 	}
 }
 
@@ -405,5 +488,120 @@ func TestRepairWithNothingToDoChangesNothing(t *testing.T) {
 	}
 	if !warned(plan.Risks, "manual application code review is required") {
 		t.Errorf("a repair that could not help must say so: %v", plan.Risks)
+	}
+}
+
+func TestForceDynamicFollowsMultiLineImports(t *testing.T) {
+	cases := []struct {
+		name, body, after string
+	}{
+		{"multi-line import last", `import { getDb } from '@/lib/mongodb'
+import {
+  Card,
+  CardHeader,
+} from '@/components/ui/card'
+
+export default async function Dash() { return null }
+`, "} from '@/components/ui/card'"},
+
+		{"directive then imports", `'use client'
+import x from 'y'
+
+export default function P() {}
+`, "import x from 'y'"},
+
+		{"side-effect import", `import './globals.css'
+
+export default function P() {}
+`, "import './globals.css'"},
+
+		{"comment between imports", `import a from 'a'
+// why this one is here
+import b from 'b'
+
+export default function P() {}
+`, "import b from 'b'"},
+
+		{"block comment header", `/*
+ * A page.
+ */
+import a from 'a'
+
+export default function P() {}
+`, "import a from 'a'"},
+
+		{"no imports at all", `export default function P() { return null }
+`, ""},
+
+		{"a later import-looking line is not an import", `import a from 'a'
+
+const help = ` + "`" + `import b from 'c'` + "`" + `
+
+export default function P() { return null }
+`, "import a from 'a'"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := forceDynamic(c.body)
+			lines := strings.Split(got, "\n")
+
+			at := -1
+			for index, line := range lines {
+				if strings.Contains(line, "export const dynamic") {
+					at = index
+					break
+				}
+			}
+			if at < 0 {
+				t.Fatalf("the declaration was not added:\n%s", got)
+			}
+			// It goes after the last import, and never inside one.
+			if c.after == "" {
+				if at > 1 {
+					t.Errorf("a file with no imports takes it at the top:\n%s", got)
+				}
+				return
+			}
+			previous := strings.TrimSpace(strings.Join(lines[:at], "\n"))
+			if !strings.HasSuffix(previous, c.after) {
+				t.Errorf("the declaration landed after %q, want after %q:\n%s",
+					lastLine(previous), c.after, got)
+			}
+		})
+	}
+}
+
+func lastLine(body string) string {
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	return lines[len(lines)-1]
+}
+
+func TestEveryDatabaseHelperIsPatched(t *testing.T) {
+	source := t.TempDir()
+	write(t, source, "package.json", `{"name":"shop","dependencies":{"next":"14.0.0","mongodb":"6.0.0"}}`)
+	write(t, source, "package-lock.json", `{"lockfileVersion":3}`)
+	write(t, source, "app/page.tsx", "export default function Home() { return null }")
+
+	eager := `import { MongoClient } from 'mongodb'
+
+const uri = process.env.MONGODB_URI
+let clientPromise = new MongoClient(uri).connect()
+
+export default clientPromise
+`
+	// A project with two helpers: one left eager fails the build.
+	write(t, source, "lib/mongodb.ts", eager)
+	write(t, source, "lib/db.ts", eager)
+
+	w, _, changes := patched(t, source, TargetEC2)
+	for _, relative := range []string{"lib/mongodb.ts", "lib/db.ts"} {
+		body, _ := w.read(relative)
+		if !strings.Contains(body, "function connection()") {
+			t.Errorf("%s still connects at import:\n%s", relative, body)
+		}
+		if !changed(changes, relative) {
+			t.Errorf("%s was not recorded as changed", relative)
+		}
 	}
 }
