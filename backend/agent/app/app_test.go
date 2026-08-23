@@ -60,13 +60,13 @@ func TestFileForRoute(t *testing.T) {
 
 func TestSummarySourcesSkipTestsAndConfig(t *testing.T) {
 	run := newRun(t, map[string]string{
-		"app/page.jsx":          "x",
-		"app/api/o/route.js":    "x",
-		"app/layout.jsx":        "x",
-		"lib/db.js":             "x",
-		"components/Table.jsx":  "x",
-		"tests/unit/a.test.js":  "x",
-		"vitest.config.js":      "x",
+		"app/page.jsx":           "x",
+		"app/api/o/route.js":     "x",
+		"app/layout.jsx":         "x",
+		"lib/db.js":              "x",
+		"components/Table.jsx":   "x",
+		"tests/unit/a.test.js":   "x",
+		"vitest.config.js":       "x",
 		"app/orders/loading.jsx": "x",
 	})
 	core.Refresh(run)

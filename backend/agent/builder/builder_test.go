@@ -34,7 +34,7 @@ func TestHandoffUnwrapping(t *testing.T) {
 
 func TestAppNameIsPathSafe(t *testing.T) {
 	cases := map[string]string{
-		"Order Desk":   "order-desk",
+		"Order Desk":    "order-desk",
 		"../etc/passwd": "passwd",
 		"":              "",
 	}
@@ -182,11 +182,11 @@ func TestDedupeKeepsOne(t *testing.T) {
 
 func TestRelatedFilesIncludesSharedCode(t *testing.T) {
 	run := newRun(t, map[string]string{
-		"app/orders/page.jsx":   "x",
-		"app/orders/table.jsx":  "x",
-		"lib/db.js":             "x",
-		"app/layout.jsx":        "x",
-		"package.json":          "{}",
+		"app/orders/page.jsx":    "x",
+		"app/orders/table.jsx":   "x",
+		"lib/db.js":              "x",
+		"app/layout.jsx":         "x",
+		"package.json":           "{}",
 		"app/unrelated/page.jsx": "x",
 	})
 	got := relatedFiles(run, []string{"app/orders/page.jsx"})

@@ -66,8 +66,11 @@ func listening(port int) bool {
 
 // Sidecars supervises both Python services.
 type Sidecars struct {
-	Paths  core.Paths
-	Python string
+	Paths core.Paths
+	// Python is the interpreter and any leading arguments it needs. On Windows
+	// the launcher hands us "py -3", which is a command plus an argument, not a
+	// path — so this stays a slice rather than a string.
+	Python []string
 
 	SRS    *sidecarState
 	Deploy *sidecarState
@@ -97,19 +100,20 @@ func newSidecar(name string, port int) *sidecarState {
 	return s
 }
 
-func pythonBin() string {
+func pythonBin() []string {
+	// The launcher passes what it verified works, which may include arguments.
 	if p := strings.TrimSpace(os.Getenv("AGENTFORGE_PYTHON")); p != "" {
-		return p
+		return strings.Fields(p)
 	}
 	for _, name := range []string{"python3", "python"} {
 		if found, err := exec.LookPath(name); err == nil {
-			return found
+			return []string{found}
 		}
 	}
 	if runtime.GOOS == "windows" {
-		return "python"
+		return []string{"py", "-3"}
 	}
-	return "python3"
+	return []string{"python3"}
 }
 
 // Start launches both sidecars and keeps them up until ctx is cancelled.
@@ -135,7 +139,8 @@ func (s *Sidecars) supervise(ctx context.Context, sc *sidecarState, dir, entry, 
 			return
 		}
 		sc.set("starting", "")
-		cmd := exec.CommandContext(ctx, s.Python, "-c", entry)
+		args := append(append([]string{}, s.Python[1:]...), "-c", entry)
+		cmd := exec.CommandContext(ctx, s.Python[0], args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(),
 			"PYTHONUNBUFFERED=1",

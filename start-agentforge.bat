@@ -40,6 +40,9 @@ if errorlevel 1 goto :failed
 call :ensure_playwright
 if errorlevel 1 goto :failed
 
+call :ensure_backend
+if errorlevel 1 goto :failed
+
 if not exist "desktop\node_modules\electron\dist\electron.exe" (
     echo [ERROR] Electron is still missing after npm setup.
     goto :failed
@@ -53,7 +56,7 @@ exit /b 0
 
 
 :ensure_node
-echo [1/5] Checking Node.js...
+echo [1/6] Checking Node.js...
 set "NODE_EXE="
 set "NPM_CMD="
 set "NODE_HOME="
@@ -116,7 +119,7 @@ exit /b 0
 
 
 :ensure_python
-echo [2/5] Checking Python...
+echo [2/6] Checking Python...
 set "PYTHON_EXE="
 set "PYTHON_HOME="
 set "PIP_SCOPE=--user"
@@ -181,7 +184,7 @@ set "PACKAGE_DIR=%~1"
 set "READY_FILE=%~2"
 set "PACKAGE_NAME=%~3"
 
-echo [3/5] Checking %PACKAGE_NAME% packages...
+echo [3/6] Checking %PACKAGE_NAME% packages...
 if not exist "%READY_FILE%" goto :install_npm_packages
 
 pushd "%PACKAGE_DIR%"
@@ -213,7 +216,7 @@ exit /b 0
 
 
 :ensure_python_packages
-echo [4/5] Checking Python packages...
+echo [4/6] Checking Python packages...
 "%PYTHON_EXE%" -c "import boto3, fastapi, fitz, httpx, jsonschema, langchain_core, langgraph, motor, multipart, PIL, playwright, pydantic, pydantic_settings, pypdf, pymongo, pytesseract, reportlab, requests, sse_starlette, uvicorn, websockets; import faster_whisper" >nul 2>&1
 if not errorlevel 1 (
     echo       Python packages are already installed.
@@ -238,7 +241,7 @@ exit /b 0
 
 
 :ensure_playwright
-echo [5/5] Checking the Playwright browser...
+echo [5/6] Checking the Playwright browser...
 "%PYTHON_EXE%" -c "from pathlib import Path; from playwright.sync_api import sync_playwright; p=sync_playwright().start(); ok=Path(p.chromium.executable_path).exists(); p.stop(); raise SystemExit(0 if ok else 1)" >nul 2>&1
 if not errorlevel 1 (
     echo       Playwright Chromium is already installed.
@@ -253,6 +256,38 @@ if errorlevel 1 (
 )
 exit /b 0
 
+
+
+:ensure_backend
+rem The backend is a Go binary. Building it needs Go once; running it does not.
+echo [6/6] Checking the AgentForge backend...
+set "BACKEND_EXE=%CD%\backend\agent\bin\agentforge.exe"
+if exist "%BACKEND_EXE%" (
+    echo       The backend is already built.
+    exit /b 0
+)
+
+set "GO_EXE="
+for /f "delims=" %%G in ('where go.exe 2^>nul') do if not defined GO_EXE set "GO_EXE=%%G"
+if not defined GO_EXE if exist "%ProgramFiles%\Go\bin\go.exe" set "GO_EXE=%ProgramFiles%\Go\bin\go.exe"
+if not defined GO_EXE (
+    echo [ERROR] Go was not found. Install Go 1.24 or newer from https://go.dev/dl/
+    echo         and start AgentForge again.
+    exit /b 1
+)
+
+echo       Building the backend. This happens once...
+pushd "%CD%\backend\agent"
+set "GOFLAGS=-mod=mod"
+"%GO_EXE%" build -o "bin\agentforge.exe" ".\cmd\agentforge"
+set "BUILD_RESULT=%ERRORLEVEL%"
+popd
+if not "%BUILD_RESULT%"=="0" (
+    echo [ERROR] The backend did not build.
+    exit /b 1
+)
+echo       Backend built.
+exit /b 0
 
 :failed
 echo.

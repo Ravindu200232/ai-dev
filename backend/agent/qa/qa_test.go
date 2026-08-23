@@ -123,13 +123,13 @@ func TestSummariseCountsAssertions(t *testing.T) {
 
 func TestUnitTargetsAndRanking(t *testing.T) {
 	run := runIn(t, map[string]string{
-		"lib/db.js":              "export const x = 1",
-		"components/Table.jsx":   "export default function T(){}",
+		"lib/db.js":               "export const x = 1",
+		"components/Table.jsx":    "export default function T(){}",
 		"app/api/orders/route.js": "export async function GET(){}",
-		"app/orders/page.jsx":    "export default function P(){}",
-		"app/layout.jsx":         "export default function L(){}",
-		"tests/unit/x.test.js":   "test('x', () => {})",
-		"vitest.config.js":       "export default {}",
+		"app/orders/page.jsx":     "export default function P(){}",
+		"app/layout.jsx":          "export default function L(){}",
+		"tests/unit/x.test.js":    "test('x', () => {})",
+		"vitest.config.js":        "export default {}",
 	})
 	core.Refresh(run)
 

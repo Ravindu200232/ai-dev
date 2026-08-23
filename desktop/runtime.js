@@ -6,7 +6,7 @@ const net = require('node:net')
 /** Runtime discovery and process helpers. */
 
 /** Run a command without throwing for a missing binary. */
-function run(cmd, args, { timeout = 15000, env } = {}) {
+function run(cmd, args, { timeout = 15000, env, cwd } = {}) {
   return new Promise((resolve) => {
     let done = false
     let out = ''
@@ -15,6 +15,7 @@ function run(cmd, args, { timeout = 15000, env } = {}) {
       child = spawn(cmd, args, {
         shell: process.platform === 'win32',
         env: { ...process.env, ...(env || {}) },
+        cwd,
         windowsHide: true,
       })
     } catch {
@@ -40,6 +41,19 @@ function portOpen(port, host = '127.0.0.1', timeout = 1200) {
     s.once('error', () => done(false))
     s.connect(port, host)
   })
+}
+
+/** The go toolchain, or null. Only needed to build the backend the first time. */
+async function goCommand() {
+  const configured = String(process.env.AGENTFORGE_GO || '').trim()
+  const candidates = configured ? [configured] : ['go']
+  if (process.platform !== 'win32') candidates.push('/usr/local/go/bin/go')
+
+  for (const cmd of candidates) {
+    const r = await run(cmd, ['version'], { timeout: 8000 })
+    if (r.ok && /go\d+\./.test(r.out.replace(/\s+/g, ''))) return cmd
+  }
+  return null
 }
 
 /** The python command that actually works here, or null. */
@@ -105,6 +119,6 @@ async function reclaimPort(port, marker) {
 }
 
 module.exports = {
-  run, portOpen, pythonCommand,
+  run, portOpen, pythonCommand, goCommand,
   listenerPid, commandOf, killTree, reclaimPort,
 }

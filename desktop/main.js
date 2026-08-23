@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process')
 const path = require('node:path')
 const fs = require('node:fs')
 
-const { pythonCommand, portOpen, reclaimPort } = require('./runtime')
+const { pythonCommand, goCommand, portOpen, reclaimPort, run } = require('./runtime')
 
 const STUDIO_PORT = 3000
 // The backend's own listeners.
@@ -65,22 +65,50 @@ const step = (text, pct) => {
   }
 }
 
+/** Where the compiled backend lives, and how to build it if it is not there. */
+function backendBinary(backend) {
+  const name = process.platform === 'win32' ? 'agentforge.exe' : 'agentforge'
+  return path.join(backend, 'agent', 'bin', name)
+}
+
+async function buildBackend(backend) {
+  const go = await goCommand()
+  if (!go) {
+    throw new Error('Go could not be found. Install Go 1.24 or newer, then start AgentForge again.')
+  }
+  step('Building the AgentForge backend — first run only…', 16)
+  const agentDir = path.join(backend, 'agent')
+  const out = path.join('bin', process.platform === 'win32' ? 'agentforge.exe' : 'agentforge')
+  const built = await run(go, ['build', '-o', out, './cmd/agentforge'], {
+    timeout: 600000,
+    env: { GOFLAGS: '-mod=mod' },
+    cwd: agentDir,
+  })
+  if (!built.ok) throw new Error(`The backend did not build:\n${built.out}`)
+}
+
 async function startBackend() {
   const { backend } = await roots()
+
+  const binary = backendBinary(backend)
+  if (!fs.existsSync(binary)) await buildBackend(backend)
+
+  // The SRS and deployment agents are still Python, and the backend spawns
+  // them, so it needs to be told which interpreter works here.
   const py = await pythonCommand()
   if (!py) throw new Error('Python could not be found on this machine.')
 
   step('Starting the AgentForge backend…', 20)
-  const child = track(spawn(py.cmd, [...py.prefix, 'server.py'], {
+  const child = track(spawn(binary, [], {
     cwd: backend,
     env: {
       ...process.env,
-      // The backend already reads these.
+      AGENTFORGE_BASE: backend,
+      AGENTFORGE_PYTHON: [py.cmd, ...py.prefix].join(' ').trim(),
       AGENTFORGE_NODE: process.env.AGENTFORGE_NODE || '',
       AGENTFORGE_NPM: process.env.AGENTFORGE_NPM || '',
       PYTHONUNBUFFERED: '1',
     },
-    shell: true,
     windowsHide: true,
     detached: process.platform !== 'win32',
   }))
