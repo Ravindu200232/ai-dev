@@ -173,19 +173,59 @@ func (s *Suite) repairRuntime(ctx context.Context, run *core.Run, problem string
 	return len(writer.Written()) > 0, nil
 }
 
-// filesIn pulls project-relative paths out of an error message.
-var pathPattern = regexp.MustCompile(`(?:^|[\s('"` + "`" + `])((?:\./)?(?:app|lib|components|tests)/[\w./\[\]-]+\.[jt]sx?)`)
+// Which file has the bug is the whole of a repair. Without it the model is
+// handed a generic set of files and asked to fix a fault in code it was never
+// shown, so everything below is about reading that answer out of whatever a
+// tool happened to print.
 
+// pathToken matches anything in a message that looks like a path to a
+// JavaScript or TypeScript file. It has to cope with all three shapes these
+// tools print: `./app/page.jsx` from Next, an absolute path from a Node stack
+// trace, and on Windows the same paths written with backslashes and a drive
+// letter.
+var pathToken = regexp.MustCompile(`(?:[A-Za-z]:)?[\w./\\\[\]-]+\.[jt]sx?`)
+
+// projectRoots are the directories a project's own source lives in.
+var projectRoots = map[string]bool{
+	"app": true, "src": true, "lib": true, "components": true, "tests": true,
+}
+
+// relativeSources are the project-relative paths one token could be naming.
+//
+// An absolute path has to be cut down to the part this project owns, and where
+// to cut is a guess: a project living under /home/me/lib/shop has a "lib" in
+// its own address. So every plausible cut is offered and the caller keeps the
+// one that is really on disk.
+func relativeSources(token string) []string {
+	slashed := strings.ReplaceAll(token, `\`, "/")
+	// A fault raised inside a dependency or a build artefact is not a file this
+	// agent may edit, and the project has files by the same names.
+	if strings.Contains(slashed, "node_modules/") || strings.Contains(slashed, "/.next/") {
+		return nil
+	}
+	parts := strings.Split(strings.TrimPrefix(slashed, "./"), "/")
+
+	var out []string
+	for i, part := range parts[:len(parts)-1] {
+		if projectRoots[part] {
+			out = append(out, strings.Join(parts[i:], "/"))
+		}
+	}
+	return out
+}
+
+// filesIn pulls project-relative paths out of an error message.
 func filesIn(text string, run *core.Run) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, match := range pathPattern.FindAllStringSubmatch(text, -1) {
-		rel := strings.TrimPrefix(match[1], "./")
-		if seen[rel] || !run.Shell.Exists(rel) {
-			continue
+	for _, token := range pathToken.FindAllString(text, -1) {
+		for _, rel := range relativeSources(token) {
+			if seen[rel] || !run.Shell.Exists(rel) {
+				continue
+			}
+			seen[rel] = true
+			out = append(out, rel)
 		}
-		seen[rel] = true
-		out = append(out, rel)
 	}
 	return out
 }

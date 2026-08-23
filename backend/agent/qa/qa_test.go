@@ -291,6 +291,66 @@ func TestFilesInErrorText(t *testing.T) {
 	}
 }
 
+// Which file has the bug is the whole of a repair, and the messages it has to
+// be read out of are written by three different tools on two operating systems.
+func TestFilesInFindsTheCulpritOnEveryPlatform(t *testing.T) {
+	run := runIn(t, map[string]string{
+		"app/orders/page.jsx":        "x",
+		"lib/db.js":                  "x",
+		"tests/e2e/checkout.spec.js": "x",
+	})
+
+	cases := []struct {
+		name, text, want string
+	}{
+		{"next, relative", "Error: broke\n    at ./app/orders/page.jsx:12:3", "app/orders/page.jsx"},
+		{"node stack, absolute", "TypeError: undefined\n    at Object.<anonymous> (/srv/shop/lib/db.js:8:11)", "lib/db.js"},
+		{"windows, relative", `Error: broke` + "\n" + `    at .\app\orders\page.jsx:12:3`, "app/orders/page.jsx"},
+		{"windows, absolute", `TypeError` + "\n" + `   at (C:\Users\ravi\shop\lib\db.js:8:11)`, "lib/db.js"},
+		{"windows, playwright", `expect(locator).toBeVisible()` + "\n" + `   at tests\e2e\checkout.spec.js:19:3`,
+			"tests/e2e/checkout.spec.js"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := filesIn(c.text, run); !hasPath(got, c.want) {
+				t.Errorf("filesIn = %v, want it to name %s", got, c.want)
+			}
+		})
+	}
+}
+
+func TestFilesInIgnoresWhatItMayNotEdit(t *testing.T) {
+	run := runIn(t, map[string]string{"app/page.jsx": "x", "lib/db.js": "x"})
+
+	// A fault raised inside a dependency or a build artefact names a file this
+	// project has by the same name. Blaming the project's copy sends the repair
+	// at code that is not broken.
+	for _, text := range []string{
+		"at /srv/shop/node_modules/next/dist/app/page.jsx:1:1",
+		"at /srv/shop/.next/server/app/page.jsx:1:1",
+	} {
+		if got := filesIn(text, run); len(got) != 0 {
+			t.Errorf("filesIn(%q) = %v, want nothing", text, got)
+		}
+	}
+
+	// A project whose own address contains one of the source directory names
+	// still resolves to the file inside it.
+	deep := runIn(t, map[string]string{"app/page.jsx": "x"})
+	if got := filesIn("at /home/me/lib/shop/app/page.jsx:3:1", deep); !hasPath(got, "app/page.jsx") {
+		t.Errorf("filesIn = %v", got)
+	}
+}
+
+func hasPath(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 // runIn builds a Run over a temporary project containing the given files.
 func runIn(t *testing.T, files map[string]string) *core.Run {
 	t.Helper()
