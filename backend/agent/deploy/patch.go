@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -295,4 +296,178 @@ func assetSnippet(name string) string {
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// --- repairing a build that failed -----------------------------------------------------------
+
+// maxScanned and maxFileSize bound the alert-variant sweep. A repair pass must
+// not turn into a walk of an entire monorepo.
+const (
+	maxScanned  = 2000
+	maxFileSize = 512_000
+)
+
+// RepairCompatibility applies the bounded repairs the planner chose to the
+// staging copy, and returns the records as they stand plus whether anything
+// actually changed.
+//
+// Nothing here is open-ended. Each action is one known edit; a build that
+// fails for any other reason fails, and says so, rather than being guessed at.
+func RepairCompatibility(w writer, spec *Spec, plan *Plan, records []Artifact,
+	actions []string, buildError string) ([]Artifact, bool) {
+	if len(actions) == 0 {
+		return records, false
+	}
+	service := planned(spec.Services[0], plan)
+	byPath := map[string]Artifact{}
+	before := map[string]string{}
+	for _, record := range records {
+		byPath[record.Path] = record
+		before[record.Path] = record.SHA256
+	}
+	prefix := ""
+	if service.Root != "" {
+		prefix = service.Root + "/"
+	}
+	appRoot := prefix + "app"
+	if !isDir(filepath.Join(w.staged, filepath.FromSlash(appRoot))) {
+		appRoot = prefix + "src/app"
+	}
+
+	// A JavaScript health route in a TypeScript project fails the build with
+	// allowJs off. It is only ever removed when the agent wrote it and there
+	// was nothing at that path before.
+	if contains(actions, "ensure-type-safe-health-route") && w.has(prefix+"tsconfig.json") {
+		legacy := appRoot + "/api/health/route.js"
+		if record, ours := byPath[legacy]; ours && record.Kind == "source-patch" && !record.OriginalExists {
+			w.remove(legacy)
+			delete(byPath, legacy)
+		}
+	}
+
+	// Everything the patches do is idempotent, so re-running them fills in
+	// whatever the removal above left missing.
+	patched, changes := applyPatches(w, service, plan.Target)
+	for _, record := range patched {
+		byPath[record.Path] = record
+	}
+
+	if contains(actions, "normalize-alert-variant") {
+		for _, change := range normalizeAlertVariant(w, service) {
+			record, err := w.write(change["path"], change["body"], "source-patch")
+			if err != nil {
+				continue
+			}
+			byPath[record.Path] = record
+			changes = append(changes, patch(change["path"],
+				"Type-safe Alert variant compatibility",
+				"Normalize unsupported Alert variant info to default"))
+		}
+	}
+
+	for _, change := range changes {
+		if !hasChange(plan.SourcePatches, change) {
+			plan.SourcePatches = append(plan.SourcePatches, change)
+		}
+	}
+
+	changed := len(byPath) != len(before)
+	for path, record := range byPath {
+		if before[path] != record.SHA256 {
+			changed = true
+		}
+	}
+
+	if changed {
+		if record, ok := refreshManifest(w, plan, byPath); ok {
+			byPath[record.Path] = record
+		}
+	} else if strings.Contains(buildError, "route.js") && strings.Contains(buildError, "allowJs") {
+		plan.Risks = append(plan.Risks,
+			"The bounded type-safe health repair made no change; manual application code review is required.")
+	}
+
+	out := make([]Artifact, 0, len(byPath))
+	for _, path := range sortedKeys(byPath) {
+		out = append(out, byPath[path])
+	}
+	return out, changed
+}
+
+// normalizeAlertVariant finds components using an Alert variant the project's
+// own union does not have, and puts them back to the default.
+func normalizeAlertVariant(w writer, service Service) []map[string]string {
+	root := filepath.Join(w.staged, filepath.FromSlash(service.Root))
+	out := []map[string]string{}
+	scanned := 0
+
+	sourceFile := map[string]bool{".ts": true, ".tsx": true, ".js": true, ".jsx": true}
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || scanned >= maxScanned {
+			return nil
+		}
+		if entry.IsDir() {
+			if skipDirs[entry.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !sourceFile[strings.ToLower(filepath.Ext(entry.Name()))] {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil || info.Size() > maxFileSize {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		scanned++
+		updated := alertInfo.ReplaceAllString(string(body), "${1}default${2}")
+		if updated == string(body) {
+			return nil
+		}
+		out = append(out, map[string]string{"path": relPosix(w.staged, path), "body": updated})
+		return nil
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i]["path"] < out[j]["path"] })
+	return out
+}
+
+// refreshManifest brings the record of what the agent owns back in line with
+// what it owns after a repair.
+func refreshManifest(w writer, plan *Plan, byPath map[string]Artifact) (Artifact, bool) {
+	body, ok := w.read("deployment-manifest.json")
+	if !ok {
+		return Artifact{}, false
+	}
+	var record Manifest
+	if json.Unmarshal([]byte(body), &record) != nil {
+		return Artifact{}, false
+	}
+
+	owned := sortedKeys(byPath)
+	if !contains(owned, "deployment-manifest.json") {
+		owned = append(owned, "deployment-manifest.json")
+		sort.Strings(owned)
+	}
+	record.Generation.RepairActions = append([]string{}, plan.RepairActions...)
+	record.Artifacts = owned
+	record.AgentOwnedFiles = owned
+
+	written, err := w.write("deployment-manifest.json", indented(record), "manifest")
+	if err != nil {
+		return Artifact{}, false
+	}
+	return written, true
+}
+
+func hasChange(changes []map[string]string, change map[string]string) bool {
+	for _, existing := range changes {
+		if existing["path"] == change["path"] && existing["change"] == change["change"] {
+			return true
+		}
+	}
+	return false
 }

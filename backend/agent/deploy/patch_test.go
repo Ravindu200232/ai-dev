@@ -296,3 +296,114 @@ func write(t *testing.T, root, rel, body string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRepairRemovesTheRouteThatBreaksTheBuild(t *testing.T) {
+	source := project(t)
+	staged := filepath.Join(t.TempDir(), "staged")
+	spec, err := (&Intake{}).Read(context.Background(), source, staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := (&Planner{}).Plan(context.Background(), spec)
+	records, _, err := (&Generator{}).Generate(spec, plan, staged, TargetEC2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := writer{source: source, staged: staged}
+	if !w.has("app/api/health/route.js") {
+		t.Fatal("the fixture has no generated health route to repair")
+	}
+
+	// The project turns out to be TypeScript after all, and the build fails
+	// on the JavaScript route the agent added.
+	write(t, staged, "tsconfig.json", `{"compilerOptions":{"strict":true}}`)
+	plan.RepairActions = []string{"ensure-type-safe-health-route"}
+	after, changed := RepairCompatibility(w, spec, plan, records,
+		[]string{"ensure-type-safe-health-route"},
+		"./app/api/health/route.js is not under rootDir; allowJs is disabled")
+
+	if !changed {
+		t.Fatal("the repair did nothing")
+	}
+	if w.has("app/api/health/route.js") {
+		t.Error("the route that broke the build is still there")
+	}
+	if !w.has("app/api/health/route.ts") {
+		t.Error("the project was left with no health route at all")
+	}
+	paths := map[string]bool{}
+	for _, record := range after {
+		paths[record.Path] = true
+	}
+	if paths["app/api/health/route.js"] || !paths["app/api/health/route.ts"] {
+		t.Errorf("records = %v", sortedKeys(paths))
+	}
+
+	// The manifest is the record of what the agent owns, so it moves too.
+	body, _ := w.read("deployment-manifest.json")
+	if strings.Contains(body, "app/api/health/route.js\"") {
+		t.Error("the manifest still owns the removed file")
+	}
+	if !strings.Contains(body, "ensure-type-safe-health-route") {
+		t.Error("the manifest does not record what was repaired")
+	}
+}
+
+func TestRepairNormalizesAnUnsupportedAlertVariant(t *testing.T) {
+	source := project(t)
+	write(t, source, "components/Banner.tsx",
+		`export const Banner = () => <Alert variant="info">hello</Alert>`)
+	staged := filepath.Join(t.TempDir(), "staged")
+	spec, err := (&Intake{}).Read(context.Background(), source, staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := (&Planner{}).Plan(context.Background(), spec)
+	records, _, err := (&Generator{}).Generate(spec, plan, staged, TargetEC2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := writer{source: source, staged: staged}
+
+	_, repaired := RepairCompatibility(w, spec, plan, records,
+		[]string{"normalize-alert-variant"}, `Type '"info"' is not assignable`)
+	if !repaired {
+		t.Fatal("the repair did nothing")
+	}
+	body, _ := w.read("components/Banner.tsx")
+	if !strings.Contains(body, `variant="default"`) {
+		t.Errorf("Banner.tsx = %q", body)
+	}
+	if !changed(plan.SourcePatches, "components/Banner.tsx") {
+		t.Errorf("source patches = %+v", plan.SourcePatches)
+	}
+}
+
+func TestRepairWithNothingToDoChangesNothing(t *testing.T) {
+	source := project(t)
+	staged := filepath.Join(t.TempDir(), "staged")
+	spec, err := (&Intake{}).Read(context.Background(), source, staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := (&Planner{}).Plan(context.Background(), spec)
+	records, _, err := (&Generator{}).Generate(spec, plan, staged, TargetEC2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := writer{source: source, staged: staged}
+
+	same, changed := RepairCompatibility(w, spec, plan, records, nil, "")
+	if changed || len(same) != len(records) {
+		t.Error("no actions means no changes")
+	}
+
+	_, changed = RepairCompatibility(w, spec, plan, records,
+		[]string{"ensure-standalone-output"}, "route.js ... allowJs")
+	if changed {
+		t.Error("everything the action asks for is already done")
+	}
+	if !warned(plan.Risks, "manual application code review is required") {
+		t.Errorf("a repair that could not help must say so: %v", plan.Risks)
+	}
+}

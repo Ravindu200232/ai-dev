@@ -16,13 +16,13 @@ func validated(t *testing.T, target string) (Validation, string, []Artifact) {
 	// requires one, so the manifest is rewritten as a run with a model would
 	// have written it.
 	plan.ModelUsed = true
-	rewriteManifest(t, staged, records)
+	withModelUsed(t, staged, records)
 	return (&Validator{}).Validate(staged, records, target), staged, records
 }
 
-// rewriteManifest re-renders the manifest with model_used set, the way the run
+// withModelUsed re-renders the manifest with model_used set, the way the run
 // does when the planner reached a model.
-func rewriteManifest(t *testing.T, staged string, records []Artifact) {
+func withModelUsed(t *testing.T, staged string, records []Artifact) {
 	t.Helper()
 	path := filepath.Join(staged, "deployment-manifest.json")
 	body, err := os.ReadFile(path)
