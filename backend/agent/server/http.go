@@ -18,6 +18,7 @@ import (
 
 	"agentforge/agent/app"
 	"agentforge/agent/core"
+	"agentforge/agent/deploy"
 )
 
 // The HTTP surface studio/lib/api.js talks to. Everything under
@@ -511,14 +512,14 @@ func (s *Server) listProjects() []map[string]any {
 				title = parsed.Name
 			}
 		}
-		_, deployed := os.Stat(filepath.Join(dir, ".agentforge", "deploy", "run.json"))
 		out = append(out, map[string]any{
 			"name": e.Name(), "title": title,
 			"mtime":      info.ModTime().Unix(),
 			"file_count": len(files),
 			"stack":      detectStack(dir),
 			"unfinished": 0,
-			"deployed":   deployed == nil,
+			// A project that has been deployed keeps the record of it.
+			"deployed": deploy.HasRecord(dir),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -839,7 +840,8 @@ func (s *Server) settingsSummary(ctx context.Context) map[string]any {
 		"mongodb_uri_set":  uri != "",
 		"mongodb_uri_hint": redacted,
 		"mongo":            s.Mongo.Status(ctx),
-		"deploy":           s.deployStatus(),
+		"deploy":           s.deploySettings(),
+		"deploy_agent":     s.deployStatus(),
 		"images":           s.Pictures.Check(),
 		"images_enabled":   s.Pictures.Check()["enabled"],
 		"image_host":       stringOf(saved, "image_host"),

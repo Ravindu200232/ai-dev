@@ -9,6 +9,7 @@ package deploy
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"strconv"
 	"time"
 )
@@ -291,6 +292,17 @@ func badRequest(message string) error { return statusError{Status: 400, Message:
 func notFound(message string) error { return statusError{Status: 404, Message: message} }
 
 func conflict(message string) error { return statusError{Status: 409, Message: message} }
+
+// StatusOf is the HTTP status an error already knows it wants, or 0 when it is
+// just an error. The server asks so that a refusal the customer can act on —
+// "no database configured" — does not arrive as a 500.
+func StatusOf(err error) int {
+	var known statusError
+	if errors.As(err, &known) {
+		return known.Status
+	}
+	return 0
+}
 
 // NowISO is the timestamp every row is stamped with.
 func NowISO() string { return time.Now().UTC().Format(time.RFC3339Nano) }

@@ -45,13 +45,15 @@ func (s *Server) deployStart(w http.ResponseWriter, r *http.Request, body []byte
 		Path:          dir,
 		Target:        req.Target,
 		ValidateBuild: req.ValidateContainer == nil || *req.ValidateContainer,
-		AWSProfile:    stringOf(saved, "aws_profile"),
-		Region:        stringOf(saved, "aws_region"),
-		MongoURI:      stringOf(saved, "mongodb_uri"),
-		VercelToken:   stringOf(saved, "vercel_token"),
+		AWSProfile:    stringOf(saved, deploy.KeyAWSProfile),
+		Region:        stringOf(saved, deploy.KeyAWSRegion),
+		// The database the deployed app will use, which is not the one this
+		// machine runs for itself.
+		MongoURI:    deploy.ProductionMongoURI(saved),
+		VercelToken: stringOf(saved, deploy.KeyVercelToken),
 	})
 	if err != nil {
-		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		writeJSON(w, statusOf(err, 400), map[string]any{"error": err.Error()})
 		return
 	}
 	writeJSON(w, 202, map[string]any{"run_id": runID, "state": "ANALYZING", "project": req.Project})
@@ -88,13 +90,20 @@ func (s *Server) deployJob(method, path string, body []byte) (int, any, error) {
 	return recorder.Code, value, nil
 }
 
-// deployStatus is what the Studio shows about the agent itself. It is part of
-// this process now, so it is running whenever this is.
+// deployStatus is what the Studio shows about the agent itself. The panel gates
+// its whole tab on `listening`, so an agent that is up has to say so.
 func (s *Server) deployStatus() map[string]any {
 	if s.Deploy == nil {
-		return map[string]any{"state": "off", "running": false, "in_process": true}
+		return map[string]any{"state": "off", "running": false, "listening": false,
+			"in_process": true, "error": "the deployment agent did not start"}
 	}
-	return map[string]any{"state": "ready", "running": true, "in_process": true}
+	return s.Deploy.Status()
+}
+
+// deploySettings is what is configured for deploying: which cloud account,
+// which database, which token. Never a value — only enough to recognise them.
+func (s *Server) deploySettings() deploy.Settings {
+	return deploy.SettingsSummary()
 }
 
 // deployResults is what the deploy panel reads on every render: whether the
@@ -109,17 +118,33 @@ func (s *Server) deployResults(project string) map[string]any {
 		"agent":   s.deployStatus(),
 		"live":    nil,
 		"have":    map[string]bool{"last": false},
+		// The panel's checklist is built from these, and the Deploy button
+		// stays disabled until every row on it is satisfied.
+		"settings": s.deploySettings(),
 	}
 	if s.Deploy == nil {
 		return out
 	}
-	live, last := s.Deploy.ForProject(dir)
-	if live != nil {
-		out["live"] = live
+
+	view := s.Deploy.ForProject(dir)
+	if view.Live != nil {
+		out["live"] = view.Live
 	}
-	if last != nil {
-		out["last"] = last
+	if view.HaveLast {
+		out["last"] = view.Last
 		out["have"] = map[string]bool{"last": true}
 	}
+	if view.Deleted != nil {
+		out["deleted"] = view.Deleted
+	}
 	return out
+}
+
+// statusOf is the HTTP status an error already knows it wants, so a refusal
+// the customer can act on does not arrive as a server fault.
+func statusOf(err error, fallback int) int {
+	if status := deploy.StatusOf(err); status != 0 {
+		return status
+	}
+	return fallback
 }

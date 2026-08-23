@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"agentforge/agent/core"
+	"agentforge/agent/deploy"
 )
 
 // recorder stands in for a connected Studio socket.
@@ -418,5 +421,70 @@ func TestMongoURIHonoursOverride(t *testing.T) {
 	}
 	if status := m.Status(context.Background()); status["override"] != true {
 		t.Errorf("override should be reported: %v", status)
+	}
+}
+
+// The Studio's Deploy tab reads these exact fields. Every one of them was
+// missing at some point, and each time the whole tab went dark with no error
+// anywhere — so they are pinned here rather than found again by hand.
+func TestDeployTabContract(t *testing.T) {
+	paths := core.Paths{Base: t.TempDir(), Projects: t.TempDir()}
+	server := New(core.NewHub(), paths, core.NewLLM(), NewMongo(paths))
+
+	agent, err := deploy.NewAgent(filepath.Join(t.TempDir(), "deploy"), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Deploy = agent
+
+	project := filepath.Join(paths.Projects, "corner-shop")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// components/deploy/DeployPanel.jsx gates the whole tab on this.
+	status := server.deployStatus()
+	if status["listening"] != true || status["running"] != true {
+		t.Errorf("the panel would say the agent is not running: %+v", status)
+	}
+
+	results := server.deployResults("corner-shop")
+	for _, key := range []string{"project", "agent", "live", "have", "settings"} {
+		if _, present := results[key]; !present {
+			t.Errorf("/deploy-results has no %q", key)
+		}
+	}
+
+	// DeployPanel.jsx: `const s = mine?.settings || {}` and then needs[]
+	// reads these. Without them the Deploy button can never enable.
+	settings, ok := results["settings"].(deploy.Settings)
+	if !ok {
+		t.Fatalf("settings = %T", results["settings"])
+	}
+	body, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shape map[string]any
+	if err := json.Unmarshal(body, &shape); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		"aws_profile", "aws_region", "aws_start_url", "aws_sso_region",
+		"vercel_token_set", "vercel_token_hint", "vercel_cli_signed_in",
+		"mongodb_uri_set", "mongodb_uri_hint", "deploy_model",
+	} {
+		if _, present := shape[key]; !present {
+			t.Errorf("the settings summary has no %q", key)
+		}
+	}
+
+	// SettingsModal.jsx passes /settings.deploy straight to DeployAccounts.
+	summary := server.settingsSummary(context.Background())
+	if _, ok := summary["deploy"].(deploy.Settings); !ok {
+		t.Errorf("/settings deploy = %T, want the deployment settings", summary["deploy"])
+	}
+	if _, ok := summary["deploy_agent"].(map[string]any); !ok {
+		t.Errorf("/settings deploy_agent = %T", summary["deploy_agent"])
 	}
 }
