@@ -87,10 +87,18 @@ type Pipeline struct {
 	gaps           []string
 	coverageRounds int
 	scaffolded     bool
+
+	// What an earlier attempt at this build already got through. A resume
+	// reads these off disk and starts from there instead of writing every
+	// file and running every check again.
+	resuming  bool
+	finished  map[string]bool
+	plannedAt string
 }
 
 func NewPipeline(msg server.Message, specs Specifications) *Pipeline {
-	return &Pipeline{msg: msg, suite: qa.NewSuite(), srs: specs}
+	return &Pipeline{msg: msg, suite: qa.NewSuite(), srs: specs,
+		resuming: msg.Type == "agent_resume", finished: map[string]bool{}}
 }
 
 // Specifications is where the build contract comes from. It is an interface so
@@ -125,12 +133,9 @@ func (p *Pipeline) compile() (*graph.StateRunnable, error) {
 	g.AddNode("build", p.build)
 	g.AddNode("coverage", p.coverage)
 	g.AddNode("dev", p.dev)
-	g.AddNode("unit", p.unit)
-	g.AddNode("api", p.api)
-	g.AddNode("e2e_plan", p.e2ePlan)
-	g.AddNode("e2e", p.e2e)
-	g.AddNode("perf", p.perf)
-	g.AddNode("security", p.security)
+	for _, stage := range qaStages {
+		g.AddNode(stage.name, p.stageNode(stage))
+	}
 	g.AddNode("summary", p.summary)
 	g.AddNode("preview", p.previewNode)
 
@@ -139,27 +144,32 @@ func (p *Pipeline) compile() (*graph.StateRunnable, error) {
 	g.AddEdge("plan", "build")
 	g.AddConditionalEdge("build", p.afterBuild)       // more tasks, or coverage
 	g.AddConditionalEdge("coverage", p.afterCoverage) // gaps go back to plan
-	g.AddConditionalEdge("dev", p.stopOrGo("unit"))
-	g.AddConditionalEdge("unit", p.stopOrGo("api"))
-	g.AddConditionalEdge("api", p.stopOrGo("e2e_plan"))
-	g.AddConditionalEdge("e2e_plan", p.stopOrGo("e2e"))
-	g.AddConditionalEdge("e2e", p.stopOrGo("perf"))
-	g.AddConditionalEdge("perf", p.stopOrGo("security"))
-	g.AddConditionalEdge("security", p.stopOrGo("summary"))
+	g.AddConditionalEdge("dev", p.stopOrGo(0))
+	for i, stage := range qaStages {
+		g.AddConditionalEdge(stage.name, p.stopOrGo(i+1))
+	}
 	g.AddEdge("summary", "preview")
 	g.AddEdge("preview", graph.END)
 
 	return g.Compile()
 }
 
-// stopOrGo skips the rest of the pipeline once the run has been cancelled.
-// The graph runner does not check the context between nodes, so this does.
-func (p *Pipeline) stopOrGo(next string) func(context.Context, any) string {
+// stopOrGo picks the node after this one: the next check that has not already
+// passed, or "preview" if the run was cancelled — the graph runner does not
+// check the context between nodes, so this does.
+func (p *Pipeline) stopOrGo(next int) func(context.Context, any) string {
 	return func(_ context.Context, state any) string {
 		if state.(*core.Run).Cancelled() {
 			return "preview"
 		}
-		return next
+		for at := next; at < len(qaStages); at++ {
+			if !p.finished[qaStages[at].name] {
+				return qaStages[at].name
+			}
+		}
+		// The summary always runs: the application on disk has changed even
+		// when none of the checks did.
+		return "summary"
 	}
 }
 
@@ -185,48 +195,47 @@ func (p *Pipeline) dev(ctx context.Context, state any) (any, error) {
 	return run, nil
 }
 
-func (p *Pipeline) unit(ctx context.Context, state any) (any, error) {
-	return p.stage(ctx, state, "unit", 58, p.suite.Unit)
+// qaStages is the rail, in the order it runs. The name is both the graph node
+// and the label the Studio shows, so what a resume records as finished is the
+// same word everywhere.
+type qaStage struct {
+	name    string
+	percent float64
+	run     func(*qa.Suite) func(context.Context, *core.Run) error
 }
 
-func (p *Pipeline) api(ctx context.Context, state any) (any, error) {
-	return p.stage(ctx, state, "api", 74, p.suite.API)
+var qaStages = []qaStage{
+	{"unit", 58, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.Unit }},
+	{"api", 74, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.API }},
+	{"e2e-plan", 78, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.E2EPlan }},
+	{"e2e", 82, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.E2E }},
+	{"performance", 92, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.Performance }},
+	{"security", 94, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.Security }},
 }
 
-func (p *Pipeline) e2ePlan(ctx context.Context, state any) (any, error) {
-	return p.stage(ctx, state, "e2e-plan", 78, p.suite.E2EPlan)
-}
+// stageNode runs one QA step and keeps going if it fails. A step that passed
+// is written down, so a resume does not run it a second time.
+func (p *Pipeline) stageNode(stage qaStage) func(context.Context, any) (any, error) {
+	return func(ctx context.Context, state any) (any, error) {
+		run := state.(*core.Run)
+		if err := run.Check(); err != nil {
+			return run, err
+		}
+		p.refresh(run)
+		run.Progress(stage.name, stage.percent)
 
-func (p *Pipeline) e2e(ctx context.Context, state any) (any, error) {
-	return p.stage(ctx, state, "e2e", 82, p.suite.E2E)
-}
-
-func (p *Pipeline) perf(ctx context.Context, state any) (any, error) {
-	return p.stage(ctx, state, "performance", 92, p.suite.Performance)
-}
-
-func (p *Pipeline) security(ctx context.Context, state any) (any, error) {
-	return p.stage(ctx, state, "security", 94, p.suite.Security)
-}
-
-// stage runs one QA step and keeps going if it fails.
-func (p *Pipeline) stage(ctx context.Context, state any, label string, pct float64,
-	fn func(context.Context, *core.Run) error) (any, error) {
-
-	run := state.(*core.Run)
-	if err := run.Check(); err != nil {
-		return run, err
-	}
-	p.refresh(run)
-	run.Progress(label, pct)
-	if err := fn(ctx, run); err != nil {
-		if run.Cancelled() {
+		if err := stage.run(p.suite)(ctx, run); err != nil {
+			if run.Cancelled() {
+				return run, nil
+			}
+			run.Warn(stage.name + " did not finish: " + err.Error())
+			run.Errors = append(run.Errors, stage.name+": "+err.Error())
 			return run, nil
 		}
-		run.Warn(label + " did not finish: " + err.Error())
-		run.Errors = append(run.Errors, label+": "+err.Error())
+		p.finished[stage.name] = true
+		p.savePlan(run)
+		return run, nil
 	}
-	return run, nil
 }
 
 // summary reads the finished application and writes the note every later edit

@@ -54,6 +54,10 @@ func (p *Pipeline) intake(ctx context.Context, state any) (any, error) {
 	run.ProjectExists(run.Project)
 	run.Detected("next", "app-router")
 
+	if p.resuming {
+		p.restore(run)
+	}
+
 	count := len(requirements(handoff))
 	if count > 0 {
 		run.Info(fmt.Sprintf("📄 %d requirement(s) from the approved specification", count))
@@ -215,6 +219,15 @@ func (p *Pipeline) plan(ctx context.Context, state any) (any, error) {
 	run.Step("plan", "active")
 	run.Progress("plan", 6)
 
+	// A resume that finished its task list has nothing to plan, and asking
+	// anyway costs a model call and invites new work nobody asked for. Gaps
+	// from the coverage check are the one thing that reopens it.
+	if len(run.Tasks) > 0 && nextTask(run.Tasks) < 0 && len(p.gaps) == 0 {
+		run.Info(fmt.Sprintf("🧭 resuming — %d task(s) already built", len(run.Tasks)))
+		run.PublishTasks()
+		return run, nil
+	}
+
 	// A replan keeps the tasks already finished and asks only for the rest.
 	done := doneTasks(run.Tasks)
 	if len(done) > 0 {
@@ -252,12 +265,52 @@ func (p *Pipeline) plan(ctx context.Context, state any) (any, error) {
 		return run, fmt.Errorf("the planner returned no tasks")
 	}
 	run.Tasks = tasks
-	_ = core.WriteJSON(run.Paths.PlanFile(run.Project), map[string]any{
-		"tasks": tasks, "planned_at": time.Now().UTC().Format(time.RFC3339),
-	})
+	p.plannedAt = time.Now().UTC().Format(time.RFC3339)
+	p.savePlan(run)
 	run.PublishTasks()
 	run.Info(fmt.Sprintf("🧭 %d task(s) planned", len(tasks)-len(done)))
 	return run, nil
+}
+
+// savePlan writes what this build has got through: the task list, and the
+// checks that have already passed. It is the whole of what a resume reads.
+func (p *Pipeline) savePlan(run *core.Run) {
+	stages := []string{}
+	for _, stage := range qaStages {
+		if p.finished[stage.name] {
+			stages = append(stages, stage.name)
+		}
+	}
+	_ = core.WriteJSON(run.Paths.PlanFile(run.Project), map[string]any{
+		"tasks": run.Tasks, "stages": stages, "planned_at": p.plannedAt,
+	})
+}
+
+// restore picks a build up where it stopped. Without it a resume replans from
+// nothing, writes every file the model already wrote, and runs every check
+// again — which for a large application is most of an hour, and can undo work
+// the customer has since edited by hand.
+func (p *Pipeline) restore(run *core.Run) {
+	var saved struct {
+		Tasks     []core.Task `json:"tasks"`
+		Stages    []string    `json:"stages"`
+		PlannedAt string      `json:"planned_at"`
+	}
+	if core.ReadJSON(run.Paths.PlanFile(run.Project), &saved) != nil || len(saved.Tasks) == 0 {
+		return
+	}
+	run.Tasks = saved.Tasks
+	p.plannedAt = saved.PlannedAt
+	for _, stage := range saved.Stages {
+		p.finished[stage] = true
+	}
+	// The checks that already passed keep their results in the Testing tab,
+	// which they would not if this run started their report from empty.
+	p.suite.Restore(run)
+
+	run.PublishTasks()
+	run.Info(fmt.Sprintf("↩️  resuming — %d of %d task(s) already built, %d check(s) already passed",
+		len(doneTasks(run.Tasks)), len(run.Tasks), len(saved.Stages)))
 }
 
 // planPrompt gives the planner the contract, what is already on disk, and what

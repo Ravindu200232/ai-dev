@@ -574,3 +574,18 @@ func fetchText(ctx context.Context, url string, timeout time.Duration) (string, 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	return string(body), err
 }
+
+// Restore reads the report an earlier attempt at this build left behind, so a
+// resume that skips a check it already passed still shows that check's results
+// in the Testing tab.
+func (s *Suite) Restore(run *core.Run) {
+	var saved Report
+	path := filepath.Join(run.Paths.Meta(run.Project), "qa", "report.json")
+	if core.ReadJSON(path, &saved) != nil || saved.Project == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	saved.FinishedAt = ""
+	s.report = saved
+}

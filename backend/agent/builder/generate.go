@@ -72,7 +72,7 @@ func (p *Pipeline) build(ctx context.Context, state any) (any, error) {
 	run.Tasks[index].Done = true
 	run.Tasks[index].Files = mergePaths(task.Files, written)
 	run.PhaseUpsert(task.ID, task.Title, "done")
-	_ = core.WriteJSON(run.Paths.PlanFile(run.Project), map[string]any{"tasks": run.Tasks})
+	p.savePlan(run)
 	return run, nil
 }
 

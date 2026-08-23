@@ -150,6 +150,73 @@ func TestAfterCoverageStopsLooping(t *testing.T) {
 	}
 }
 
+func TestAResumePicksUpWhereTheBuildStopped(t *testing.T) {
+	run := newRun(t, map[string]string{"app/page.jsx": "x"})
+
+	// What an earlier attempt got through before the app was closed.
+	first := NewPipeline(server.Message{Type: "agent_build"}, nil)
+	run.Tasks = []core.Task{
+		{ID: "t1", Title: "Home page", Done: true},
+		{ID: "t2", Title: "Cart page"},
+	}
+	first.finished["unit"] = true
+	first.finished["api"] = true
+	first.savePlan(run)
+
+	// A later run of the same project, resuming. The task list this process
+	// holds is empty — that is the whole point.
+	again := run
+	again.Tasks = nil
+	resumed := NewPipeline(server.Message{Type: "agent_resume"}, nil)
+	if !resumed.resuming {
+		t.Fatal("agent_resume is what makes a pipeline a resume")
+	}
+	resumed.restore(again)
+
+	if len(again.Tasks) != 2 || !again.Tasks[0].Done || again.Tasks[1].Done {
+		t.Fatalf("the task list was not picked up: %+v", again.Tasks)
+	}
+	// The checks that already passed are not run a second time; the ones that
+	// did not still are.
+	if got := resumed.stopOrGo(0)(context.Background(), again); got != "e2e-plan" {
+		t.Errorf("after dev a resume should go to %q, got %q", "e2e-plan", got)
+	}
+
+	// A build that is not a resume starts the rail from the top, whatever is
+	// on disk.
+	fresh := NewPipeline(server.Message{Type: "agent_build"}, nil)
+	if got := fresh.stopOrGo(0)(context.Background(), again); got != "unit" {
+		t.Errorf("a fresh build runs every check, got %q", got)
+	}
+
+	// And once every check has passed, the summary still runs: the files on
+	// disk changed even when none of the checks did.
+	for _, stage := range qaStages {
+		resumed.finished[stage.name] = true
+	}
+	if got := resumed.stopOrGo(0)(context.Background(), again); got != "summary" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestAResumeWithNothingLeftDoesNotReplan(t *testing.T) {
+	run := newRun(t, nil)
+	p := NewPipeline(server.Message{Type: "agent_resume"}, nil)
+	run.Tasks = []core.Task{{ID: "t1", Done: true}}
+
+	// No model is configured here, so reaching the planner at all would fail.
+	if _, err := p.plan(context.Background(), run); err != nil {
+		t.Fatalf("a finished task list should not be replanned: %v", err)
+	}
+
+	// A gap the coverage check found is the one thing that reopens planning,
+	// and that does need the planner.
+	p.gaps = []string{"the cart page is missing"}
+	if _, err := p.plan(context.Background(), run); err == nil {
+		t.Error("a gap must send the build back to the planner")
+	}
+}
+
 func TestMissingPlanFilesAndRoutes(t *testing.T) {
 	run := newRun(t, map[string]string{"app/page.jsx": "x"})
 	core.Refresh(run)

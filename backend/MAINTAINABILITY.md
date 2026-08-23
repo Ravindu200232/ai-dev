@@ -132,6 +132,11 @@ deployment agent have no port of their own any more: they are served under
   `.agentforge/` is the agent's own record and is never committed.
 - QA rounds are sequential. A repair round has to see the failure the previous
   round left behind.
+- A resume picks a build up where it stopped. `.agentforge/plan.json` is the
+  build's own state — the task list and the checks that have passed — written
+  by `savePlan` after every task and every check, and read back by `restore`.
+  Anything a resume must not redo has to be in that file; nothing else is
+  remembered between two runs of the pipeline.
 - Prefer evidence-backed repairs over broad rewrites: read the file before
   changing it, and change only what the failure names.
 - Run `go build ./... && go vet ./... && gofmt -l . && go test ./...` before
