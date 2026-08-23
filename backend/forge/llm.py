@@ -45,13 +45,13 @@ class Model:
     @property
     def client(self):
         if self._client is None:
-            from agents.core.ollama_client import OllamaClient
+            from .ollama import OllamaClient
             self._client = OllamaClient()
         return self._client
 
     def chat(self, messages, tools=None) -> dict:
         """One assistant turn, retried while the daemon is merely busy."""
-        from agents.core.ollama_client import max_context, with_retry
+        from .ollama import max_context, with_retry
         options = {"num_ctx": max_context(self.name), **self.options}
         return normalise(with_retry(
             lambda: self.client.chat(self.name, list(messages), tools=tools or None,
