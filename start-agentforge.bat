@@ -223,7 +223,7 @@ if not errorlevel 1 (
     exit /b 0
 )
 
-echo       Installing all backend, SRS, deployment, document and media packages...
+echo       Installing the deployment agent packages...
 "%PYTHON_EXE%" -m pip --version >nul 2>&1
 if errorlevel 1 "%PYTHON_EXE%" -m ensurepip %PIP_SCOPE% >nul 2>&1
 "%PYTHON_EXE%" -m pip --version >nul 2>&1
@@ -232,7 +232,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%PYTHON_EXE%" -m pip install %PIP_SCOPE% -r "backend\srs-agent\requirements.txt" -r "backend\deployment-agent\requirements.txt" --disable-pip-version-check --no-warn-script-location
+"%PYTHON_EXE%" -m pip install %PIP_SCOPE% -r "backend\deployment-agent\requirements.txt" --disable-pip-version-check --no-warn-script-location
 if errorlevel 1 (
     echo [ERROR] Python package installation failed.
     exit /b 1
