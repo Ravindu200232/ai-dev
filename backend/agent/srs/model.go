@@ -526,11 +526,12 @@ type Session struct {
 	AppType                  string  `json:"app_type"`
 	Pack                     *Pack   `json:"pack"`
 
-	Answers   map[string]AnswerEntry `json:"answers"`
-	Asked     []string               `json:"asked"`
-	Questions []Question             `json:"questions"`
-	Current   int                    `json:"current"`
-	Total     int                    `json:"total"`
+	Answers        map[string]AnswerEntry `json:"answers"`
+	Clarifications map[string]any         `json:"clarifications,omitempty"`
+	Asked          []string               `json:"asked"`
+	Questions      []Question             `json:"questions"`
+	Current        int                    `json:"current"`
+	Total          int                    `json:"total"`
 
 	CoverageScore float64        `json:"coverage_score"`
 	Coverage      map[string]any `json:"coverage"`

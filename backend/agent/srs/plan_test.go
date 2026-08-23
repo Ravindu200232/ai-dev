@@ -30,6 +30,16 @@ func hotelSession() (*Project, *Session) {
 	return &project, session
 }
 
+// testService is a service with no model reachable, which is the path a
+// machine with no Ollama takes.
+func testService(t *testing.T) *Service {
+	t.Helper()
+	t.Setenv("OLLAMA_HOST", "http://127.0.0.1:1")
+	svc := NewService(NewRepo(NewMemoryStore()), core.NewLLM(), core.Paths{})
+	svc.Storage = t.TempDir()
+	return svc
+}
+
 func TestBuildPackMergesDomainAndAppType(t *testing.T) {
 	pack := BuildPack("saas", "a hotel booking site with rooms and guests")
 	if pack.Domain != "hotel" {
