@@ -51,8 +51,12 @@ var envPattern = regexp.MustCompile(`process\.env(?:\.([A-Z][A-Z0-9_]+)|\[['"]([
 // project already expects to be listening.
 var portPattern = regexp.MustCompile(`(?:--port|-p)\s+(\d{2,5})`)
 
-// slugPattern is everything a name may not contain.
-var slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+// slugPattern is everything a name may not contain. nonSlug is the same for a
+// name that has already been slugged once and may keep its hyphens.
+var (
+	slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+	nonSlug     = regexp.MustCompile(`[^a-z0-9-]+`)
+)
 
 const (
 	gitTimeout      = 10 * time.Minute
@@ -318,6 +322,7 @@ func serviceSpec(root, dir string, pkg packageJSON) Service {
 		BuildCommand:   build,
 		StartCommand:   start,
 		Port:           detectPort(pkg.Scripts),
+		HealthPath:     DefaultHealthPath,
 		Routes:         scanRoutes(dir),
 		Environment:    scanEnvironment(dir),
 		Dependencies:   sortedKeys(deps),

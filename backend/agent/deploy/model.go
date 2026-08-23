@@ -61,6 +61,9 @@ func set(states ...State) map[State]bool {
 // of these is not safe to start a second deployment for.
 var Active = set(StateBootstrapping, StateCIRunning, StateDeploying, StateValidating)
 
+// DefaultHealthPath is where a deployment asks the app whether it is alive.
+const DefaultHealthPath = "/api/health"
+
 // Target is where a project is being put.
 const (
 	TargetEC2    = "aws_ec2"
@@ -118,6 +121,7 @@ const (
 // "failed" as an error; anything else is in progress.
 const (
 	StatusRunning  = "running"
+	StatusWarning  = "warning"
 	StatusComplete = "complete"
 	StatusFailed   = "failed"
 )
