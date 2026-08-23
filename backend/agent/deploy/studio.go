@@ -2,6 +2,8 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,6 +36,9 @@ func (s *Agent) Deploy(ctx context.Context, request StudioRequest) (string, erro
 	if target == "" {
 		target = TargetEC2
 	}
+	if err := s.canDeploy(request, target); err != nil {
+		return "", err
+	}
 	runID, err := s.Analyzer.Start(ctx, request.Path, target, request.ValidateBuild)
 	if err != nil {
 		return "", err
@@ -41,6 +46,36 @@ func (s *Agent) Deploy(ctx context.Context, request StudioRequest) (string, erro
 
 	go s.deployWhenReviewed(ctx, runID, request)
 	return runID, nil
+}
+
+// canDeploy refuses before anything happens, for the reasons a customer can do
+// something about. Finding out at the end of a twenty-minute analysis that
+// there is no database configured is a worse way to learn it.
+func (s *Agent) canDeploy(request StudioRequest, target string) error {
+	if strings.TrimSpace(request.MongoURI) == "" {
+		return badRequest("no production MongoDB URI — set one in Settings")
+	}
+	if err := CheckMongoURI(strings.TrimSpace(request.MongoURI)); err != nil {
+		return err
+	}
+	if strings.HasPrefix(target, "aws_") && strings.TrimSpace(request.AWSProfile) == "" {
+		return badRequest("no AWS account connected — sign in from Settings")
+	}
+	if view := s.ForProject(request.Path); view.Live != nil {
+		return conflict("a deployment for this project is already running")
+	}
+	return nil
+}
+
+// Status is what the Studio shows about the agent itself. It is part of this
+// process, so it is answering whenever the process is — the Studio's panel
+// gates on `listening`, and a service that cannot say so is a tab nobody can
+// open.
+func (s *Agent) Status() map[string]any {
+	return map[string]any{
+		"state": "ready", "running": true, "listening": true,
+		"in_process": true, "error": "",
+	}
 }
 
 // deployWhenReviewed waits for the analysis to finish and then deploys what it
@@ -62,6 +97,8 @@ func (s *Agent) deployWhenReviewed(ctx context.Context, runID string, request St
 		VercelToken: strings.TrimSpace(request.VercelToken),
 	})
 	if err == nil {
+		// However it ends, the project keeps the record of it.
+		go s.settle(ctx, run.ID)
 		return
 	}
 	_, _ = s.Store.Transition(runID, StateFailed, map[string]any{"error": err.Error()})
@@ -106,18 +143,35 @@ func (s *Agent) awaitReview(ctx context.Context, runID string) (*Run, bool) {
 // same list, and stops polling when it sees one.
 var Terminal = set(StateLive, StateFailed, StateRolledBack, StateDestroyed, StateCancelled)
 
-// ForProject is what the Studio's deploy panel shows for one project: the run
-// happening now, if any, and the last one that finished.
-func (s *Agent) ForProject(path string) (live, last map[string]any) {
+// liveEvents is how much of a run's log the panel needs to draw its pipeline.
+// Every stage appears at least once well inside this, and the whole log is a
+// request away on the monitor tab.
+const liveEvents = 200
+
+// Project is what the Studio's deploy panel shows for one project.
+type Project struct {
+	Live     map[string]any `json:"live"`
+	Last     map[string]any `json:"last"`
+	Deleted  map[string]any `json:"deleted,omitempty"`
+	HaveLast bool           `json:"-"`
+}
+
+// ForProject is the run happening now, if any, and the last one that finished.
+//
+// The two are shaped differently on purpose: the live one is a progress report,
+// so it carries the run's log and where it has got to; the finished one is a
+// record, so it carries what was deployed and where it ended up.
+func (s *Agent) ForProject(path string) Project {
+	out := Project{}
 	wanted, err := filepath.Abs(path)
 	if err != nil {
-		return nil, nil
+		return out
 	}
 	wanted = strings.ToLower(wanted)
 
 	runs, err := s.Store.ListRuns(250)
 	if err != nil {
-		return nil, nil
+		return out
 	}
 	for i := range runs {
 		run := &runs[i]
@@ -127,19 +181,129 @@ func (s *Agent) ForProject(path string) (live, last map[string]any) {
 		}
 		// ListRuns is newest first, so the first match of each kind is the
 		// one the panel wants.
-		record := s.public(run)
-		record["run_id"] = run.ID
-		record["state"] = string(run.State)
-		record["target"] = TargetOf(run)
-		if last == nil {
-			last = record
+		if !out.HaveLast {
+			out.Last, out.HaveLast = s.finished(run), true
 		}
-		if live == nil && !Terminal[run.State] {
-			live = record
+		if out.Live == nil && !Terminal[run.State] {
+			out.Live = s.progress(run)
 		}
-		if live != nil && last != nil {
+		if out.Live != nil && out.HaveLast {
 			break
 		}
 	}
-	return live, last
+	if !out.HaveLast {
+		out.Deleted = Deleted(path)
+	}
+	return out
+}
+
+// finished is a run as the "last deployment" panel reads it: what it deployed,
+// where it ended up, and how to get back to the evidence.
+func (s *Agent) finished(run *Run) map[string]any {
+	events, _ := s.Store.Events(run.ID, 0, 0)
+
+	return map[string]any{
+		"run_id":    run.ID,
+		"state":     string(run.State),
+		"target":    TargetOf(run),
+		"readiness": object(run.Readiness),
+		// The Studio reads the provider block under this name.
+		"repo_state":   object(mask(Redact(run.Repo))),
+		"error":        run.Error,
+		"monitor":      object(run.Monitor),
+		"events_count": len(events),
+		"link": map[string]any{
+			"run_id":     run.ID,
+			"adopted_at": run.UpdatedAt,
+			"state":      string(run.State),
+			"target":     TargetOf(run),
+		},
+		"artifact_schema_version": s.schemaVersion(run),
+		"artifacts_current":       s.schemaVersion(run) == ArtifactVersion,
+	}
+}
+
+// progress is a run in flight: the pipeline the panel draws, how far it has
+// got, and the address as soon as there is one.
+func (s *Agent) progress(run *Run) map[string]any {
+	events, _ := s.Store.Events(run.ID, 0, 0)
+	if len(events) > liveEvents {
+		events = events[len(events)-liveEvents:]
+	}
+
+	phase, message, percent := "", "", 0
+	for _, event := range events {
+		// A log line reports no progress of its own; a step does.
+		if event.Type == EventLog || event.Stage == "" {
+			continue
+		}
+		phase = event.Stage
+		if event.Message != "" {
+			message = event.Message
+		}
+		if event.Percent > percent {
+			percent = event.Percent
+		}
+	}
+	if message == "" && len(events) > 0 {
+		message = events[len(events)-1].Message
+	}
+
+	return map[string]any{
+		"run_id":  run.ID,
+		"project": run.ProjectName,
+		"state":   string(run.State),
+		"target":  TargetOf(run),
+		"phase":   phase,
+		"percent": percent,
+		"message": message,
+		"error":   run.Error,
+		"url":     text(object(run.Repo)["application_url"]),
+		"events":  events,
+	}
+}
+
+// schemaVersion is which renderer produced the artifacts sitting in the run's
+// staging copy, so the Studio can say when they are too old to deploy.
+func (s *Agent) schemaVersion(run *Run) int {
+	body, err := os.ReadFile(filepath.Join(run.StagedPath, "deployment-manifest.json"))
+	if err != nil {
+		return 0
+	}
+	var manifest struct {
+		Version int `json:"version"`
+	}
+	if json.Unmarshal(body, &manifest) != nil {
+		return 0
+	}
+	return manifest.Version
+}
+
+// --- keeping the record with the project ---------------------------------------------------
+
+// settle waits for a deployment to reach a state it does not come back from,
+// and then writes what happened into the project it deployed.
+func (s *Agent) settle(ctx context.Context, runID string) {
+	for {
+		if !sleep(ctx, 5*time.Second) {
+			return
+		}
+		run, err := s.Store.GetRun(runID)
+		if err != nil || run == nil {
+			return
+		}
+		if !Terminal[run.State] {
+			continue
+		}
+		if run.State == StateDestroyed {
+			_ = Retire(run.ProjectPath, run.ID)
+			return
+		}
+		if err := Adopt(s.Store, run); err != nil {
+			s.Deployer.emit(runID).send(Event{Type: EventLog, Stage: "record",
+				Status: StatusWarning, Percent: 100,
+				Message: "Could not save the deployment record: " + RedactText(err.Error())})
+		}
+		return
+	}
 }

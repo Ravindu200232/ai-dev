@@ -133,7 +133,8 @@ func TestTheDeployButtonRunsTheWholeFlow(t *testing.T) {
 	source := project(t)
 
 	runID, err := agent.Deploy(context.Background(), StudioRequest{
-		Path: source, Target: TargetEC2, MongoURI: "mongodb+srv://user:pass@cluster/shop",
+		Path: source, Target: TargetEC2, AWSProfile: "deployment-agent",
+		Region: DefaultRegion, MongoURI: "mongodb+srv://user:pass@cluster/shop",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -151,15 +152,15 @@ func TestTheDeployButtonRunsTheWholeFlow(t *testing.T) {
 	}
 
 	// And the panel finds it.
-	live, last := agent.ForProject(source)
-	if live != nil {
-		t.Errorf("a failed run is not live: %+v", live)
+	view := agent.ForProject(source)
+	if view.Live != nil {
+		t.Errorf("a failed run is not live: %+v", view.Live)
 	}
-	if last == nil || last["run_id"] != runID || last["state"] != string(StateFailed) {
-		t.Errorf("last = %+v", last)
+	if !view.HaveLast || view.Last["run_id"] != runID || view.Last["state"] != string(StateFailed) {
+		t.Errorf("last = %+v", view.Last)
 	}
-	if last["target"] != TargetEC2 {
-		t.Errorf("target = %v", last["target"])
+	if view.Last["target"] != TargetEC2 {
+		t.Errorf("target = %v", view.Last["target"])
 	}
 }
 
@@ -175,12 +176,12 @@ func TestForProjectSeparatesProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	live, last := agent.ForProject(mine)
-	if live == nil || last == nil || live["run_id"] != run.ID {
-		t.Errorf("live = %+v last = %+v", live, last)
+	view := agent.ForProject(mine)
+	if view.Live == nil || !view.HaveLast || view.Live["run_id"] != run.ID {
+		t.Errorf("live = %+v last = %+v", view.Live, view.Last)
 	}
-	if live, last := agent.ForProject(theirs); live != nil || last != nil {
-		t.Errorf("another project's runs leaked: %+v %+v", live, last)
+	if other := agent.ForProject(theirs); other.Live != nil || other.HaveLast {
+		t.Errorf("another project's runs leaked: %+v", other)
 	}
 }
 
@@ -255,5 +256,136 @@ func TestTheButtonStopsWhenTheRunDoes(t *testing.T) {
 	cancel()
 	if _, ok := agent.awaitReview(ctx, run.ID); ok {
 		t.Error("a cancelled wait does not deploy anything")
+	}
+}
+
+func TestTheButtonRefusesWhatSettingsCanFix(t *testing.T) {
+	agent := agentOn(t)
+	source := project(t)
+	complete := StudioRequest{
+		Path: source, Target: TargetEC2, AWSProfile: "deployment-agent",
+		Region: DefaultRegion, MongoURI: "mongodb+srv://user:pass@cluster/shop",
+	}
+
+	cases := map[string]struct {
+		change func(StudioRequest) StudioRequest
+		want   string
+	}{
+		"no database": {
+			func(r StudioRequest) StudioRequest { r.MongoURI = ""; return r },
+			"no production MongoDB URI",
+		},
+		"a database that is not one": {
+			func(r StudioRequest) StudioRequest { r.MongoURI = "postgres://host/db"; return r },
+			"MONGODB_URI must contain",
+		},
+		"no AWS account": {
+			func(r StudioRequest) StudioRequest { r.AWSProfile = ""; return r },
+			"no AWS account connected",
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := agent.Deploy(context.Background(), c.change(complete)); err == nil ||
+				!strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want something about %q", err, c.want)
+			}
+			// Nothing was started, so nothing has to be cleaned up.
+			if view := agent.ForProject(source); view.Live != nil || view.HaveLast {
+				t.Errorf("a refused deployment left a run behind: %+v", view)
+			}
+		})
+	}
+
+	// Vercel needs no AWS profile.
+	vercel := complete
+	vercel.Target, vercel.AWSProfile = TargetVercel, ""
+	runID, err := agent.Deploy(context.Background(), vercel)
+	if err != nil {
+		t.Fatalf("vercel = %v", err)
+	}
+
+	// And a second deployment of the same project waits for the first.
+	if _, err := agent.Deploy(context.Background(), vercel); err == nil ||
+		!strings.Contains(err.Error(), "already running") {
+		t.Errorf("err = %v", err)
+	}
+	waitFor(t, agent, runID)
+}
+
+func TestTheProjectViewCarriesWhatThePanelDraws(t *testing.T) {
+	agent := agentOn(t)
+	source := project(t)
+
+	runID, err := agent.Deploy(context.Background(), StudioRequest{
+		Path: source, Target: TargetEC2, AWSProfile: "deployment-agent",
+		Region: DefaultRegion, MongoURI: "mongodb+srv://user:pass@cluster/shop",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, agent, runID)
+
+	view := agent.ForProject(source)
+	if !view.HaveLast {
+		t.Fatal("the finished run is not there")
+	}
+	// The panel reads the provider block under this name, not "repo".
+	if _, wrong := view.Last["repo"]; wrong {
+		t.Error("the provider block is under the old key")
+	}
+	for _, key := range []string{"run_id", "state", "target", "readiness", "repo_state",
+		"error", "monitor", "events_count", "link", "artifacts_current"} {
+		if _, present := view.Last[key]; !present {
+			t.Errorf("last has no %q", key)
+		}
+	}
+	if number(view.Last["events_count"]) == 0 {
+		t.Error("the finished run counted no events")
+	}
+	if object(view.Last["link"])["adopted_at"] == "" {
+		t.Error("the record has no time on it")
+	}
+}
+
+func TestALiveRunReportsItsProgress(t *testing.T) {
+	agent := agentOn(t)
+	source := project(t)
+	run, err := agent.Store.CreateRun(NewRunID(), "shop", source, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.Store.Transition(run.ID, StateAnalyzing, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []Event{
+		{Type: EventStep, Stage: "intake", Status: StatusComplete, Percent: 14,
+			Message: "Detected 1 Next.js service(s)"},
+		{Type: EventLog, Stage: "planner", Status: StatusRunning, Percent: 0,
+			Message: "a log line reports no progress"},
+		{Type: EventStep, Stage: "planner", Status: StatusRunning, Percent: 18,
+			Message: "Planning with a model"},
+	} {
+		if err := agent.Store.AddEvent(run.ID, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	live := agent.ForProject(source).Live
+	if live == nil {
+		t.Fatal("a run in flight is not shown as live")
+	}
+	if live["phase"] != "planner" || number(live["percent"]) != 18 {
+		t.Errorf("progress = %v %v", live["phase"], live["percent"])
+	}
+	if live["message"] != "Planning with a model" {
+		t.Errorf("message = %v", live["message"])
+	}
+	events, _ := live["events"].([]Event)
+	if len(events) != 3 {
+		t.Fatalf("the panel draws its pipeline from these: %v", live["events"])
+	}
+	if events[0].Stage != "intake" || events[0].Status != StatusComplete {
+		t.Errorf("events = %+v", events)
 	}
 }
