@@ -16,11 +16,13 @@ as subprocesses of it, on the ports they always used.
 - `builder/` — the build graph: `intake → plan → build ⟲ → coverage ⟲` and then
   the QA stages.
 - `qa/` — runtime boot and repair, the unit rounds, the API probes, the browser
-  journeys, performance and security.
-- `app/` — the app summary, and the selection, pencil, feature and repair flow
-  that reads it.
+  journeys, performance and security, and `report.go` for the PDF.
+- `app/` — the app summary and the selection, pencil, feature and repair flow
+  that reads it, plus `picture.go` (Fooocus, uploads, attachments) and
+  `design.go` (whole-app visual directions and logo prompts).
 - `server/` — the Studio's two surfaces: `ws.go` (7825), `http.go` (7824), plus
-  `sidecar.go` for the Python services and MongoDB.
+  `sidecar.go` for the Python services and `mongo.go`, which fetches and runs
+  mongod when the machine has none.
 
 ## Python services
 
@@ -41,12 +43,17 @@ as subprocesses of it, on the ports they always used.
   largest are `server/http.go`, which is one endpoint table and has to be, and
   `core/run.go`, which is the state plus the event vocabulary every package
   emits — splitting either would cost more in indirection than it saves.
-- Seventeen source files is the whole backend. Reach for a new one only when a
+- Twenty-one source files is the whole backend. Reach for a new one only when a
   new concept arrives, not when an existing file gets long.
 - `core` never imports another package in this module. Everything else may
   import `core`.
 - Every phase re-runs `core.Refresh` before it decides anything. Do not carry a
   file listing forward between phases.
+- Listing a directory runs the platform's own `ls` or `dir` and parses it. The
+  fallback to reading the directory is for a machine with no shell, not the
+  normal path.
+- Nothing slow may run before the listeners are up. Fetching mongod is ~90 MB;
+  it happens in the background and reports through `/mongo`.
 - The WebSocket event names and their fields are a contract with `studio/`.
   `server/server_test.go` pins them; add a field freely, never rename one.
 - QA rounds are sequential. A repair round has to see the failure the previous

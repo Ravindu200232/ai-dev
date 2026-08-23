@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,4 +207,176 @@ func has(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestCleanHTMLFindsTheDocument(t *testing.T) {
+	cases := map[string]string{
+		"<!doctype html><html><body>hi</body></html>":       "<!doctype html>",
+		"Here is the design:\n<!DOCTYPE html><html></html>": "<!DOCTYPE html>",
+		"```html\n<!doctype html><html></html>\n```":        "<!doctype html>",
+		"<html><body>no doctype</body></html>":              "<html>",
+		"I could not draw that.":                            "",
+	}
+	for in, wantPrefix := range cases {
+		got := cleanHTML(in)
+		if wantPrefix == "" {
+			if got != "" {
+				t.Errorf("cleanHTML(%q) should be empty, got %q", in, got)
+			}
+			continue
+		}
+		if !strings.HasPrefix(got, wantPrefix) {
+			t.Errorf("cleanHTML(%q) = %q, want it to start with %q", in, got, wantPrefix)
+		}
+		if strings.Contains(got, "```") {
+			t.Errorf("a fence survived: %q", got)
+		}
+	}
+}
+
+func TestPickDirectionsAreDistinct(t *testing.T) {
+	picked := pickDirections(4)
+	if len(picked) != 4 {
+		t.Fatalf("got %d directions", len(picked))
+	}
+	seen := map[string]bool{}
+	for _, d := range picked {
+		if seen[d.Name] {
+			t.Errorf("%q was offered twice", d.Name)
+		}
+		seen[d.Name] = true
+	}
+	// Asking for more than exist must not panic or repeat.
+	if got := pickDirections(99); len(got) != len(directions) {
+		t.Errorf("pickDirections(99) = %d, want %d", len(got), len(directions))
+	}
+}
+
+func TestDecodeUpload(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', 1, 2, 3, 4}
+	encoded := base64.StdEncoding.EncodeToString(png)
+
+	raw, err := decodeUpload(encoded)
+	if err != nil || string(raw) != string(png) {
+		t.Fatalf("plain base64: %v %v", raw, err)
+	}
+	raw, err = decodeUpload("data:image/png;base64," + encoded)
+	if err != nil || string(raw) != string(png) {
+		t.Fatalf("data uri: %v %v", raw, err)
+	}
+	if _, err := decodeUpload(""); err == nil {
+		t.Error("an empty upload should be refused")
+	}
+	if _, err := decodeUpload("not base64 !!!"); err == nil {
+		t.Error("undecodable input should be refused")
+	}
+}
+
+func TestLooksLikeImage(t *testing.T) {
+	yes := [][]byte{
+		{0x89, 'P', 'N', 'G'}, {0xFF, 0xD8, 0xFF, 0xE0}, []byte("RIFF...."), []byte("GIF89a"),
+	}
+	for _, raw := range yes {
+		if !looksLikeImage(raw) {
+			t.Errorf("%v should be recognised as a picture", raw[:4])
+		}
+	}
+	for _, raw := range [][]byte{[]byte("<html>"), {}, {1, 2}} {
+		if looksLikeImage(raw) {
+			t.Errorf("%v is not a picture", raw)
+		}
+	}
+}
+
+// The shape the user clicked decides the shape of the picture drawn for it.
+func TestAspectFor(t *testing.T) {
+	cases := []struct {
+		w, h float64
+		want string
+	}{
+		{1600, 400, "banner"},
+		{1200, 700, "wide"},
+		{1000, 800, "landscape"},
+		{500, 500, "square"},
+		{400, 800, "portrait"},
+	}
+	for _, c := range cases {
+		got := aspectFor(map[string]any{"width": c.w, "height": c.h})
+		if got != c.want {
+			t.Errorf("%.0fx%.0f = %q, want %q", c.w, c.h, got, c.want)
+		}
+	}
+	if got := aspectFor(nil); got != "landscape" {
+		t.Errorf("an unknown box should default to landscape, got %q", got)
+	}
+	// The picker sometimes reports the box nested under rect.
+	nested := map[string]any{"rect": map[string]any{"width": 1600.0, "height": 400.0}}
+	if got := aspectFor(nested); got != "banner" {
+		t.Errorf("a nested rect was not read: %q", got)
+	}
+}
+
+func TestResolveAspectRewritesTheLabel(t *testing.T) {
+	got := resolveAspect("1152×896 <span>4:3</span>", "square")
+	if !strings.HasPrefix(got.(string), "1024×1024") {
+		t.Errorf("resolveAspect = %q", got)
+	}
+	// A label that does not start with a size is left alone.
+	if got := resolveAspect("Default", "square"); got != "Default" {
+		t.Errorf("resolveAspect = %q", got)
+	}
+	// A non-string default must pass straight through.
+	if got := resolveAspect(42, "square"); got != 42 {
+		t.Errorf("resolveAspect = %v", got)
+	}
+}
+
+// Gradio sends the result as server-sent events; only the data lines matter.
+func TestSSEReader(t *testing.T) {
+	stream := "event: ping\ndata: {\"msg\":\"estimation\"}\n\n" +
+		": a comment\ndata: {\"msg\":\"process_completed\"}\n\n"
+	decoder := json.NewDecoder(newSSEReader(strings.NewReader(stream)))
+
+	var seen []string
+	for {
+		var event struct {
+			Msg string `json:"msg"`
+		}
+		if err := decoder.Decode(&event); err != nil {
+			break
+		}
+		seen = append(seen, event.Msg)
+	}
+	if len(seen) != 2 || seen[0] != "estimation" || seen[1] != "process_completed" {
+		t.Fatalf("events = %v", seen)
+	}
+}
+
+func TestFirstImageWalksTheReply(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', 9, 9, 9, 9}
+	uri := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+
+	reply := []any{
+		map[string]any{"other": "ignored"},
+		[]any{map[string]any{"value": map[string]any{"url": uri}}},
+	}
+	if got := firstImage("http://127.0.0.1:7865", reply); string(got) != string(png) {
+		t.Errorf("firstImage did not find the nested picture: %v", got)
+	}
+	if got := firstImage("http://127.0.0.1:7865", []any{"nothing here"}); got != nil {
+		t.Errorf("firstImage = %v, want nil", got)
+	}
+}
+
+func TestSlug(t *testing.T) {
+	cases := map[string]string{
+		"A Friendly Logo!":                 "a-friendly-logo",
+		"":                                 "image",
+		strings.Repeat("verylongword", 10): strings.Repeat("verylongword", 10)[:40],
+	}
+	for in, want := range cases {
+		if got := slug(in); got != want {
+			t.Errorf("slug(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

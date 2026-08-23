@@ -16,6 +16,7 @@ import (
 
 	"agentforge/agent/builder"
 	"agentforge/agent/core"
+	"agentforge/agent/qa"
 	"agentforge/agent/server"
 )
 
@@ -29,18 +30,23 @@ func main() {
 	sidecars := server.NewSidecars(paths)
 
 	srv := server.New(hub, paths, llm, sidecars, mongo)
-	srv.Agent = builder.NewAgent()
+	srv.Agent = builder.NewAgent(srv.Pictures)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// The database has to be settled before the sidecars are told where it is.
-	mongo.Ensure(ctx)
+	// The connection string is settled first so the sidecars know where to
+	// look, but fetching mongod can take minutes and must not hold up the
+	// Studio: it finishes in the background and /mongo reports the progress.
+	mongo.Resolve()
 	sidecars.Start(ctx, mongo.URI())
+	go mongo.Ensure(ctx)
 
 	errs := make(chan error, 2)
 	go func() {
-		errs <- srv.ServeHTTP(ctx, addr(core.UIPort), nil)
+		errs <- srv.ServeHTTP(ctx, addr(core.UIPort), func(project string) ([]byte, error) {
+			return qa.PDF(paths, project)
+		})
 	}()
 	go func() {
 		errs <- srv.ServeWS(ctx, addr(core.WSPort))

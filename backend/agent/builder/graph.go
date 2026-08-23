@@ -28,9 +28,11 @@ import (
 const maxCoverageRounds = 3
 
 // Agent is what the server dispatches to.
-type Agent struct{}
+type Agent struct {
+	pictures *app.Pictures
+}
 
-func NewAgent() *Agent { return &Agent{} }
+func NewAgent(pictures *app.Pictures) *Agent { return &Agent{pictures: pictures} }
 
 // Handle runs one instruction from the Studio.
 func (a *Agent) Handle(run *core.Run, msg server.Message) (string, error) {
@@ -42,7 +44,14 @@ func (a *Agent) Handle(run *core.Run, msg server.Message) (string, error) {
 		return app.Edit(run.Context(), run, requestFor(msg))
 
 	case "image_edit", "image_swap":
-		return "", errors.New("picture editing is not part of this build")
+		return app.Place(run.Context(), run, a.pictures, app.PictureRequest{
+			Swap:       msg.Type == "image_swap",
+			Prompt:     msg.Prompt,
+			Filename:   msg.Str("filename"),
+			DataBase64: msg.Str("data_base64"),
+			Route:      firstNonEmpty(msg.Route, msg.Str("route")),
+			Element:    msg.Map("element"),
+		})
 	}
 	return "", fmt.Errorf("unknown instruction %q", msg.Type)
 }

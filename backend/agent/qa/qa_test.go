@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"agentforge/agent/core"
@@ -306,4 +307,126 @@ func runIn(t *testing.T, files map[string]string) *core.Run {
 	}
 	return core.NewRun(context.Background(), core.NewHub(),
 		core.Paths{Base: projects, Projects: projects}, core.NewLLM(), "demo", "build")
+}
+
+// The report is served as a file a browser has to open, so what it produces has
+// to be a real PDF, not something that merely looks like one.
+func TestReportPDFIsValid(t *testing.T) {
+	projects := t.TempDir()
+	paths := core.Paths{Base: projects, Projects: projects}
+	project := "demo"
+	if err := os.MkdirAll(paths.Project(project), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Report{
+		Project:    project,
+		FinishedAt: "2026-08-23T12:00:00Z",
+		Runtime:    StageReport{Name: "runtime", Passed: 1, Total: 1},
+		Suite:      StageReport{Name: "unit", Passed: 18, Failed: 2, Total: 20, Unresolved: []string{"tests/unit/orders.test.js › creates an order"}},
+		API:        StageReport{Name: "api", Passed: 4, Total: 4},
+		E2E:        StageReport{Name: "e2e", Passed: 3, Failed: 1, Total: 4, Unresolved: []string{"Place an order"}},
+		Security: SecurityReport{Checked: 12, Findings: []Finding{
+			{Severity: "high", Title: "hard-coded secret", File: "lib/keys.js", Line: 3,
+				Detail: "a credential is written into the source instead of read from the environment"},
+		}},
+		Performance: &Performance{
+			Scores: map[string]int{"performance": 88}, Metrics: map[string]string{"average-response": "240 ms"},
+			Routes: []RouteTiming{{Route: "/orders", MS: 240, Bytes: 18000, Status: 200}},
+		},
+	}
+	if err := core.WriteJSON(filepath.Join(paths.Meta(project), "qa", "report.json"), report); err != nil {
+		t.Fatal(err)
+	}
+
+	pdf, err := PDF(paths, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(pdf)
+	if !strings.HasPrefix(text, "%PDF-1.4") {
+		t.Error("the file does not start with a PDF header")
+	}
+	if !strings.HasSuffix(strings.TrimSpace(text), "%%EOF") {
+		t.Error("the file does not end with the PDF end-of-file marker")
+	}
+	for _, want := range []string{"/Type /Catalog", "/Type /Pages", "/Type /Page", "xref", "trailer", "startxref"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the PDF is missing %q", want)
+		}
+	}
+	// Every object must be reachable through the cross-reference table.
+	objects := strings.Count(text, " 0 obj")
+	entries := strings.Count(text, " 00000 n ")
+	if objects != entries {
+		t.Errorf("%d objects but %d xref entries", objects, entries)
+	}
+	for _, want := range []string{"Test report", "demo", "Unit tests", "Security", "hard-coded secret"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the report does not mention %q", want)
+		}
+	}
+}
+
+func TestReportPDFRefusesWithoutAReport(t *testing.T) {
+	projects := t.TempDir()
+	paths := core.Paths{Base: projects, Projects: projects}
+	if err := os.MkdirAll(paths.Project("empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PDF(paths, "empty"); err == nil {
+		t.Error("a project with no report should be refused, not given a blank PDF")
+	}
+	if _, err := PDF(paths, "nothere"); err == nil {
+		t.Error("a project that does not exist should be refused")
+	}
+}
+
+// A PDF string literal cannot carry a raw bracket or backslash.
+func TestEscapePDF(t *testing.T) {
+	got := escapePDF(`a (b) c\d`)
+	if got != `a \(b\) c\\d` {
+		t.Errorf("escapePDF = %q", got)
+	}
+	if got := escapePDF("tab\there"); strings.Contains(got, "\t") {
+		t.Errorf("a control character survived: %q", got)
+	}
+	if got := escapePDF("journey ✅ done"); strings.Contains(got, "✅") {
+		t.Errorf("a non-WinAnsi rune survived: %q", got)
+	}
+}
+
+func TestWrap(t *testing.T) {
+	got := wrap("the quick brown fox jumps over the lazy dog", 12)
+	for _, l := range got {
+		if len(l) > 12 {
+			t.Errorf("%q is longer than the width", l)
+		}
+	}
+	if len(got) < 3 {
+		t.Errorf("wrap = %v", got)
+	}
+	if wrap("", 10) != nil {
+		t.Error("wrapping nothing should give nothing")
+	}
+}
+
+// A long report has to run onto more pages rather than off the bottom of one.
+func TestPaginate(t *testing.T) {
+	var lines []line
+	for i := 0; i < linesPerPage*2+5; i++ {
+		lines = append(lines, line{text: "row", size: bodySize})
+	}
+	pages := paginate(lines)
+	if len(pages) != 3 {
+		t.Fatalf("got %d pages, want 3", len(pages))
+	}
+	for i, page := range pages {
+		if len(page) > linesPerPage {
+			t.Errorf("page %d holds %d rows, more than %d", i, len(page), linesPerPage)
+		}
+	}
+	if got := paginate(nil); len(got) != 1 {
+		t.Errorf("an empty report should still be one page, got %d", len(got))
+	}
 }

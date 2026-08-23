@@ -15,6 +15,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"agentforge/agent/app"
 	"agentforge/agent/core"
 )
 
@@ -82,6 +83,7 @@ type Server struct {
 	Agent    Agent
 	Sidecars *Sidecars
 	Mongo    *Mongo
+	Pictures *app.Pictures
 
 	mu     sync.Mutex
 	active *core.Run
@@ -92,7 +94,8 @@ type Server struct {
 func New(hub *core.Hub, paths core.Paths, llm *core.LLM, sidecars *Sidecars, mongo *Mongo) *Server {
 	return &Server{
 		Hub: hub, Paths: paths, LLM: llm,
-		Sidecars: sidecars, Mongo: mongo, jobs: newJobStore(),
+		Sidecars: sidecars, Mongo: mongo, Pictures: app.NewPictures(paths),
+		jobs: newJobStore(),
 	}
 }
 

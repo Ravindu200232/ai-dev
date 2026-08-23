@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"agentforge/agent/app"
 	"agentforge/agent/core"
 )
 
@@ -103,11 +104,7 @@ func (s *Server) apiGet(w http.ResponseWriter, r *http.Request, path string) {
 	case path == "/settings":
 		writeJSON(w, 200, s.settingsSummary(r.Context()))
 	case path == "/image-check":
-		writeJSON(w, 200, map[string]any{
-			"enabled": false, "available": false, "host": "", "lan_url": "",
-			"launcher": "", "can_start": false, "lan_access": false,
-			"reason": "picture generation is not part of this build",
-		})
+		writeJSON(w, 200, s.Pictures.Check())
 	case path == "/srs-status":
 		writeJSON(w, 200, s.Sidecars.SRS.Status())
 	case path == "/deploy-status":
@@ -281,12 +278,34 @@ func (s *Server) apiPost(w http.ResponseWriter, r *http.Request, path string) {
 	case "/deploy-start":
 		s.Sidecars.Deploy.Proxy(w, withBody(r, body), "/api/runs")
 
-	// Picture generation was part of the removed Python agent and is not in
-	// this build. Say so rather than leaving the Studio waiting.
-	case "/image", "/image-upload", "/image-start", "/logo-prompt", "/themes", "/attach":
-		writeJSON(w, 501, map[string]any{
-			"error": "picture and theme generation are not part of this build",
-		})
+	case "/image-start":
+		writeJSON(w, 200, s.Pictures.Start(r.Context()))
+
+	case "/image-upload":
+		var req app.UploadRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeJSON(w, 400, map[string]any{"error": "expected an uploaded file"})
+			return
+		}
+		saved, err := s.Pictures.SaveUpload(req)
+		if err != nil {
+			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, saved)
+
+	case "/attach":
+		var req app.UploadRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeJSON(w, 400, map[string]any{"error": "expected an attachment"})
+			return
+		}
+		got, err := app.Attach(req)
+		if err != nil {
+			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, got)
 
 	default:
 		if strings.HasPrefix(path, "/open/") {
@@ -317,7 +336,9 @@ var fallbackKind = map[string]string{
 	"/image-swap":   "image_swap",
 }
 
-var localJobPaths = map[string]bool{"/tune": true}
+var localJobPaths = map[string]bool{
+	"/tune": true, "/image": true, "/logo-prompt": true, "/themes": true,
+}
 
 // localJob runs one of our own endpoints in the background for the poller.
 func (s *Server) localJob(path string, body json.RawMessage) (int, any, error) {
@@ -334,8 +355,81 @@ func (s *Server) localJob(path string, body json.RawMessage) (int, any, error) {
 			return 200, map[string]any{"prompt": req.Prompt}, nil // fall back to what was typed
 		}
 		return 200, map[string]any{"prompt": out}, nil
+
+	case "/image":
+		var req app.ImageRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			return 400, map[string]any{"error": "expected a prompt"}, nil
+		}
+		drawn, err := s.Pictures.Generate(context.Background(), req)
+		if err != nil {
+			return 502, map[string]any{"error": err.Error()}, nil
+		}
+		return 200, drawn, nil
+
+	case "/logo-prompt":
+		var req struct {
+			Prompt string `json:"prompt"`
+		}
+		_ = json.Unmarshal(body, &req)
+		out, err := app.LogoPrompt(context.Background(), s.LLM, req.Prompt)
+		if err != nil {
+			return 502, map[string]any{"error": err.Error()}, nil
+		}
+		return 200, map[string]any{"prompt": out}, nil
+
+	case "/themes":
+		var req app.ThemeRequest
+		_ = json.Unmarshal(body, &req)
+		brief, err := s.designBrief(context.Background(), req)
+		if err != nil {
+			return 400, map[string]any{"error": err.Error()}, nil
+		}
+		drawn, err := app.Themes(context.Background(), s.LLM, brief, req)
+		if err != nil {
+			return 502, map[string]any{"error": err.Error()}, nil
+		}
+		return 200, drawn, nil
 	}
 	return 404, map[string]any{"error": "unknown job " + path}, nil
+}
+
+// designBrief is what the theme drawings are based on: the approved plan when
+// there is one, and otherwise what the user typed.
+func (s *Server) designBrief(ctx context.Context, req app.ThemeRequest) (string, error) {
+	if id := strings.TrimSpace(req.SRSID); id != "" {
+		if plan := s.srsPlan(ctx, id); plan != "" {
+			return plan, nil
+		}
+	}
+	if brief := strings.TrimSpace(req.Prompt); brief != "" {
+		return brief, nil
+	}
+	return "", errors.New("describe the app, or approve a specification first")
+}
+
+// srsPlan asks the SRS agent for the approved plan in prose.
+func (s *Server) srsPlan(ctx context.Context, srsID string) string {
+	target := "http://127.0.0.1:" + strconv.Itoa(core.SRSPort) + "/projects/" + srsID + "/plan"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var body struct {
+		Markdown string `json:"markdown"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&body); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(body.Markdown)
 }
 
 // tune rewords an edit request into something the builder can act on. The
@@ -754,7 +848,9 @@ func (s *Server) settingsSummary(ctx context.Context) map[string]any {
 		"mongodb_uri_hint": redacted,
 		"mongo":            s.Mongo.Status(ctx),
 		"deploy":           s.Sidecars.Deploy.Status(),
-		"images_enabled":   false,
+		"images":           s.Pictures.Check(),
+		"images_enabled":   s.Pictures.Check()["enabled"],
+		"image_host":       stringOf(saved, "image_host"),
 	}
 }
 
@@ -814,6 +910,14 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// stringOf reads one string out of the settings map.
+func stringOf(settings map[string]any, key string) string {
+	if v, ok := settings[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 func orEmpty(m map[string]any) map[string]any {

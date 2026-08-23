@@ -119,20 +119,32 @@ func (m *Mongo) FindBinary() string {
 	return ""
 }
 
-// Ensure settles on a database before anything needs it.
-func (m *Mongo) Ensure(ctx context.Context) {
+// Resolve settles the connection string without doing anything slow, so the
+// sidecars can be told where the database is before it necessarily exists. It
+// reports whether a database is already there.
+func (m *Mongo) Resolve() bool {
 	if saved := savedURI(); saved != "" {
 		m.mu.Lock()
 		m.uri, m.override, m.reason = saved, true, ""
 		m.mu.Unlock()
 		m.log("INFO", "using the MongoDB URI from settings")
-		return
+		return true
 	}
 	if listening(defaultMongoPort) {
 		m.mu.Lock()
 		m.external, m.reason = true, ""
 		m.mu.Unlock()
 		m.log("INFO", "adopted the MongoDB already on :"+strconv.Itoa(defaultMongoPort))
+		return true
+	}
+	return false
+}
+
+// Ensure makes a database exist, fetching mongod if this machine has none.
+// The first fetch is around 90 MB, so this is meant to run in the background
+// while the rest of the backend comes up.
+func (m *Mongo) Ensure(ctx context.Context) {
+	if m.Resolve() {
 		return
 	}
 	if err := m.Start(ctx); err != nil {
@@ -507,7 +519,17 @@ func linuxTargets() []string {
 		targets = append(targets, "amazon"+version, "amazon2023", "amazon2")
 	}
 	// Ubuntu builds are the most widely compatible, so they end the list.
-	return append(targets, "ubuntu2204", "ubuntu2004")
+	targets = append(targets, "ubuntu2204", "ubuntu2004")
+
+	seen := map[string]bool{}
+	out := targets[:0]
+	for _, t := range targets {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // Prefetch is what the Studio's "Download mongod" button triggers. It installs
