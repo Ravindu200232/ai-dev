@@ -12,7 +12,8 @@ import (
 // Everything between a plan the model just wrote and a plan the customer has
 // approved: laying the model's answer over the one it was given, giving every
 // role a journey, rendering it for the review page, and the gate that decides
-// whether it may be approved at all.
+// whether it may be approved at all. Plus the way back — reading a plan out of
+// a specification that has since moved on, which is what an edit is applied to.
 
 // --- merge -------------------------------------------------------------------------
 
@@ -450,4 +451,132 @@ func (s *Service) ApprovedPlan(ctx context.Context, projectID string) (*PlanReco
 		}
 	}
 	return nil, nil
+}
+
+// --- the plan as it stands now ----------------------------------------------------------
+
+// EffectivePlan is a plan-shaped view of the specification as it stands, which
+// is what an edit is applied against. Reading it back from the document rather
+// than the approved plan is what lets a customization build on the last one.
+func EffectivePlan(doc *Document) *Plan {
+	approved := planFromDoc(doc.ApprovedPlan)
+
+	allowed := map[string][]string{}
+	for _, m := range doc.RoleAccessMatrix {
+		allowed[m.Role] = m.AllowedFunctions
+	}
+	approvedCan := map[string][]string{}
+	for _, u := range approved.Users {
+		if u.Role != "" {
+			approvedCan[strings.ToLower(u.Role)] = asList(u.CanDo)
+		}
+	}
+
+	var users []PlanUser
+	for _, role := range doc.Roles {
+		name := firstNonEmpty(role.RoleName, role.RoleKey)
+		if name == "" {
+			continue
+		}
+		can := allowed[role.RoleKey]
+		if len(can) == 0 {
+			can = allowed[name]
+		}
+		if len(can) == 0 {
+			can = approvedCan[strings.ToLower(name)]
+		}
+		if len(can) == 0 && role.Description != "" {
+			can = asList(strings.Split(role.Description, ";"))
+		}
+		users = append(users, PlanUser{Role: name, CanDo: can})
+	}
+
+	var screens []Screen
+	for _, page := range append(append([]Page{}, doc.PublicPages...), doc.ProtectedPages...) {
+		if page.PageName == "" {
+			continue
+		}
+		purpose := ""
+		if fns := asList(page.Functions); len(fns) > 0 {
+			purpose = fns[0]
+		}
+		who := page.AllowedRoles
+		if len(who) == 0 && page.LoginRequired != nil && !*page.LoginRequired {
+			who = []string{"Visitor"}
+		}
+		screens = append(screens, Screen{
+			Name: page.PageName, Route: firstNonEmpty(page.Route, "/"),
+			Purpose: purpose, Who: who,
+		})
+	}
+
+	var records []PlanRecord
+	for _, table := range doc.DatabaseDesign.Tables {
+		if table.TableName == "" {
+			continue
+		}
+		var keeps []string
+		for _, f := range table.Fields {
+			switch f.Name {
+			case "", "id", "created_at", "updated_at":
+				continue
+			}
+			keeps = append(keeps, f.Name)
+		}
+		records = append(records, PlanRecord{Name: table.TableName, Keeps: keeps})
+	}
+
+	var flows []Journey
+	for _, w := range doc.BusinessWorkflows {
+		if len(w.Steps) == 0 {
+			continue
+		}
+		flows = append(flows, Journey{
+			Name: firstNonEmpty(w.WorkflowName, "Workflow"), Who: w.Who, Steps: w.Steps,
+		})
+	}
+
+	out := &Plan{
+		ProductIntent: approved.ProductIntent, LookAndFeel: approved.LookAndFeel,
+		Users: users, Screens: screens, Records: records, Workflows: flows,
+		Features: asList(approved.Features), AccountPolicy: policyFromAuth(doc, approved),
+	}
+	if len(out.Users) == 0 {
+		out.Users = approved.Users
+	}
+	if len(out.Screens) == 0 {
+		out.Screens = approved.Screens
+	}
+	if len(out.Records) == 0 {
+		out.Records = approved.Records
+	}
+	if len(out.Workflows) == 0 {
+		out.Workflows = approved.Workflows
+	}
+	return out
+}
+
+// policyFromAuth reads the account policy back out of the document, so an edit
+// sees the accounts the specification actually has.
+func policyFromAuth(doc *Document, approved *Plan) *AccountPolicy {
+	if !doc.Auth.LoginRequired {
+		return &AccountPolicy{AccountsRequired: false, RegistrationMode: RegistrationNone}
+	}
+	out := &AccountPolicy{}
+	if approved.AccountPolicy != nil {
+		copied := *approved.AccountPolicy
+		out = &copied
+	}
+	auth := doc.Auth
+	out.AccountsRequired = true
+	out.SignInFields, out.RegistrationFields = auth.IdentityFields, auth.RegistrationFields
+	out.RegistrationMode = firstNonEmpty(auth.RegistrationMode, RegistrationAdmin)
+	out.RegistrationRole, out.ProvisioningRole = auth.RegistrationRole, auth.ProvisioningRole
+	out.SignInRoute, out.SignUpRoute = auth.SignInRoute, auth.SignUpRoute
+	out.AccountManagementRoute = auth.AccountManagementRoute
+	out.InvitationManagementRoute = auth.InvitationManagementRoute
+	out.InvitationAcceptRoute = auth.InvitationAcceptRoute
+	out.RequestAccessRoute, out.AccessReviewRoute = auth.RequestAccessRoute, auth.AccessReviewRoute
+	out.PasswordResetRequired = auth.PasswordResetRequired
+	return out
 }

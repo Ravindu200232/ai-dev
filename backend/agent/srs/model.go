@@ -154,22 +154,31 @@ type Endpoint struct {
 }
 
 type Requirement struct {
-	ID                 string   `json:"id"`
-	Module             string   `json:"module"`
-	Requirement        string   `json:"requirement"`
-	Priority           string   `json:"priority"`
-	AllowedRoles       []string `json:"allowed_roles"`
-	VerificationMethod string   `json:"verification_method,omitempty"`
-	Source             string   `json:"source,omitempty"`
-	QualityFlags       []string `json:"quality_flags,omitempty"`
+	ID                 string         `json:"id"`
+	Module             string         `json:"module"`
+	Requirement        string         `json:"requirement"`
+	Priority           string         `json:"priority"`
+	AllowedRoles       []string       `json:"allowed_roles"`
+	VerificationMethod string         `json:"verification_method,omitempty"`
+	Source             string         `json:"source,omitempty"`
+	Rationale          string         `json:"rationale,omitempty"`
+	QualityReview      *QualityReview `json:"quality_review,omitempty"`
+}
+
+// QualityReview is a conservative lint of one requirement's wording. A warning
+// is a prompt to look, never a claim that the requirement is wrong.
+type QualityReview struct {
+	Status   string   `json:"status"`
+	Warnings []string `json:"warnings"`
 }
 
 type NonFunctional struct {
-	ID                 string   `json:"id"`
-	Category           string   `json:"category"`
-	Requirement        string   `json:"requirement"`
-	VerificationMethod string   `json:"verification_method,omitempty"`
-	QualityFlags       []string `json:"quality_flags,omitempty"`
+	ID                 string         `json:"id"`
+	Category           string         `json:"category"`
+	Requirement        string         `json:"requirement"`
+	VerificationMethod string         `json:"verification_method,omitempty"`
+	Source             string         `json:"source,omitempty"`
+	QualityReview      *QualityReview `json:"quality_review,omitempty"`
 }
 
 type Workflow struct {
