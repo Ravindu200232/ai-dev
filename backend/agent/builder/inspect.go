@@ -52,10 +52,17 @@ func relatedFiles(run *core.Run, named []string) []string {
 
 const coverageSystem = `You audit a Next.js App Router build against its contract.
 
-You are given the contract's requirements and the exact file list from disk.
-Report only gaps you can point at: a requirement with no file that could
-implement it, a route the specification asked for with no page.jsx, a link or
-fetch target that does not exist, an API route the pages call that is missing.
+You are given the contract's requirements, the file list from disk, and the
+source of the files that matter. Judge what the code does, not whether a file
+exists: a file present but empty, a component that renders a placeholder, a
+handler that returns nothing, a form that submits nowhere and a page that never
+fetches the data it is meant to show are all gaps, and the file being on disk
+does not close any of them.
+
+Report only gaps you can point at: a requirement no file implements, a route the
+specification asked for with no page.jsx, a link or fetch target that does not
+exist, an API route the pages call that is missing, an HTTP method a page calls
+that its route file does not export.
 
 Do not report style, polish or "could be improved". Do not invent files.
 
@@ -79,6 +86,7 @@ func (p *Pipeline) coverage(ctx context.Context, state any) (any, error) {
 
 	// The cheap, certain checks first — no model needed to see a missing file.
 	p.gaps = append(p.gaps, missingPlanFiles(run)...)
+	p.gaps = append(p.gaps, emptyPlanFiles(run)...)
 	p.gaps = append(p.gaps, missingContractRoutes(run)...)
 
 	// Then ask the model for what only reading can find.
@@ -128,6 +136,37 @@ func missingPlanFiles(run *core.Run) []string {
 	return gaps
 }
 
+// stubBytes is the size below which a planned source file cannot be doing what
+// it promised. A real page or route is far larger; this only catches the file
+// that was created and then never written.
+const stubBytes = 40
+
+// emptyPlanFiles names files a finished task created but left empty. A task is
+// satisfied by what its file does, and a file with nothing in it does nothing —
+// yet it passes an existence check, which is how a build reports full coverage
+// and then serves a blank page.
+func emptyPlanFiles(run *core.Run) []string {
+	var gaps []string
+	for _, t := range run.Tasks {
+		if !t.Done {
+			continue
+		}
+		for _, rel := range t.Files {
+			if !run.Shell.Exists(rel) {
+				continue // missingPlanFiles already speaks for this one
+			}
+			body, _, err := run.Shell.Read(rel)
+			if err != nil {
+				continue
+			}
+			if len(strings.TrimSpace(body)) < stubBytes {
+				gaps = append(gaps, fmt.Sprintf("%s is empty - task %q said it would implement it", rel, t.Title))
+			}
+		}
+	}
+	return gaps
+}
+
 // missingContractRoutes names routes the specification asked for that have no page.
 func missingContractRoutes(run *core.Run) []string {
 	raw, _ := run.Handoff["pages"].([]any)
@@ -169,7 +208,42 @@ func coveragePrompt(run *core.Run) string {
 	}
 	b.WriteString("\nWHAT IS ON DISK\n")
 	b.WriteString(core.StructureBlock(run.Structure))
+	// A listing only shows that a name exists. Whether the thing behind the
+	// name does its job can only be read.
+	if sources := core.ReadFiles(run, coverageSources(run), coverageReadBudget); sources != "" {
+		b.WriteString("\nWHAT THOSE FILES CONTAIN\n")
+		b.WriteString(sources)
+	}
 	return b.String()
+}
+
+// coverageReadBudget is how much source the coverage review is shown. Enough
+// to see whether a file does what it was planned to do, and not so much that
+// the requirements scroll out of the model's attention.
+const coverageReadBudget = 60000
+
+// coverageSources are the files worth reading to judge coverage: the ones the
+// plan promised first, since those are the claims being audited, then the
+// pages and API routes that serve the specification.
+func coverageSources(run *core.Run) []string {
+	var out []string
+	for _, t := range run.Tasks {
+		for _, rel := range t.Files {
+			if run.Shell.Exists(rel) {
+				out = append(out, rel)
+			}
+		}
+	}
+	if run.Structure != nil {
+		for _, f := range run.Structure.Files {
+			base := filepath.Base(f)
+			if strings.HasPrefix(f, "app/") &&
+				(strings.HasPrefix(base, "page.") || strings.HasPrefix(base, "route.")) {
+				out = append(out, f)
+			}
+		}
+	}
+	return dedupe(out)
 }
 
 // afterCoverage sends the build back to planning while gaps remain, and gives

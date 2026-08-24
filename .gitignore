@@ -144,3 +144,7 @@ dist
 
 # Go backend build output
 backend/agent/bin/
+
+# Go test binaries, built outside %TEMP% so Smart App Control does not block them
+backend/agent/.gotmp/
+backend/agent/.testbin/

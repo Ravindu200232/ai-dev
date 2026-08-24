@@ -4,6 +4,8 @@ package core
 
 import (
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -30,4 +32,27 @@ func KillTree(cmd *exec.Cmd) {
 	if syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) != nil {
 		_ = cmd.Process.Kill()
 	}
+}
+
+// ReclaimPort stops whatever is listening on a port and reports whether it
+// killed anything. A preview left running by an earlier build holds the port
+// the next one needs, and the next one cannot bind while it does.
+func ReclaimPort(port int) bool {
+	out, err := exec.Command("lsof", "-ti", "tcp:"+strconv.Itoa(port), "-sTCP:LISTEN").Output()
+	if err != nil {
+		return false
+	}
+	killed := false
+	for _, field := range strings.Fields(string(out)) {
+		pid, err := strconv.Atoi(field)
+		if err != nil || pid <= 0 {
+			continue
+		}
+		// The group first, for the same reason KillTree prefers it: the
+		// listener is usually a child of the launcher that was started.
+		if syscall.Kill(-pid, syscall.SIGKILL) == nil || syscall.Kill(pid, syscall.SIGKILL) == nil {
+			killed = true
+		}
+	}
+	return killed
 }

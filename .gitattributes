@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Golden files are compared byte for byte against generated output, so they
+# must reach the working tree exactly as stored, with no EOL translation.
+backend/agent/deploy/testdata/** -text

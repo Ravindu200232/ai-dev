@@ -3,7 +3,9 @@ package deploy
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,15 +16,30 @@ import (
 // a command without an account to run it against.
 func fakeAWS(t *testing.T, body string) (dir string, calls func() []string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("bash"); err != nil {
+			t.Skip("the aws stub is a shell script, so Windows needs bash to run it")
+		}
+	}
 	dir = t.TempDir()
 	log := filepath.Join(dir, "calls.log")
 
+	// A shell reads these paths, so they take forward slashes even on Windows,
+	// where a backslash would be an escape.
 	script := "#!/bin/sh\n" +
-		"{ printf '%s\\n' \"$*\"; } >> " + log + "\n" +
-		"cat >> " + filepath.Join(dir, "stdin.log") + "\n" +
+		"{ printf '%s\\n' \"$*\"; } >> '" + filepath.ToSlash(log) + "'\n" +
+		"cat >> '" + filepath.ToSlash(filepath.Join(dir, "stdin.log")) + "'\n" +
 		body + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "aws"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		// Windows will not run an extensionless script, so without this shim the
+		// lookup falls straight through to whatever real aws the machine has.
+		shim := "@echo off\r\nbash \"" + filepath.ToSlash(filepath.Join(dir, "aws")) + "\" %*\r\n"
+		if err := os.WriteFile(filepath.Join(dir, "aws.cmd"), []byte(shim), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -59,6 +76,16 @@ func TestPutSecretNeverPutsAValueInAnArgument(t *testing.T) {
 	if strings.Contains(made[0], "hunter2") || strings.Contains(made[0], "s3cr3t") {
 		t.Errorf("a secret was passed as an argument: %s", made[0])
 	}
+	// How the bundle reaches the CLI is platform specific, and secretParameter
+	// has its own tests for both. What must hold either way is that the value
+	// never travels as an argument.
+	if runtime.GOOS == "windows" {
+		// No /dev/stdin there, so it goes by a file that is deleted at once.
+		if !strings.Contains(made[0], "--secret-string file://") {
+			t.Errorf("the secret did not go by file: %s", made[0])
+		}
+		return
+	}
 	if !strings.Contains(made[0], "--secret-string file:///dev/stdin") {
 		t.Errorf("the secret did not go over stdin: %s", made[0])
 	}
@@ -81,10 +108,13 @@ func TestPutSecretReportsAFailure(t *testing.T) {
 }
 
 func TestRegistryIsEmptiedInBatchesTheAPIAccepts(t *testing.T) {
-	// 250 images: three delete calls, none over the cap.
+	// 250 images: three delete calls, none over the cap. The digests are
+	// shorter than real ones on purpose — what is under test is the batching,
+	// by count, and a stub invoked through a shell has a command line limit
+	// far below the one the real CLI is called with.
 	ids := make([]string, 0, 250)
 	for i := 0; i < 250; i++ {
-		ids = append(ids, `{"imageDigest":"sha256:`+strings.Repeat("a", 60)+itoa(i)+`"}`)
+		ids = append(ids, `{"imageDigest":"sha256:`+strings.Repeat("a", 20)+itoa(i)+`"}`)
 	}
 	_, calls := fakeAWS(t, `case "$*" in
   *list-images*) echo '{"imageIds":[`+strings.Join(ids, ",")+`]}' ;;

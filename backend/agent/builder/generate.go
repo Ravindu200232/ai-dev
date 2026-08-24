@@ -227,6 +227,7 @@ func (p *Pipeline) scaffold(run *core.Run) error {
 			"dev":   fmt.Sprintf("next dev --port %d", core.DevPort),
 			"build": "next build", "start": "next start",
 			"test": "vitest run", "e2e": "playwright test",
+			"lint": "eslint .",
 		},
 		"dependencies": map[string]string{
 			"next": "16.3.0", "react": "19.2.0", "react-dom": "19.2.0",
@@ -237,6 +238,7 @@ func (p *Pipeline) scaffold(run *core.Run) error {
 			"@testing-library/react": "^16.1.0", "@testing-library/jest-dom": "^6.6.3",
 			"jsdom": "^25.0.1", "vitest": "^2.1.8",
 			"tailwindcss": "^4.3.3", "@tailwindcss/postcss": "^4.3.3",
+			"eslint": "^9.39.0", "eslint-config-next": "16.3.0",
 		},
 	}
 	pkgJSON, _ := json.MarshalIndent(pkg, "", "  ")
@@ -255,6 +257,7 @@ export default nextConfig
 `,
 		"jsconfig.json":        "{\n  \"compilerOptions\": { \"baseUrl\": \".\", \"paths\": { \"@/*\": [\"./*\"] } }\n}\n",
 		"postcss.config.mjs":   "export default { plugins: { '@tailwindcss/postcss': {} } }\n",
+		"eslint.config.mjs":    eslintConfig,
 		"app/globals.css":      "@import \"tailwindcss\";\n",
 		"vitest.config.js":     vitestConfig,
 		"playwright.config.js": fmt.Sprintf(playwrightConfig, core.DevPort),
@@ -354,6 +357,17 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('.', import.meta.url)) },
   },
 })
+`
+
+// eslint-config-next 16 exports a flat config array of its own. Reaching it
+// through FlatCompat, the way a project on the older config format would, fails
+// on eslint 9 with a circular structure before a single file is read.
+const eslintConfig = `import next from 'eslint-config-next/core-web-vitals'
+
+export default [
+  { ignores: ['.next/**', 'node_modules/**', 'tests/**', '*.config.mjs', '*.config.js'] },
+  ...next,
+]
 `
 
 const playwrightConfig = `import { defineConfig } from '@playwright/test'

@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"agentforge/agent/core"
 )
 
 func TestMergeEditNeverShrinksASection(t *testing.T) {
@@ -253,8 +251,7 @@ func TestIdentityAndDifference(t *testing.T) {
 
 func TestGraphsRunEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	svc := NewService(NewRepo(NewMemoryStore()), core.NewLLM(), core.Paths{})
-	svc.Storage = t.TempDir()
+	svc := testService(t)
 
 	project, session := hotelSession()
 	if err := svc.Repo.CreateProject(ctx, *project); err != nil {

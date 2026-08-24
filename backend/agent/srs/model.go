@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -551,8 +552,30 @@ type AnswerEntry struct {
 
 // NowISO is the timestamp format every stored document uses, and every sort key
 // depends on it staying lexicographically ordered.
+// isoLayout is fixed width, unlike RFC3339Nano, which drops trailing zeros.
+// Records are ordered by comparing these strings, and variable-width fractions
+// do not compare in the order of the instants they name: ".1Z" sorts after
+// ".1000001Z" even though it names the earlier one.
+const isoLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+var (
+	isoMu   sync.Mutex
+	isoLast time.Time
+)
+
+// NowISO is the timestamp every stored record carries. It never repeats and
+// never goes backwards: a Windows clock moves in steps coarse enough that two
+// saves in a row otherwise share a timestamp, which leaves "the latest" of them
+// down to whatever order the store happens to return.
 func NowISO() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
+	isoMu.Lock()
+	defer isoMu.Unlock()
+	now := time.Now().UTC()
+	if !now.After(isoLast) {
+		now = isoLast.Add(time.Nanosecond)
+	}
+	isoLast = now
+	return now.Format(isoLayout)
 }
 
 // NewID matches the Python id format: a prefix plus 24 hex characters.

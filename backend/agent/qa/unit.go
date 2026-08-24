@@ -3,6 +3,7 @@ package qa
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -39,24 +40,55 @@ func (s *Suite) Unit(ctx context.Context, run *core.Run) error {
 	if err := s.ensureHarness(run); err != nil {
 		return err
 	}
-	targets := unitTargets(run)
-	if len(targets) == 0 {
+	qualifying := unitTargets(run)
+	if len(qualifying) == 0 {
 		run.Warn("there is no application code to unit test")
 		return nil
 	}
 
-	run.Info(fmt.Sprintf("🧪 Writing unit tests for %d file(s)", len(targets)))
+	// A test costs a model call, so only so many are written in one build.
+	// Which ones is decided by unitRank, and pages come last — so on a large
+	// app the cap falls on the pages. Saying so is the point: a count with
+	// nothing to compare it against reads like full coverage.
+	targets, beyondCap := qualifying, []string(nil)
+	if len(targets) > maxTargets {
+		targets, beyondCap = targets[:maxTargets], targets[maxTargets:]
+		run.Warn(fmt.Sprintf("🧪 Writing unit tests for %d of %d file(s) — %d will have none",
+			len(targets), len(qualifying), len(beyondCap)))
+	} else {
+		run.Info(fmt.Sprintf("🧪 Writing unit tests for all %d file(s)", len(targets)))
+	}
+	skipped := map[string]bool{}
 	for i, target := range targets {
 		if err := run.Check(); err != nil {
 			return err
 		}
 		run.Progress("unit", 58+6*float64(i)/float64(len(targets)))
-		if err := s.authorUnitTest(ctx, run, target); err != nil {
+		switch err := s.authorUnitTest(ctx, run, target); {
+		case errors.Is(err, errTestSkipped):
+			skipped[target] = true
+		case err != nil:
 			run.Warn("could not write a test for " + target + ": " + err.Error())
 		}
 	}
 
-	return s.unitRounds(ctx, run)
+	// Asking for a test is not the same as getting one, and nothing later
+	// notices the difference: vitest reports on the tests that exist, so a
+	// file with none simply never appears in the count that follows.
+	untested := s.writeMissingUnitTests(ctx, run, targets, skipped)
+
+	if err := s.unitRounds(ctx, run); err != nil {
+		return err
+	}
+	untested = append(untested, beyondCap...)
+	if len(untested) > 0 {
+		run.Warn(fmt.Sprintf("⚠ %d of %d file(s) have no unit test", len(untested), len(qualifying)))
+		for _, target := range untested {
+			run.Info("   • " + target)
+			s.report.Suite.Unresolved = append(s.report.Suite.Unresolved, target+" has no unit test")
+		}
+	}
+	return nil
 }
 
 // rounds decides how many times the loop goes round. It is separate from the
@@ -229,8 +261,7 @@ If the file has nothing meaningfully testable, answer with exactly: SKIP`
 
 // authorUnitTest writes the test for one source file.
 func (s *Suite) authorUnitTest(ctx context.Context, run *core.Run, target string) error {
-	name := testNameFor(target)
-	dest := "tests/unit/" + name + ".test.js"
+	dest := unitTestPath(target)
 	if run.Shell.Exists(dest) {
 		return nil // an earlier round already wrote it
 	}
@@ -248,10 +279,16 @@ func (s *Suite) authorUnitTest(ctx context.Context, run *core.Run, target string
 		return err
 	}
 	writer.Finish()
-	if len(writer.Written()) == 0 && strings.Contains(strings.ToUpper(text), "SKIP") {
+	if len(writer.Written()) > 0 {
 		return nil
 	}
-	return nil
+	// Nothing was written. Saying so is the whole point: the caller only
+	// reacts to an error, so returning nil here is how a file ends up with no
+	// test at all while the log says one was written for it.
+	if strings.Contains(strings.ToUpper(text), "SKIP") {
+		return errTestSkipped
+	}
+	return errors.New("the author produced no test file")
 }
 
 const unitRepairSystem = `You repair failing Vitest tests for a Next.js
@@ -332,9 +369,6 @@ func unitTargets(run *core.Run) []string {
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool { return unitRank(out[i]) < unitRank(out[j]) })
-	if len(out) > maxTargets {
-		out = out[:maxTargets]
-	}
 	return out
 }
 

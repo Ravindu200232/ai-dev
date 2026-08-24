@@ -81,8 +81,10 @@ func commandPath() string {
 	if len(extra) == 0 {
 		return current
 	}
+	// PATH comes first. Somebody put an entry there on purpose, so it outranks
+	// a directory we guessed from where installers usually land.
 	if current != "" {
-		extra = append(extra, current)
+		extra = append([]string{current}, extra...)
 	}
 	return strings.Join(extra, string(os.PathListSeparator))
 }

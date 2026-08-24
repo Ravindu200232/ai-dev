@@ -205,6 +205,10 @@ type qaStage struct {
 }
 
 var qaStages = []qaStage{
+	// Before the units, because a page can serve a 500 while every unit
+	// covering it passes, and finding that here costs one repair instead of
+	// three failed journeys.
+	{"runtime-check", 54, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.RuntimeCheck }},
 	{"unit", 58, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.Unit }},
 	{"api", 74, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.API }},
 	{"e2e-plan", 78, func(s *qa.Suite) func(context.Context, *core.Run) error { return s.E2EPlan }},

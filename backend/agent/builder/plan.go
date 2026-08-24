@@ -243,32 +243,26 @@ func (p *Pipeline) plan(ctx context.Context, state any) (any, error) {
 		return run, fmt.Errorf("the planner failed: %w", err)
 	}
 
-	tasks := append([]core.Task{}, done...)
-	seen := map[string]bool{}
-	for _, t := range done {
-		seen[t.ID] = true
-	}
-	for i, t := range reply.Tasks {
-		t.ID = strings.TrimSpace(t.ID)
-		if t.ID == "" || seen[t.ID] {
-			t.ID = fmt.Sprintf("t%d", len(tasks)+i+1)
-		}
-		t.Title = strings.TrimSpace(t.Title)
-		if t.Title == "" {
-			t.Title = "Task " + t.ID
-		}
-		t.Files = cleanPaths(t.Files)
-		seen[t.ID] = true
-		tasks = append(tasks, t)
-	}
+	tasks := appendTasks(append([]core.Task{}, done...), reply.Tasks)
 	if len(tasks) == 0 {
 		return run, fmt.Errorf("the planner returned no tasks")
 	}
 	run.Tasks = tasks
+
+	// Nothing downstream can build a feature that was never planned: the
+	// coder works through this list, and the coverage review audits the same
+	// list. So the plan is checked against the requirements before it is
+	// published, not after something is found missing at the end.
+	if still := p.coverEveryRequirement(ctx, run); len(still) > 0 {
+		run.Warn(fmt.Sprintf("⚠ %d requirement(s) are still not in the plan", len(still)))
+		// The coverage review reopens planning for whatever is left.
+		p.gaps = append(p.gaps, still...)
+	}
+
 	p.plannedAt = time.Now().UTC().Format(time.RFC3339)
 	p.savePlan(run)
 	run.PublishTasks()
-	run.Info(fmt.Sprintf("🧭 %d task(s) planned", len(tasks)-len(done)))
+	run.Info(fmt.Sprintf("🧭 %d task(s) planned", len(run.Tasks)-len(done)))
 	return run, nil
 }
 
@@ -315,6 +309,13 @@ func (p *Pipeline) restore(run *core.Run) {
 
 // planPrompt gives the planner the contract, what is already on disk, and what
 // is already done — so a replan is additive rather than a fresh start.
+// plannerRequirementLimit is how many requirements the first plan is shown.
+// A requirement past it is not merely summarised, it is never seen, so it
+// cannot be planned for: the limit is high enough that a real specification
+// fits whole. Anything still cut is caught by coverEveryRequirement, which
+// names what is missing outright rather than hoping it was read.
+const plannerRequirementLimit = 200
+
 func (p *Pipeline) planPrompt(run *core.Run, done []core.Task) string {
 	var b strings.Builder
 
@@ -323,7 +324,7 @@ func (p *Pipeline) planPrompt(run *core.Run, done []core.Task) string {
 		b.WriteString(truncate(run.Contract, 12000))
 		b.WriteString("\n\n")
 	}
-	if lines := requirementLines(run.Handoff, 60); lines != "" {
+	if lines := requirementLines(run.Handoff, plannerRequirementLimit); lines != "" {
 		b.WriteString("REQUIREMENTS\n")
 		b.WriteString(lines)
 		b.WriteString("\n")
@@ -357,6 +358,31 @@ func (p *Pipeline) planPrompt(run *core.Run, done []core.Task) string {
 		}
 	}
 	return b.String()
+}
+
+// appendTasks adds planned tasks to a list, giving each one an id nothing else
+// is using and a title and paths that are safe to act on. Both the first plan
+// and any later pass go through here, so a task added late is shaped exactly
+// like one planned at the start.
+func appendTasks(into []core.Task, incoming []core.Task) []core.Task {
+	seen := map[string]bool{}
+	for _, t := range into {
+		seen[t.ID] = true
+	}
+	for _, t := range incoming {
+		t.ID = strings.TrimSpace(t.ID)
+		if t.ID == "" || seen[t.ID] {
+			t.ID = fmt.Sprintf("t%d", len(into)+1)
+		}
+		t.Title = strings.TrimSpace(t.Title)
+		if t.Title == "" {
+			t.Title = "Task " + t.ID
+		}
+		t.Files = cleanPaths(t.Files)
+		seen[t.ID] = true
+		into = append(into, t)
+	}
+	return into
 }
 
 func doneTasks(tasks []core.Task) []core.Task {

@@ -5,6 +5,7 @@ package qa
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os/exec"
@@ -26,6 +27,9 @@ const (
 	readyTimeout   = 3 * time.Minute
 	maxRuntimeFix  = 5
 	settleAfterFix = 12 * time.Second
+	// portFreeWait is how many quarter seconds a reclaimed port is given to
+	// come free; a killed process does not release it the instant it dies.
+	portFreeWait = 40
 )
 
 // Suite carries the state the QA stages share: the dev server they all talk to
@@ -69,13 +73,34 @@ func (s *Suite) Dev(ctx context.Context, run *core.Run) error {
 	if err := s.install(ctx, run); err != nil {
 		return err
 	}
+	pinDevPort(run)
+
+	// Compile everything before serving anything. The dev server only builds
+	// a route when something asks for it, so without this a page that cannot
+	// compile is found much later by whichever stage opens it first, and
+	// reported as whatever the browser saw rather than as the compiler error.
+	s.buildCheck(ctx, run)
+
+	// Then read what compiled. A file the compiler accepts can still call a
+	// hook conditionally or reference something that is not there on one
+	// branch, and lint names the file and line for both.
+	s.lintCheck(ctx, run)
 
 	if portOpen(core.DevPort) {
-		// Nothing this build started can be there yet, so the preview port
-		// belongs to something else. Say so: the app will fail to bind, and
-		// "port in use" is a far better answer than a silent timeout.
-		run.Warn(fmt.Sprintf("port %d is already in use — the preview may not be this build's app",
-			core.DevPort))
+		// Nothing this build started can be there yet, so the preview port is
+		// held by something else, almost always the preview an earlier build
+		// left running. Take it back: warning and carrying on only ends in a
+		// dev server that cannot bind and a timeout that explains nothing.
+		run.Warn(fmt.Sprintf("port %d is in use; stopping whatever holds it", core.DevPort))
+		core.ReclaimPort(core.DevPort)
+		for waited := 0; waited < portFreeWait && portOpen(core.DevPort); waited++ {
+			if !sleepCtx(ctx, 250*time.Millisecond) {
+				return run.Check()
+			}
+		}
+		if portOpen(core.DevPort) {
+			run.Warn(fmt.Sprintf("port %d is still held by something this build cannot stop", core.DevPort))
+		}
 	}
 
 	dev := newDevServer(run)
@@ -119,6 +144,45 @@ func (s *Suite) Dev(ctx context.Context, run *core.Run) error {
 	}
 	s.report.Runtime.Failed, s.report.Runtime.Total = 1, 1
 	return fmt.Errorf("the app still does not boot after %d repairs", maxRuntimeFix)
+}
+
+// pinDevPort makes sure the dev script still starts the app on the port this
+// harness watches, and puts it back when it does not.
+//
+// The repair loop may rewrite package.json - it is one of the files handed over
+// when a runtime error names none - and "address already in use" is exactly the
+// kind of error it gets asked to fix. Dropping the port flag makes that error
+// go away and takes the app with it: Next quietly picks another port, nothing
+// answers on the one being watched, and the build ends in a timeout naming no
+// file, which no later repair can act on. So the flag is checked every boot.
+func pinDevPort(run *core.Run) {
+	const rel = "package.json"
+	// Read reports truncation in its second value, not absence; a missing file
+	// comes back as an error.
+	body, _, err := run.Shell.Read(rel)
+	if err != nil {
+		return
+	}
+	var pkg map[string]any
+	if json.Unmarshal([]byte(body), &pkg) != nil {
+		return
+	}
+	scripts, _ := pkg["scripts"].(map[string]any)
+	if scripts == nil {
+		return
+	}
+	want := fmt.Sprintf("next dev --port %d", core.DevPort)
+	if current, _ := scripts["dev"].(string); current == want {
+		return
+	}
+	scripts["dev"] = want
+	out, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return
+	}
+	if run.Shell.Write(rel, string(out)+"\n") == nil {
+		run.Warn(fmt.Sprintf("the dev script had stopped pinning port %d; put it back", core.DevPort))
+	}
 }
 
 // install runs npm install when the tree has no dependencies yet.
@@ -359,7 +423,14 @@ func (d *devServer) waitReady(ctx context.Context, timeout time.Duration) string
 }
 
 // errorInPage catches a Next error overlay served with a 200.
+// serverRenderMarker is what Next writes into the streamed payload when a
+// server component throws. It matters because the response is still a 200
+// carrying what looks like a page: the status says nothing, the visible text
+// says nothing, and this string is the only sign anything went wrong.
+const serverRenderMarker = "Switched to client rendering because the server rendering errored"
+
 func errorInPage(body string) string {
+	// A compile failure replaces the page outright, and says so in words.
 	for _, needle := range []string{"Unhandled Runtime Error", "Failed to compile", "Build Error"} {
 		if idx := strings.Index(body, needle); idx >= 0 {
 			end := idx + 800
@@ -369,7 +440,39 @@ func errorInPage(body string) string {
 			return stripTags(body[idx:end])
 		}
 	}
+	// A fault while rendering does not. Next serves the page, reports the
+	// error inside the payload, and lets the client try again — so a check
+	// that reads only the status code passes a page that never rendered.
+	if idx := strings.Index(body, serverRenderMarker); idx >= 0 {
+		if msg := unescapePayload(body[idx+len(serverRenderMarker):], 400); msg != "" {
+			return "the server render threw: " + msg
+		}
+		return "the server render threw, and the page fell back to the client"
+	}
 	return ""
+}
+
+// unescapePayload makes the fragment Next streams readable. It arrives twice
+// escaped — once for the JSON, once for the script tag holding it — so the
+// message is unreadable, and unsearchable for a file name, until it is undone.
+func unescapePayload(s string, limit int) string {
+	if len(s) > limit {
+		s = s[:limit]
+	}
+	s = strings.NewReplacer(
+		"\\n", " ",
+		"\\\"", "\"",
+		"\\\\", "\\",
+		"\\u0026", "&",
+	).Replace(s)
+	s = strings.TrimLeft(s, ":\" ")
+	// The message ends where the next field of the payload begins.
+	for _, stop := range []string{"\",\"", "\",", "\"}"} {
+		if i := strings.Index(s, stop); i > 0 {
+			s = s[:i]
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 var tagPattern = regexp.MustCompile(`<[^>]*>`)

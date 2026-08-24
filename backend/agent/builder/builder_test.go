@@ -159,6 +159,7 @@ func TestAResumePicksUpWhereTheBuildStopped(t *testing.T) {
 		{ID: "t1", Title: "Home page", Done: true},
 		{ID: "t2", Title: "Cart page"},
 	}
+	first.finished["runtime-check"] = true
 	first.finished["unit"] = true
 	first.finished["api"] = true
 	first.savePlan(run)
@@ -185,8 +186,8 @@ func TestAResumePicksUpWhereTheBuildStopped(t *testing.T) {
 	// A build that is not a resume starts the rail from the top, whatever is
 	// on disk.
 	fresh := NewPipeline(server.Message{Type: "agent_build"}, nil)
-	if got := fresh.stopOrGo(0)(context.Background(), again); got != "unit" {
-		t.Errorf("a fresh build runs every check, got %q", got)
+	if got := fresh.stopOrGo(0)(context.Background(), again); got != qaStages[0].name {
+		t.Errorf("a fresh build runs every check, from %q, got %q", qaStages[0].name, got)
 	}
 
 	// And once every check has passed, the summary still runs: the files on
@@ -342,6 +343,9 @@ func TestUnwrapNode(t *testing.T) {
 
 func newRun(t *testing.T, files map[string]string) *core.Run {
 	t.Helper()
+	// These tests are written for the path a machine with no Ollama takes, so
+	// no model must be reachable whatever the machine running them has.
+	t.Setenv("OLLAMA_HOST", "http://127.0.0.1:1")
 	projects := t.TempDir()
 	dir := filepath.Join(projects, "demo")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

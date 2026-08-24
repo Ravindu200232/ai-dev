@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+// noHome points the home directory somewhere empty, so a test reads no
+// settings file and writes nothing into the real one. Windows needs
+// USERPROFILE as well, since that is what os.UserHomeDir reads there.
+func noHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
 // planner returns a planner with no model, which is the state a machine is in
 // when Ollama is not running — and the state most of these tests want, since
 // what matters is that the plan is right without one.
@@ -104,7 +114,7 @@ func TestChosenJobs(t *testing.T) {
 }
 
 func TestInstanceType(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // no settings file, so the free tier is on
+	noHome(t) // no settings file, so the free tier is on
 	cases := map[string]string{
 		"t3.micro":    "t3.micro",
 		"t4g.micro":   "t4g.micro",
@@ -167,7 +177,7 @@ func TestCheckPlanReply(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	reply.Generation.AWSSizing.InstanceType = "t3.small"
-	t.Setenv("HOME", t.TempDir())
+	noHome(t)
 	if checkPlanReply(&reply) != nil {
 		t.Error("a size that is priced down is still a valid answer")
 	}

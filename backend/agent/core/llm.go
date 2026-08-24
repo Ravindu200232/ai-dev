@@ -95,6 +95,21 @@ func IsCloud(model string) bool {
 	return strings.HasSuffix(m, "-cloud") || strings.HasSuffix(m, ":cloud")
 }
 
+// localServes reports whether the Ollama daemon already lists a model. It lists
+// cloud models once `ollama signin` has run, which is the second way to reach
+// one when no key of our own is saved.
+func localServes(model string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	want := strings.ToLower(strings.TrimSpace(model))
+	for _, m := range listTags(ctx, LocalHost(), "") {
+		if strings.ToLower(m.ID) == want {
+			return true
+		}
+	}
+	return false
+}
+
 // LocalHost is the Ollama daemon URL: env, then settings, then the default.
 func LocalHost() string {
 	host := strings.TrimSpace(os.Getenv("OLLAMA_HOST"))
@@ -178,11 +193,17 @@ func (l *LLM) client(model string) (*ollama.LLM, error) {
 	httpClient := &http.Client{Timeout: requestExpiry}
 	if IsCloud(model) {
 		key := APIKey()
-		if key == "" {
-			return nil, fmt.Errorf("%s is a cloud model but no Ollama API key is saved", model)
+		switch {
+		case key != "":
+			base = CloudHost
+			httpClient.Transport = bearer{key: key, next: http.DefaultTransport}
+		case localServes(model):
+			// The daemon serves cloud models itself once `ollama signin` has
+			// run, so a saved key is not the only way to reach one. Leave the
+			// base pointing at the daemon.
+		default:
+			return nil, fmt.Errorf("%s is a cloud model, but no Ollama API key is saved and the local Ollama does not serve it", model)
 		}
-		base = CloudHost
-		httpClient.Transport = bearer{key: key, next: http.DefaultTransport}
 	}
 	c, err := ollama.New(
 		ollama.WithServerURL(base),

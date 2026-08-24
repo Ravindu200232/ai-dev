@@ -3,6 +3,7 @@ package deploy
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -70,6 +71,7 @@ func TestBootstrapRoleTemplateListsWhatItUses(t *testing.T) {
 func TestPersistProfileKeepsTheRestOfTheFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // the one os.UserHomeDir reads on Windows
 	config := filepath.Join(home, ".aws", "config")
 	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
 		t.Fatal(err)
@@ -122,8 +124,13 @@ func TestPersistProfileKeepsTheRestOfTheFile(t *testing.T) {
 	}
 
 	// The customer's own file is only ever read from ~/.aws, never elsewhere.
-	if info, err := os.Stat(config); err != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %v %v", info.Mode().Perm(), err)
+	info, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows has no POSIX mode bits; Go reports 0666 for anything writable.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v", info.Mode().Perm())
 	}
 }
 
